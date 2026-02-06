@@ -15,7 +15,7 @@ def save_policy_bundle(
     epoch=None,
     diff=None,
     target_range=None,
-    global_y2_range=None,
+    action_ranges=None,  # 改為 action_ranges，預期是 dict: {param: [min, max]}
 ):
     """Saves policy model and its inference metadata as a bundle."""
     os.makedirs(save_dir, exist_ok=True)
@@ -45,7 +45,7 @@ def save_policy_bundle(
         "target_center": (target_range[0] + target_range[1]) / 2
         if target_range
         else 0.5,
-        "y2_axis_range": global_y2_range,  # 儲存 Y2 軸範圍
+        "y2_axis_ranges": action_ranges,  # 儲存 Y2 軸範圍字典 {param: [min, max]}
     }
     with open(os.path.join(save_dir, "meta.json"), "w", encoding="utf-8") as f:
         json.dump(meta, f, indent=2, ensure_ascii=False)

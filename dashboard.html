@@ -2729,7 +2729,7 @@
                     (Max)</label>
                 <div style="position: relative;">
                     <input type="number" id="yaxis-max-input" step="0.01" class="editable-input"
-                        style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 15px; background: #f8fafc; transition: all 0.2s;"
+                        style="box-sizing: border-box; width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 15px; background: #f8fafc; transition: all 0.2s;"
                         onfocus="this.style.borderColor='#3b82f6'; this.style.background='#fff';"
                         onblur="this.style.borderColor='#cbd5e1'; this.style.background='#f8fafc';">
                 </div>
@@ -2740,7 +2740,7 @@
                     (Min)</label>
                 <div style="position: relative;">
                     <input type="number" id="yaxis-min-input" step="0.01" class="editable-input"
-                        style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 15px; background: #f8fafc; transition: all 0.2s;"
+                        style="box-sizing: border-box; width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 15px; background: #f8fafc; transition: all 0.2s;"
                         onfocus="this.style.borderColor='#3b82f6'; this.style.background='#fff';"
                         onblur="this.style.borderColor='#cbd5e1'; this.style.background='#f8fafc';">
                 </div>
@@ -2780,6 +2780,55 @@
                     (Auto)</button>
                 <button onclick="applyYAxisSettings()"
                     style="padding: 8px 16px; background: #3b82f6; color: white; border: none; border-radius: 6px; cursor: pointer;">套用</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Y2-Axis Settings Modal -->
+    <div id="y2axis-settings-modal" class="modal"
+        style="backdrop-filter: blur(5px); background-color: rgba(0, 0, 0, 0.4);">
+        <div class="modal-content"
+            style="max-width: 320px; padding: 25px; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.15); border: none;">
+            <span class="close-modal" onclick="closeY2AxisSettings()"
+                style="top: 15px; right: 20px; font-size: 24px; color: #64748b; font-weight: normal;">&times;</span>
+
+            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 25px;">
+                <span style="font-size: 20px;">📊</span>
+                <h3 id="y2axis-modal-title" style="margin: 0; color: #1e293b; font-size: 18px; font-weight: 600;">Y2
+                    軸範圍設定</h3>
+            </div>
+
+            <div style="margin-bottom: 20px;">
+                <label style="display:block; margin-bottom: 8px; font-size: 13px; color: #475569; font-weight: 600;">上限
+                    (Max)</label>
+                <div style="position: relative;">
+                    <input type="number" id="y2axis-max-input" step="0.01" class="editable-input"
+                        style="box-sizing: border-box; width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 15px; background: #f8fafc; transition: all 0.2s;"
+                        onfocus="this.style.borderColor='#3b82f6'; this.style.background='#fff';"
+                        onblur="this.style.borderColor='#cbd5e1'; this.style.background='#f8fafc';">
+                </div>
+            </div>
+
+            <div style="margin-bottom: 25px;">
+                <label style="display:block; margin-bottom: 8px; font-size: 13px; color: #475569; font-weight: 600;">下限
+                    (Min)</label>
+                <div style="position: relative;">
+                    <input type="number" id="y2axis-min-input" step="0.01" class="editable-input"
+                        style="box-sizing: border-box; width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 15px; background: #f8fafc; transition: all 0.2s;"
+                        onfocus="this.style.borderColor='#3b82f6'; this.style.background='#fff';"
+                        onblur="this.style.borderColor='#cbd5e1'; this.style.background='#f8fafc';">
+                </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <button onclick="resetY2AxisSettings()"
+                    style="padding: 10px; background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 14px; transition: all 0.2s;">
+                    重置自動
+                </button>
+                <button onclick="applyY2AxisSettings()"
+                    style="padding: 10px; background: #3b82f6; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 14px; box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.3); transition: all 0.2s;">
+                    確認套用
+                </button>
             </div>
         </div>
     </div>

@@ -123,16 +123,27 @@ export function initSimulatorSelectors() {
                 const result = await API.post('/api/model/load', { model_path: modelPath });
                 if (result.status === 'success') {
                     // Apply Y2 Axis Range from Model Config
-                    if (result.config && result.config.y2_axis_range && Array.isArray(result.config.y2_axis_range)) {
+                    // Apply Y2 Ranges (Detailed Dictionary) - NEW
+                    if (result.config && result.config.y2_axis_ranges && typeof window.setAllY2Ranges === 'function') {
+                        window.setAllY2Ranges(result.config.y2_axis_ranges);
+                        // Clear global manual override so specific ranges take precedence
+                        if (typeof window.setY2Range === 'function') window.setY2Range(null, null);
+                        console.log("Applied detailed per-parameter Y2 ranges");
+                    }
+                    // Apply Y2 Axis Range (Legacy Global List) - OLD
+                    else if (result.config && result.config.y2_axis_range && Array.isArray(result.config.y2_axis_range)) {
                         const [min, max] = result.config.y2_axis_range;
                         if (typeof window.setY2Range === 'function') {
                             window.setY2Range(min, max);
-                            console.log(`Applied model Y2 range: ${min} - ${max}`);
+                            console.log(`Applied legacy model Y2 range: ${min} - ${max}`);
                         }
                     } else {
                         // Reset if no range specified
                         if (typeof window.setY2Range === 'function') {
                             window.setY2Range(null, null);
+                        }
+                        if (typeof window.setAllY2Ranges === 'function') {
+                            window.setAllY2Ranges({});
                         }
                     }
                     alert(`✅ 已載入模型:\n${result.run_path || modelPath}`);
