@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <title>圖表 AI 專家助手 (獨立視窗)</title>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/styles_full.css">
+    <style>
+        body {
+            background-color: #faf5ff;
+            height: 100vh;
+            overflow: hidden;
+            padding: 0;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .ai-report-body {
+            flex: 1;
+            margin: 0;
+            border: none;
+            border-radius: 0;
+            background: transparent;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .chat-input-wrapper {
+            background: #fff;
+            padding: 15px;
+            border-top: 1px solid #e9d5ff;
+            margin: 0;
+            flex-shrink: 0;
+            display: block;
+            /* Override external CSS flex causing width issues */
+        }
+
+        /* Custom styles for popup specific elements */
+        #chart-file-preview {
+            background: #fff;
+            border-top: 1px solid #f3e8ff;
+        }
+
+        .assistant-fab,
+        .ai-report-header .toggle-btn {
+            display: none !important;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Chat Content Area (Synced) -->
+    <div id="chart-ai-report-content" class="ai-report-body" ondragover="handleDragOver(event)"
+        ondragleave="handleDragLeave(event)" ondrop="handleDrop(event)">
+        <!-- Content will be synced from opener -->
+    </div>
+
+    <!-- File Preview Area (Synced) -->
+    <div id="chart-file-preview" style="display: none; padding: 10px 15px; flex-wrap: wrap; gap: 8px;"></div>
+
+    <!-- Input Area -->
+    <div class="chat-input-wrapper">
+        <div style="display: flex; gap: 10px; align-items: flex-end;">
+            <button onclick="document.getElementById('chart-chat-file').click()" title="附加檔案"
+                style="background: linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%); color: #7c3aed; border: 1.5px solid #c4b5fd; padding: 10px 14px; border-radius: 10px; font-size: 18px; cursor: pointer;">
+                📎
+            </button>
+            <!-- Native file input, but we will forward the files to the opener -->
+            <input type="file" id="chart-chat-file" style="display: none;" multiple accept="image/*,.csv,.txt,.log"
+                onchange="forwardFileSelect(this)">
+
+            <textarea id="chart-chat-input" placeholder="輸入訊息..."
+                style="flex: 1; border: 1.5px solid #e9ecef; border-radius: 10px; padding: 12px 15px; font-size: 14px; resize: none; outline: none; height: 50px; min-height: 50px;"
+                onkeydown="handleKey(event)"></textarea>
+
+            <button onclick="sendMessage()"
+                style="background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); color: white; border: none; padding: 12px 24px; border-radius: 10px; cursor: pointer; font-weight: 600;">
+                發送
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // --- Sync Logic ---
+
+        // Initial Sync
+        window.onload = function () {
+            if (window.opener && window.opener.document) {
+                // 1. Sync History
+                const sourceContent = window.opener.document.getElementById('chart-ai-report-content');
+                const targetContent = document.getElementById('chart-ai-report-content');
+                targetContent.innerHTML = sourceContent.innerHTML;
+
+                // Sync Canvas Content for History
+                const sourceCanvases = sourceContent.querySelectorAll('canvas');
+                const targetCanvases = targetContent.querySelectorAll('canvas');
+                sourceCanvases.forEach((source, index) => {
+                    if (targetCanvases[index]) {
+                        const destCtx = targetCanvases[index].getContext('2d');
+                        destCtx.drawImage(source, 0, 0);
+                    }
+                });
+
+                scrollToBottom();
+
+                // 2. Sync Existing Preview (if any)
+                const sourcePreview = window.opener.document.getElementById('chart-file-preview').innerHTML;
+                if (sourcePreview && sourcePreview.trim() !== '') {
+                    const preview = document.getElementById('chart-file-preview');
+                    preview.innerHTML = sourcePreview;
+                    preview.style.display = 'flex';
+                }
+
+                // 3. Register self
+                if (window.opener.registerPopup) {
+                    window.opener.registerPopup(window);
+                }
+            }
+        };
+
+        window.onbeforeunload = function () {
+            if (window.opener && window.opener.onPopupClose) {
+                window.opener.onPopupClose();
+            }
+        };
+
+        // Global Key Handler for ESC - Double Press to Close
+        let lastEscTime = 0;
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                const now = Date.now();
+                if (now - lastEscTime <= 500) {
+                    window.close();
+                } else {
+                    lastEscTime = now;
+                }
+            }
+        });
+
+        // --- User Interaction ---
+
+        function handleKey(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        }
+
+        function sendMessage() {
+            const input = document.getElementById('chart-chat-input');
+            const msg = input.value;
+
+            // Delegate sending to the main window
+            if (window.opener && window.opener.handlePopupMessage) {
+                window.opener.handlePopupMessage(msg); // Main window will verify both text and files
+                input.value = '';
+                // Note: File preview clearing is handled by main window syncing back an empty preview
+            }
+        }
+
+        function forwardFileSelect(input) {
+            if (window.opener && window.opener.handleChartPopupFileSelect) {
+                // We cannot send FileList object directly effectively in some browsers if cross-origin (but here key is same origin)
+                // Best way: use the exact same logic as main window but operating on OUR input files
+                // OR: pass the files array to opener function?
+                // actually, opener script can read our input.files!
+                window.opener.handleChartPopupFileSelect(input);
+            }
+            // Don't clear value yet, wait for processing
+        }
+
+        // --- Paste Handler ---
+        document.addEventListener('paste', function (e) {
+            const items = e.clipboardData.items;
+            const files = [];
+            for (let i = 0; i < items.length; i++) {
+                if (items[i].kind === 'file') {
+                    files.push(items[i].getAsFile());
+                }
+            }
+
+            if (files.length > 0) {
+                e.preventDefault(); // Prevent default paste if files are handled
+                if (window.opener && window.opener.chartProcessFilesPopup) {
+                    window.opener.chartProcessFilesPopup(files);
+                }
+            }
+        });
+
+        // --- Drag & Drop ---
+        // We forward the drop event's files to the main window logic
+        function handleDragOver(e) {
+            e.preventDefault();
+            document.getElementById('chart-ai-report-content').classList.add('drag-over');
+        }
+
+        function handleDragLeave(e) {
+            document.getElementById('chart-ai-report-content').classList.remove('drag-over');
+        }
+
+        function handleDrop(e) {
+            e.preventDefault();
+            document.getElementById('chart-ai-report-content').classList.remove('drag-over');
+
+            if (e.dataTransfer.files.length > 0) {
+                if (window.opener && window.opener.chartProcessFilesPopup) {
+                    // We need to pass the files. e.dataTransfer.files is a FileList.
+                    // It is accessible by opener if same origin.
+                    window.opener.chartProcessFilesPopup(e.dataTransfer.files);
+                }
+            }
+        }
+
+        function scrollToBottom() {
+            const container = document.getElementById('chart-ai-report-content');
+            container.scrollTop = container.scrollHeight;
+        }
+
+        // Helper invoked by Opener to remove file from Popup UI (and sync)
+        function removeFile(filename) {
+            if (window.opener && window.opener.chartRemoveFile) {
+                window.opener.chartRemoveFile(filename);
+            }
+        }
+
+        // Rewrite the remove button actions in the synced HTML to call our local removeFile
+        // This is tricky because the HTML comes from opener.
+        // We will rely on the fact that `onclick="chartRemoveFile('name')"` is in the HTML.
+        // We need to define `chartRemoveFile` in this window scope to proxy it.
+        window.chartRemoveFile = function (filename) {
+            if (window.opener && window.opener.chartRemoveFile) {
+                window.opener.chartRemoveFile(filename);
+            }
+        }
+
+    </script>
+</body>
+
+</html>

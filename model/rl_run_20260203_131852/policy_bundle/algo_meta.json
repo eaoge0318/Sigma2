@@ -1,0 +1,7 @@
+{
+  "library": "d3rlpy",
+  "algo_name": "IQL",
+  "algo_file": "policy.d3rlpy",
+  "saved_at_epoch": 15,
+  "policy_diff": 0.0
+}

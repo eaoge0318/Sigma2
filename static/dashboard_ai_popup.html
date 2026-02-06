@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <title>AI 專家助手 (獨立視窗)</title>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/styles_full.css">
+    <style>
+        body {
+            background-color: #faf5ff;
+            height: 100vh;
+            overflow: hidden;
+            padding: 0;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .ai-report-body {
+            flex: 1;
+            margin: 0;
+            border: none;
+            border-radius: 0;
+            background: transparent;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .chat-input-wrapper {
+            background: #fff;
+            padding: 15px;
+            border-top: 1px solid #e9d5ff;
+            margin: 0;
+            flex-shrink: 0;
+            display: block;
+        }
+
+        #file-preview {
+            background: #fff;
+            border-top: 1px solid #f3e8ff;
+            display: none;
+            padding: 10px 15px;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .preview-item {
+            position: relative;
+            width: 50px;
+            height: 50px;
+            border-radius: 4px;
+            border: 1px solid #d8b4fe;
+            overflow: hidden;
+            background: white;
+        }
+
+        .preview-item img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .preview-item span {
+            font-size: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+        }
+
+        .preview-remove {
+            position: absolute;
+            top: -5px;
+            right: -5px;
+            background: #ef4444;
+            color: white;
+            border: none;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: bold;
+            line-height: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+            z-index: 10;
+        }
+
+        .bubble-attachments {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-top: 8px;
+        }
+
+        .bubble-attach-img {
+            width: 60px;
+            height: 60px;
+            object-fit: cover;
+            border-radius: 4px;
+            border: 1px solid rgba(255, 255, 255, 0.5);
+        }
+
+        .bubble-attach-file {
+            width: 60px;
+            height: 60px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+        }
+
+        .assistant-fab,
+        .ai-report-header .toggle-btn {
+            display: none !important;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Header Area (Consistent with Dashboard) -->
+    <div class="ai-report-header"
+        style="padding: 15px; border-bottom: 1px solid #f3e8ff; display: flex; justify-content: space-between; align-items: center; background: #fff; flex-shrink: 0;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 20px;">🤖</span>
+            <h3 style="margin: 0; color: #7e22ce; font-size: 16px;">AI 專家助手</h3>
+        </div>
+        <div style="display: flex; gap: 8px; align-items: center;">
+            <span style="font-size: 12px; color: #94a3b8;">獨立視窗模式</span>
+        </div>
+    </div>
+
+    <!-- Chat Content Area -->
+    <div id="ai-report-content" class="ai-report-body" style="margin-top: 0; border: none; border-radius: 0;">
+        <!-- Will be populated from opener or show welcome message -->
+    </div>
+
+    <!-- File Preview Area -->
+    <div id="file-preview" style="display: none; padding: 10px 15px; flex-wrap: wrap; gap: 8px;"></div>
+
+    <!-- Input Area -->
+    <div class="chat-input-wrapper">
+        <div style="display: flex; gap: 10px; align-items: flex-end;">
+            <button onclick="document.getElementById('chat-file').click()" title="附加檔案"
+                style="background: linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%); color: #7c3aed; border: 1.5px solid #c4b5fd; padding: 10px 14px; border-radius: 10px; font-size: 18px; cursor: pointer;">
+                📎
+            </button>
+            <input type="file" id="chat-file" style="display: none;" multiple accept="image/*,.csv,.txt,.log"
+                onchange="handleFileSelect(this)">
+
+            <textarea id="chat-input" placeholder="輸入訊息..."
+                style="flex: 1; border: 1.5px solid #e9ecef; border-radius: 10px; padding: 12px 15px; font-size: 14px; resize: none; outline: none; height: 50px; min-height: 50px;"
+                onkeydown="handleKey(event)"></textarea>
+
+            <button onclick="sendMessage()"
+                style="background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); color: white; border: none; padding: 12px 24px; border-radius: 10px; cursor: pointer; font-weight: 600;">
+                發送
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // --- Independent popup with full history sync ---
+        const SESSION_ID = (window.opener && window.opener.SESSION_ID) ? window.opener.SESSION_ID : 'popup_' + Date.now();
+        let chatMessages = [];
+        let selectedFiles = [];
+
+        // Initialize: Full sync from opener
+        window.onload = function () {
+            console.log('Popup loading...');
+
+            // Try to sync from opener
+            if (window.opener && !window.opener.closed) {
+                try {
+                    // Copy chat messages
+                    if (window.opener.chatMessages && window.opener.chatMessages.length > 0) {
+                        chatMessages = [...window.opener.chatMessages];
+                        console.log('Copied chat messages:', chatMessages.length);
+
+                        // Render messages
+                        chatMessages.forEach(msg => {
+                            appendMessage(msg.role, msg.content, msg.images);
+                        });
+                    }
+
+                    // If no messages, try to clone the entire content
+                    if (chatMessages.length === 0) {
+                        const openerContent = window.opener.document.getElementById('ai-report-content');
+                        const myContent = document.getElementById('ai-report-content');
+                        if (openerContent && myContent) {
+                            console.log('Cloning content from opener...');
+                            myContent.innerHTML = openerContent.innerHTML;
+
+                            // Re-render canvases
+                            const openerCanvases = openerContent.querySelectorAll('canvas');
+                            const myCanvases = myContent.querySelectorAll('canvas');
+                            openerCanvases.forEach((canvas, idx) => {
+                                if (myCanvases[idx]) {
+                                    const ctx = myCanvases[idx].getContext('2d');
+                                    ctx.drawImage(canvas, 0, 0);
+                                }
+                            });
+
+                            scrollToBottom();
+                        }
+                    }
+                } catch (e) {
+                    console.error('Failed to sync from opener:', e);
+                }
+            }
+
+            // Show welcome if still empty
+            if (document.getElementById('ai-report-content').children.length === 0) {
+                const welcome = document.createElement('div');
+                welcome.className = 'ai-bubble chat-bubble';
+                welcome.innerHTML = '<i>獨立 AI 助手視窗已就緒。您可以在此進行對話。</i>';
+                document.getElementById('ai-report-content').appendChild(welcome);
+            }
+
+            // ... (Inside window.onload) ...
+            console.log('Popup loaded successfully');
+
+            // --- Event Listeners Ported from Dashboard ---
+
+            // 1. Global ESC to close
+            document.addEventListener('keydown', function (event) {
+                if (event.key === 'Escape') {
+                    window.close();
+                }
+            });
+
+            // 2. Chat Paste Image
+            const chatInput = document.getElementById('chat-input');
+            if (chatInput) {
+                chatInput.addEventListener('paste', (e) => {
+                    const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+                    const files = [];
+                    for (let i = 0; i < items.length; i++) {
+                        if (items[i].kind === 'file') {
+                            files.push(items[i].getAsFile());
+                        }
+                    }
+                    if (files.length > 0) {
+                        processFiles(files);
+                    }
+                });
+            }
+
+            // 3. Drag & Drop for Chat
+            const chatBody = document.getElementById('ai-report-content');
+            if (chatBody) {
+                chatBody.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    chatBody.classList.add('drag-over');
+                });
+                chatBody.addEventListener('dragleave', () => {
+                    chatBody.classList.remove('drag-over');
+                });
+                chatBody.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    chatBody.classList.remove('drag-over');
+                    if (e.dataTransfer.files.length > 0) {
+                        processFiles(e.dataTransfer.files);
+                    }
+                });
+            }
+        };
+
+        function handleKey(e) {
+            // Enter to send (Esc is handled globally now)
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        }
+
+        // --- File Processing Logic Ported from dashboard_full.js ---
+        function processFiles(files) {
+            const preview = document.getElementById('file-preview');
+            if (files.length > 0) preview.style.display = 'flex';
+
+            Array.from(files).forEach(file => {
+                const reader = new FileReader();
+                const item = document.createElement('div');
+                item.className = 'preview-item';
+
+                if (file.type.startsWith('image/')) {
+                    reader.onload = (e) => {
+                        item.innerHTML = `<img src="${e.target.result}"><div class="preview-remove" onclick="removeFile('${file.name}')">×</div>`;
+                        selectedFiles.push({ name: file.name, type: 'image', data: e.target.result.split(',')[1] });
+                    };
+                    reader.readAsDataURL(file);
+                } else {
+                    reader.onload = (e) => {
+                        item.innerHTML = `<span>📄</span><div class="preview-remove" onclick="removeFile('${file.name}')">×</div>`;
+                        selectedFiles.push({ name: file.name, type: 'text', data: e.target.result });
+                    };
+                    reader.readAsText(file);
+                }
+                preview.appendChild(item);
+            });
+        }
+
+        function removeFile(name) {
+            selectedFiles = selectedFiles.filter(f => f.name !== name);
+            const preview = document.getElementById('file-preview');
+            preview.innerHTML = "";
+            // Re-render preview
+            selectedFiles.forEach(f => {
+                const item = document.createElement('div');
+                item.className = 'preview-item';
+                item.innerHTML = f.type === 'image' ? `<img src="data:image/png;base64,${f.data}">` : `<span>📄</span>`;
+                item.innerHTML += `<div class="preview-remove" onclick="removeFile('${f.name}')">×</div>`;
+                preview.appendChild(item);
+            });
+
+            if (selectedFiles.length === 0) {
+                preview.style.display = 'none';
+            }
+        }
+
+        // Updated handleFileSelect to use processFiles
+        function handleFileSelect(input) {
+            if (input.files && input.files.length > 0) {
+                processFiles(input.files);
+            }
+        }
+
+        async function sendMessage() {
+            const input = document.getElementById('chat-input');
+            const text = input.value.trim();
+            if (!text && selectedFiles.length === 0) return;
+
+            // 1. 處理檔案與使用者訊息
+            let userContent = text;
+            const images = selectedFiles.filter(f => f.type === 'image');
+            const texts = selectedFiles.filter(f => f.type === 'text');
+
+            if (texts.length > 0) {
+                userContent += "\n\n【附件文件內容】:";
+                texts.forEach(f => {
+                    userContent += `\n--- 檔案: ${f.name} ---\n${f.data}\n`;
+                });
+            }
+
+            let bubbleHtml = text || "<i>發送附件...</i>";
+            if (selectedFiles.length > 0) {
+                bubbleHtml += `<div class="bubble-attachments">`;
+                selectedFiles.forEach(f => {
+                    if (f.type === 'image') {
+                        bubbleHtml += `<img src="data:image/png;base64,${f.data}" class="bubble-attach-img" title="${f.name}">`;
+                    } else {
+                        bubbleHtml += `<div class="bubble-attach-file" title="${f.name}">📄</div>`;
+                    }
+                });
+                bubbleHtml += `</div>`;
+            }
+
+            input.value = "";
+            document.getElementById('file-preview').innerHTML = "";
+            document.getElementById('file-preview').style.display = 'none';
+
+            const msgObj = { role: "user", content: userContent };
+            if (images.length > 0) msgObj.images = images.map(f => f.data);
+
+            chatMessages.push(msgObj);
+
+            // Render User Bubble
+            appendMessage("user", bubbleHtml, null, true); // true indicates bubble html override
+
+            const thinkingId = 'thinking-' + Date.now();
+            const content = document.getElementById('ai-report-content');
+            const thinkingBubble = document.createElement('div');
+            thinkingBubble.id = thinkingId;
+            thinkingBubble.className = "ai-bubble chat-bubble";
+            thinkingBubble.innerHTML = "<i>AI 專家正在思考中...</i>";
+            content.appendChild(thinkingBubble);
+            scrollToBottom();
+
+            try {
+                // Keep history limited
+                let payloadMessages = chatMessages;
+                if (chatMessages.length > 10) payloadMessages = chatMessages.slice(-10);
+
+                const response = await fetch('/api/ai/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ messages: payloadMessages, session_id: SESSION_ID })
+                });
+                const data = await response.json();
+
+                let reply = "";
+                if (data.job_id) {
+                    reply = await pollAIResult(data.job_id);
+                } else {
+                    reply = data.reply;
+                }
+
+                document.getElementById(thinkingId).remove();
+
+                if (reply) {
+                    chatMessages.push({ role: "assistant", content: reply });
+                    appendMessage("assistant", reply);
+                }
+                selectedFiles = []; // Clear files after successful cycle
+            } catch (err) {
+                console.error(err);
+                const loader = document.getElementById(thinkingId);
+                if (loader) loader.innerHTML = "<i>Error: " + err.message + "</i>";
+            }
+        }
+
+        async function pollAIResult(jobId) {
+            const maxAttempts = 90; // 90 seconds
+            for (let i = 0; i < maxAttempts; i++) {
+                try {
+                    const res = await fetch(`/api/ai/chat_status/${jobId}`);
+                    const data = await res.json();
+                    if (data.status === 'completed') return data.reply;
+                    if (data.status === 'error') throw new Error(data.error);
+                } catch (e) { }
+                await new Promise(r => setTimeout(r, 1000));
+            }
+            throw new Error('Timeout');
+        }
+
+        function appendMessage(role, content, images, isUserHtmlOverride = false) {
+            // SYNC TO MAIN WINDOW
+            if (window.opener && !window.opener.closed && window.opener.receivePopupMessage) {
+                const msg = { role: role, content: content };
+                if (images) msg.images = images;
+                // Only sync assistant messages or user messages (avoid loops if logic is complex, but here straightforward)
+                window.opener.receivePopupMessage(msg);
+            }
+
+            const contentDiv = document.getElementById('ai-report-content');
+            const bubble = document.createElement('div');
+            bubble.className = role === 'user' ? 'user-bubble chat-bubble' : 'ai-bubble chat-bubble';
+
+            if (role === 'user' && isUserHtmlOverride) {
+                bubble.innerHTML = content; // content is already HTML formatted (e.g. with attachments)
+            } else if (role === 'user') {
+                bubble.innerHTML = content;
+                if (images && images.length > 0) { // Render existing images in history
+                    // Simply append an image count or indicator if needed, 
+                    // or implementing full attachment render logic for history is an option.
+                    // For now simple text is fine as per dashboard_full.js simple history reload behavior.
+                }
+            } else {
+                // ASSISTANT
+                bubble.innerHTML = marked.parse(content);
+                contentDiv.appendChild(bubble); // Append first, then process charts
+
+                // --- Chart Rendering Logic (Ported from Dashboard_full.js) ---
+                const codeBlocks = bubble.querySelectorAll('pre code');
+                codeBlocks.forEach(block => {
+                    try {
+                        let config;
+                        try {
+                            let jsonStr = block.innerText.trim();
+                            if (jsonStr.includes('&quot;')) jsonStr = jsonStr.replace(/&quot;/g, '"');
+                            config = JSON.parse(jsonStr);
+                        } catch (e) {
+                            console.warn("Popup JSON Parse fail:", e);
+                            return;
+                        }
+
+                        if (config.type === 'chart') {
+                            block.parentElement.style.display = 'none';
+
+                            const chartDiv = document.createElement('div');
+                            chartDiv.style.margin = "15px 0";
+                            chartDiv.style.background = "#fff";
+                            chartDiv.style.borderRadius = "8px";
+                            chartDiv.style.padding = "12px";
+                            chartDiv.style.border = "1px solid #e2e8f0";
+                            chartDiv.style.minHeight = "210px";
+                            chartDiv.style.boxShadow = "0 2px 4px rgba(0,0,0,0.05)";
+                            chartDiv.innerHTML = `<canvas height="200"></canvas>`;
+                            chartDiv.dataset.chartConfig = JSON.stringify(config);
+                            block.parentElement.after(chartDiv);
+
+                            setTimeout(() => {
+                                const ctx = chartDiv.querySelector('canvas').getContext('2d');
+                                if (!config.datasets || !config.datasets[0]) return;
+
+                                let chartType = config.chart_type || 'line';
+                                let chartData = { datasets: [] };
+
+                                const hasTwoDatasets = config.datasets && config.datasets.length >= 2;
+                                const missingLabels = !config.labels || config.labels.length === 0;
+                                const isExplicitLine = config.chart_type === 'line';
+                                const autoDetectScatter = !config.chart_type && (hasTwoDatasets && missingLabels);
+
+                                if (chartType === 'scatter' || (!isExplicitLine && autoDetectScatter)) {
+                                    chartType = 'scatter';
+                                    const d1 = config.datasets[0].data;
+                                    const d2 = config.datasets[1].data;
+                                    const len = Math.min(d1.length, d2.length);
+                                    const scatterPoints = [];
+                                    for (let i = 0; i < len; i++) {
+                                        scatterPoints.push({ x: Number(d1[i]), y: Number(d2[i]) });
+                                    }
+                                    chartData.datasets = [{
+                                        label: `${config.datasets[0].label} vs ${config.datasets[1].label}`,
+                                        data: scatterPoints,
+                                        borderColor: '#7e22ce',
+                                        backgroundColor: 'rgba(126, 34, 206, 0.5)',
+                                        pointRadius: 6,
+                                        pointHoverRadius: 8
+                                    }];
+
+                                    // Scatter defaults
+                                    if (!config.options) config.options = {};
+                                    if (!config.options.scales) config.options.scales = {};
+                                    config.options.scales.x = { type: 'linear', position: 'bottom', title: { display: true, text: config.datasets[0].label } };
+
+                                } else {
+                                    chartType = 'line';
+                                    let labels = config.labels || [];
+                                    if (labels.length === 0 && config.datasets[0].data) {
+                                        const dataLen = config.datasets[0].data.length;
+                                        for (let i = dataLen - 1; i >= 0; i--) labels.push(`T-${i}`);
+                                    }
+                                    chartData.labels = labels;
+
+                                    if (config.datasets.length > 0) {
+                                        const getMag = (arr) => {
+                                            const valid = arr.filter(n => typeof n === 'number' && !isNaN(n) && n !== 0);
+                                            if (valid.length === 0) return 0;
+                                            const avg = valid.reduce((a, b) => a + Math.abs(b), 0) / valid.length;
+                                            return avg === 0 ? 0 : Math.log10(avg);
+                                        };
+
+                                        const baseMag = getMag(config.datasets[0].data || []);
+
+                                        chartData.datasets = config.datasets.map((ds, idx) => {
+                                            if (idx === 0) {
+                                                return {
+                                                    ...ds,
+                                                    yAxisID: 'y',
+                                                    borderColor: '#7e22ce',
+                                                    backgroundColor: 'rgba(126, 34, 206, 0.1)',
+                                                    tension: 0.35, fill: true, pointRadius: 3
+                                                };
+                                            }
+
+                                            const myMag = getMag(ds.data || []);
+                                            const diff = Math.abs(myMag - baseMag);
+                                            const useLeft = (diff < 1.0) || (baseMag === 0 && myMag === 0);
+                                            const axisID = useLeft ? 'y' : 'y1';
+                                            const colors = ['#38bdf8', '#ef4444', '#f59e0b', '#10b981'];
+                                            const color = colors[(idx - 1) % colors.length];
+
+                                            return {
+                                                ...ds,
+                                                yAxisID: axisID,
+                                                borderColor: color,
+                                                backgroundColor: color.replace(')', ', 0.1)').replace('rgb', 'rgba'),
+                                                tension: 0.35,
+                                                pointRadius: 3,
+                                                borderDash: axisID === 'y1' ? [5, 5] : []
+                                            };
+                                        });
+
+                                        // Ensure Y1 Axis exists if used
+                                        const hasY1 = chartData.datasets.some(d => d.yAxisID === 'y1');
+                                        if (!config.options) config.options = {};
+                                        if (!config.options.scales) config.options.scales = {};
+
+                                        config.options.scales.y = {
+                                            type: 'linear', display: true, position: 'left',
+                                            grid: { color: '#f1f5f9' }
+                                        };
+                                        if (hasY1) {
+                                            config.options.scales.y1 = {
+                                                type: 'linear', display: true, position: 'right',
+                                                grid: { drawOnChartArea: false },
+                                                title: { display: true, text: 'Secondary' }
+                                            };
+                                        }
+                                    }
+                                }
+
+                                const defaultOptions = {
+                                    responsive: true,
+                                    maintainAspectRatio: false,
+                                    interaction: { mode: 'index', intersect: false },
+                                    plugins: { legend: { position: 'top', labels: { usePointStyle: true, boxWidth: 6 } } }
+                                };
+                                const finalOptions = Object.assign({}, defaultOptions, config.options || {});
+
+                                new Chart(ctx, {
+                                    type: chartType,
+                                    data: chartData,
+                                    options: finalOptions
+                                });
+
+                            }, 100);
+                        }
+                    } catch (e) {
+                        console.warn('Failed to render chart:', e);
+                    }
+                });
+            }
+
+            if (role === 'user') contentDiv.appendChild(bubble); // CRITICAL FIX: 所有用戶訊息都必須顯示
+
+            scrollToBottom();
+        }
+
+        function scrollToBottom() {
+            const container = document.getElementById('ai-report-content');
+            container.scrollTop = container.scrollHeight;
+        }
+
+        // Duplicate handleFileSelect and updateFilePreview removed
+    </script>
+</body>
+
+</html>

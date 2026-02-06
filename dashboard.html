@@ -1,0 +1,2789 @@
+﻿<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <title>分析工具</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script
+        src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
+    <script src="https://unpkg.com/@sgratzl/chartjs-chart-boxplot@4.2.4/build/index.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/styles_full.css">
+    <style>
+        /* 圖表AI助手檔案預覽樣式 */
+        #chart-file-preview {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 5px;
+            padding: 5px;
+        }
+
+        #chart-file-preview .preview-item {
+            position: relative;
+            width: 50px;
+            height: 50px;
+            border-radius: 4px;
+            border: 1px solid #d8b4fe;
+            overflow: hidden;
+            background: white;
+        }
+
+        #chart-file-preview .preview-item img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        #chart-file-preview .preview-item span {
+            font-size: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+        }
+
+        #chart-file-preview .preview-remove {
+            position: absolute;
+            top: -5px;
+            right: -5px;
+            background: #ef4444;
+            color: white;
+            border: none;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: bold;
+            line-height: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+            z-index: 10;
+        }
+
+        #chart-file-preview .preview-remove:hover {
+            background: #dc2626;
+            transform: scale(1.1);
+        }
+
+        /* 對話泡泡中的附件樣式 */
+        .bubble-attachments {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-top: 8px;
+        }
+
+        .bubble-attach-img {
+            width: 60px;
+            height: 60px;
+            object-fit: cover;
+            border-radius: 4px;
+            border: 1px solid rgba(255, 255, 255, 0.5);
+        }
+
+        .bubble-attach-file {
+            width: 60px;
+            height: 60px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+        }
+
+        /* 建模演算法選擇卡片 */
+        .algo-option-card {
+            cursor: pointer;
+            display: block;
+            position: relative;
+        }
+
+        .algo-option-card input {
+            position: absolute;
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .algo-option-content {
+            border: 1px solid #e2e8f0;
+            background: white;
+            padding: 12px 15px;
+            border-radius: 10px;
+            transition: all 0.2s;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .algo-option-card input:checked+.algo-option-content {
+            border-color: #3b82f6;
+            background: #eff6ff;
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+        }
+
+        .algo-option-card:hover .algo-option-content {
+            border-color: #cbd5e1;
+            background: #f8fafc;
+        }
+
+        .algo-option-card input:checked+.algo-option-content div:first-child {
+            color: #2563eb;
+        }
+
+        /* 訓練流程分步導航 */
+        .flow-nav-item {
+            padding: 20px 15px;
+            border-bottom: 1px solid #f1f5f9;
+            cursor: pointer;
+            transition: all 0.2s;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .flow-nav-item:hover {
+            background: #f1f5f9;
+        }
+
+        .flow-nav-item.active {
+            background: #fff;
+        }
+
+        .flow-nav-item.active::after {
+            content: '';
+            position: absolute;
+            right: -1px;
+            top: 20%;
+            height: 60%;
+            width: 4px;
+            background: #3b82f6;
+            border-radius: 4px 0 0 4px;
+        }
+
+        .flow-nav-item .step-idx {
+            font-size: 10px;
+            font-weight: 800;
+            color: #94a3b8;
+            letter-spacing: 0.5px;
+        }
+
+        .flow-nav-item .step-title {
+            font-size: 14px;
+            font-weight: 700;
+            color: #475569;
+        }
+
+        .flow-nav-item.active .step-title {
+            color: #2563eb;
+        }
+
+        /* 任務模式卡片 */
+        .mission-card {
+            cursor: pointer;
+            position: relative;
+        }
+
+        .mission-card input {
+            position: absolute;
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .mission-content {
+            border: 2px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 12px;
+            text-align: center;
+            transition: all 0.3s;
+            background: #fff;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .mission-icon {
+            font-size: 30px;
+            margin-bottom: 4px;
+        }
+
+        .mission-title {
+            font-size: 16px;
+            font-weight: 700;
+            color: #1e293b;
+        }
+
+        .mission-desc {
+            font-size: 11px;
+            color: #64748b;
+            line-height: 1.4;
+        }
+
+        .mission-card input:checked+.mission-content {
+            border-color: #3b82f6;
+            background: #f0f7ff;
+            transform: translateY(-4px);
+            box-shadow: 0 10px 15px -3px rgba(59, 130, 246, 0.2);
+        }
+
+        .mission-card:hover .mission-content {
+            border-color: #cbd5e1;
+            background: #f8fafc;
+        }
+
+        /* 超參數格點 */
+        .hyper-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .hyper-item {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .hyper-item label {
+            font-size: 12px;
+            font-weight: 600;
+            color: #64748b;
+        }
+
+        .hyper-item input,
+        .hyper-item select {
+            padding: 8px 12px;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            font-size: 13px;
+            outline: none;
+        }
+
+        .hyper-item input:focus {
+            border-color: #3b82f6;
+        }
+
+        /* --- New Accordion & Dual List --- */
+        .acc-item {
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            margin-bottom: 12px;
+            overflow: hidden;
+            background: #fff;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+        }
+
+        .acc-header {
+            background: #f8fafc;
+            padding: 12px 20px;
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            gap: 12px;
+            user-select: none;
+            transition: all 0.2s;
+        }
+
+        .acc-header:hover {
+            background: #f1f5f9;
+        }
+
+        .acc-item.completed {
+            border-color: #bbf7d0;
+        }
+
+        .acc-item.completed .acc-header {
+            background: #f0fdf4;
+        }
+
+        .status-icon {
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            background: #e2e8f0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            color: white;
+            transition: all 0.3s;
+        }
+
+        .acc-item.completed .status-icon {
+            background: #10b981;
+        }
+
+        .acc-title {
+            font-weight: 700;
+            color: #1e293b;
+            flex: 1;
+            font-size: 14px;
+        }
+
+        .acc-arrow {
+            transition: transform 0.3s;
+            font-size: 12px;
+            color: #94a3b8;
+        }
+
+        .acc-item.open .acc-arrow {
+            transform: rotate(180deg);
+        }
+
+        .acc-body {
+            display: none;
+            padding: 18px;
+            border-top: 1px solid #e2e8f0;
+            background: white;
+        }
+
+        .acc-item.open .acc-body {
+            display: block;
+        }
+
+        .dual-list-grid {
+            display: grid;
+            grid-template-columns: 1fr 50px 1fr 1.3fr;
+            grid-template-rows: minmax(0, 1fr);
+            /* Force row to fit container */
+            gap: 12px;
+            flex: 1;
+            /* Auto fill remaining vertical space */
+            min-height: 0;
+            /* Crucial for nested scrolling */
+            width: 100%;
+        }
+
+        .list-col {
+            display: flex;
+            flex-direction: column;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            background: #fff;
+            overflow: hidden;
+            height: 100%;
+            /* Fill grid cell */
+            min-height: 0;
+            /* Prevent overflow blowout */
+        }
+
+        .list-header {
+            padding: 10px 14px;
+            background: #0047ab;
+            color: white;
+            font-size: 13px;
+            font-weight: 700;
+            text-align: center;
+        }
+
+        .list-search {
+            padding: 8px;
+            border-bottom: 1px solid #f1f5f9;
+            background: #fafafa;
+        }
+
+        .list-search input {
+            width: 100%;
+            padding: 6px 12px;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            font-size: 12px;
+            outline: none;
+        }
+
+        .list-content {
+            flex: 1 1 0;
+            /* flex-grow: 1, flex-shrink: 1, flex-basis: 0 */
+            overflow-y: auto;
+            padding: 6px;
+            min-height: 0;
+            /* Prevent overflow blowout */
+        }
+
+        .list-item {
+            padding: 9px 12px;
+            margin: 3px 0;
+            border-radius: 8px;
+            font-size: 12px;
+            color: #475569;
+            cursor: pointer;
+            border: 1px solid transparent;
+            transition: all 0.2s;
+        }
+
+        .list-item:hover {
+            background: #f1f5f9;
+            color: #1e293b;
+        }
+
+        .list-item.selected {
+            background: #eff6ff !important;
+            color: #2563eb !important;
+            border: 1px solid #3b82f6 !important;
+            box-shadow: none;
+        }
+
+        .list-btns {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .move-btn {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: #fff;
+            border: 1px solid #e2e8f0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+            color: #64748b;
+        }
+
+        .move-btn:hover {
+            background: #f8fafc;
+            color: #3b82f6;
+            border-color: #3b82f6;
+        }
+
+        .preview-col {
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            background: #fff;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .algo-grid {
+            display: grid;
+            grid-template-columns: 240px 1fr;
+            gap: 20px;
+        }
+
+        /* 全域捲動條美化 - 整理側邊拉霸 */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+
+        .main-view-area {
+            padding: 15px !important;
+        }
+
+        /* --- Step 2 Sub Stepper --- */
+        .step2-sub-nav {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0;
+            margin-bottom: 20px;
+            background: #f1f5f9;
+            padding: 5px;
+            border-radius: 12px;
+            position: relative;
+        }
+
+        .step2-sub-item {
+            flex: 1;
+            padding: 10px;
+            text-align: center;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 700;
+            color: #64748b;
+            border-radius: 8px;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            z-index: 2;
+        }
+
+        .step2-sub-item.active {
+            background: #fff;
+            color: #3b82f6;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        }
+
+        .step2-sub-item .dot {
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #cbd5e1;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+        }
+
+        .step2-sub-item.active .dot {
+            background: #3b82f6;
+        }
+
+        .step2-panel {
+            display: none;
+            flex: 1;
+            flex-direction: column;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .step2-panel.active {
+            display: flex;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* --- Premium Training Config UI --- */
+        .premium-card {
+            background: #fff;
+            border: 1px solid #e2e8f0;
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .config-section-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 20px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid #f1f5f9;
+        }
+
+        .config-section-header i {
+            font-size: 18px;
+            color: #3b82f6;
+        }
+
+        .config-section-header span {
+            font-size: 14px;
+            font-weight: 800;
+            color: #1e293b;
+            letter-spacing: -0.01em;
+        }
+
+        .config-grid-3 {
+            display: grid;
+            grid-template-columns: 320px 1fr 320px;
+            gap: 20px;
+            height: 100%;
+        }
+
+        .params-well {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 16px;
+        }
+
+        .config-item {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .config-item label {
+            font-size: 11px;
+            font-weight: 700;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .config-item input {
+            padding: 10px 14px;
+            border: 1.5px solid #e2e8f0;
+            border-radius: 10px;
+            font-size: 13px;
+            font-weight: 600;
+            color: #1e293b;
+            background: #fff;
+            transition: all 0.2s;
+        }
+
+        .config-item input:focus {
+            outline: none;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1);
+        }
+
+        .config-item .hint {
+            font-size: 10px;
+            font-weight: 500;
+            color: #94a3b8;
+            margin-top: 2px;
+        }
+
+        .advice-box {
+            background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+            border-radius: 12px;
+            padding: 16px;
+            margin-top: auto;
+            border-left: 4px solid #3b82f6;
+        }
+
+        .nn-viz-container {
+            background: #fafafa;
+            border-radius: 12px;
+            border: 1px dashed #cbd5e1;
+            height: 140px;
+            margin-top: 15px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            color: #94a3b8;
+        }
+
+        /* Multi-selection styles */
+        .list-item {
+            user-select: none;
+            transition: background-color 0.1s;
+        }
+
+        .list-item.selected {
+            background-color: #3b82f6 !important;
+            color: white !important;
+            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2);
+            border: none !important;
+            margin-bottom: 0px;
+            /* Ensure no gap between selected items */
+        }
+
+        /* List Item Enhancements */
+        .list-item {
+            padding: 10px 15px;
+            border-bottom: 1px solid #f1f5f9;
+            cursor: pointer;
+            font-size: 13px;
+            color: #334155;
+            transition: all 0.1s ease;
+            position: relative;
+            background: #fff;
+            user-select: none;
+        }
+
+        .list-item:hover {
+            background-color: #f8fafc;
+            padding-left: 20px;
+            color: #2563eb;
+        }
+
+        .list-item.selected {
+            background-color: #3b82f6 !important;
+            color: white !important;
+            border-bottom-color: rgba(255, 255, 255, 0.1);
+            font-weight: 600;
+            border: none !important;
+            overflow: visible;
+        }
+
+        .list-item.selected:hover {
+            background-color: #2563eb !important;
+        }
+
+        /* Prevent gaps in selection */
+        .list-content .list-item.selected+.list-item.selected {
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        /* Move Buttons (Arrows between lists) */
+        .move-btn {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: none;
+            background: #3b82f6;
+            /* Default Blue */
+            cursor: pointer;
+            color: white;
+            transition: all 0.2s;
+            margin: 6px 0;
+            font-size: 18px;
+            box-shadow: 0 4px 10px rgba(59, 130, 246, 0.25);
+        }
+
+        .move-btn:hover {
+            transform: scale(1.1);
+            box-shadow: 0 6px 15px rgba(59, 130, 246, 0.35);
+        }
+
+        .move-btn:active {
+            transform: scale(0.95);
+        }
+
+        .move-btn.disabled {
+            background: #e5e7eb !important;
+            color: #94a3b8 !important;
+            cursor: not-allowed;
+            pointer-events: none;
+            box-shadow: none !important;
+        }
+
+        .step2-sub-item.done .dot {
+            background: #10b981 !important;
+            color: white !important;
+            border-color: #10b981 !important;
+        }
+
+        .step2-sub-item.done {
+            color: #059669 !important;
+            font-weight: 700;
+        }
+
+        /* 藍色風格的完成狀態 (專用於 STEP 03) */
+        .step2-sub-item.done-blue .dot {
+            background: #3b82f6 !important;
+            color: white !important;
+            border-color: #3b82f6 !important;
+        }
+
+        .step2-sub-item.done-blue {
+            color: #2563eb !important;
+            font-weight: 700;
+        }
+
+        /* The user-select: none was already present in the first .list-item definition,
+           so it's redundant here and was likely a copy-paste error in the instruction.
+           Keeping it as per instruction, but noting it's redundant. */
+        .draggable-chip {
+            user-select: none;
+        }
+
+        .draggable-chip.selected-chip {
+            border-color: #3b82f6 !important;
+            background-color: #eff6ff !important;
+            box-shadow: 0 0 0 2px #3b82f6 !important;
+            z-index: 10;
+        }
+
+        /* Prevent text selection during brush select */
+        .no-select {
+            user-select: none !important;
+        }
+
+        /* --- Workspace Modal & Header Styles --- */
+        .workspace-modal-content {
+            width: 650px !important;
+            padding: 0 !important;
+            overflow: hidden;
+            border-radius: 16px !important;
+        }
+
+        .modal-tabs {
+            display: flex;
+            background: #f8fafc;
+            border-bottom: 1px solid #e2e8f0;
+            padding: 0 20px;
+        }
+
+        .modal-tab {
+            padding: 15px 20px;
+            font-size: 14px;
+            font-weight: 600;
+            color: #64748b;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+        }
+
+        .modal-tab.active {
+            color: #3b82f6;
+            border-bottom-color: #3b82f6;
+            background: rgba(59, 130, 246, 0.04);
+        }
+
+        .modal-tab:hover:not(.active) {
+            color: #1e293b;
+            background: #f1f5f9;
+        }
+
+        .workspace-list {
+            max-height: 450px;
+            overflow-y: auto;
+            padding: 10px;
+        }
+
+        .workspace-item {
+            display: flex;
+            align-items: center;
+            padding: 12px 16px;
+            border-radius: 10px;
+            margin-bottom: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 1px solid transparent;
+        }
+
+        .workspace-item:hover {
+            background: #f8fafc;
+            border-color: #e2e8f0;
+        }
+
+        .workspace-item.selected {
+            background: #eff6ff;
+            border-color: #bfdbfe;
+        }
+
+        .workspace-item-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 8px;
+            background: #f1f5f9;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            margin-right: 15px;
+        }
+
+        .selected .workspace-item-icon {
+            background: #dbeafe;
+            color: #3b82f6;
+        }
+
+        .workspace-item-info {
+            flex: 1;
+        }
+
+        .workspace-item-name {
+            font-weight: 600;
+            color: #1e293b;
+            font-size: 14px;
+        }
+
+        .workspace-item-meta {
+            font-size: 11px;
+            color: #94a3b8;
+            margin-top: 2px;
+        }
+
+        /* Editable Input Style */
+        .editable-label {
+            cursor: pointer;
+            padding: 4px 8px;
+            border-radius: 6px;
+            transition: all 0.2s;
+            border: 1px solid transparent;
+        }
+
+        .editable-label:hover {
+            background: #f1f5f9;
+            border-color: #cbd5e1;
+        }
+
+        .editable-input {
+            font-weight: 700;
+            color: #3b82f6;
+            border: 1px solid #3b82f6;
+            background: #fff;
+            border-radius: 6px;
+            padding: 2px 8px;
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+
+        /* Chart Type Button Styles */
+        .chart-type-btn {
+            padding: 6px 14px;
+            background: #fff;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            color: #64748b;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+
+        .chart-type-btn:hover {
+            background: #f8fafc;
+            border-color: #cbd5e1;
+            color: #475569;
+        }
+
+        .chart-type-btn.active {
+            background: #3b82f6;
+            color: white;
+            border-color: #3b82f6;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+
+        <!-- App Content Layout -->
+        <div class="app-content">
+
+            <!-- Left Sidebar Navigation -->
+            <div class="sidebar-nav" id="sidebar">
+                <div class="sidebar-header"
+                    style="display: flex; justify-content: space-between; align-items: center; padding: 15px 18px; margin-bottom: 8px;">
+                    <div class="app-logo" onclick="toggleSidebar()" style="cursor: pointer; width: 32px; height: 32px;"
+                        title="切換選單">S</div>
+                    <button class="toggle-btn" onclick="toggleSidebar()" title="Toggle Sidebar"
+                        style="font-size: 18px; color: #64748b; padding: 6px; border-radius: 6px; transition: all 0.2s;">☰</button>
+                </div>
+
+                <div class="nav-item active" onclick="switchView('files')" id="nav-files">
+                    <span>📂</span> <span class="nav-text">檔案管理</span>
+                </div>
+                <div class="nav-item" onclick="switchView('analysis')" id="nav-analysis">
+                    <span>📈</span> <span class="nav-text">數據圖表</span>
+                </div>
+                <div class="nav-item" onclick="switchView('training')" id="nav-training">
+                    <span>🧠</span> <span class="nav-text">模型訓練</span>
+                </div>
+                <div class="nav-item" onclick="switchView('dashboard')" id="nav-dashboard">
+                    <span>📺</span> <span class="nav-text">即時看板</span>
+                </div>
+
+                <!-- User Profile Section (Moved to Bottom) -->
+                <div class="user-profile" onclick="switchUser()"
+                    style="margin-top: auto; padding: 15px; border-top: 1px solid #f1f5f9; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.2s;">
+                    <span id="current-user-id"
+                        style="font-size: 13px; font-weight: 600; color: #334155; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%;"
+                        title="點擊切換使用者">loading...</span>
+                </div>
+            </div>
+
+            <!-- Main Content Area -->
+            <div id="main-content" class="main-view-area">
+
+                <!-- VIEW 1: Dashboard -->
+                <div id="view-dashboard" style="display: none;">
+
+                    <!-- Dashboard Header (Moved from Global Header) -->
+                    <div
+                        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 2px solid #e2e8f0; background: #fff; padding: 15px; border-radius: 8px;">
+                        <div style="display: flex; align-items: center; gap: 20px;">
+                            <div id="status-text" class="status-header"
+                                style="font-size: 15px; font-weight: bold; color: #1e293b;">Initializing...</div>
+                            <div
+                                style="background: #f1f5f9; padding: 6px 12px; border-radius: 8px; display: flex; align-items: center; gap: 12px; border: 1px solid #e2e8f0;">
+                                <span
+                                    style="font-size: 13px; color: #475569; font-weight: 700; letter-spacing: 0.5px;">SIMULATOR:</span>
+
+                                <!-- 模擬檔案選擇 -->
+                                <select id="dashboard-file-select"
+                                    style="padding: 4px 8px; font-size: 13px; border-radius: 6px; border: 1px solid #cbd5e1; max-width: 220px; outline: none;">
+                                    <option value="">載入中...</option>
+                                </select>
+
+                                <!-- 模型選擇 -->
+                                <select id="dashboard-model-select"
+                                    style="padding: 4px 8px; font-size: 13px; border-radius: 6px; border: 1px solid #cbd5e1; max-width: 220px; outline: none;">
+                                    <option value="">載入中...</option>
+                                </select>
+
+                                <!-- 狀態顯示 -->
+                                <span id="simulator-status"
+                                    style="font-size: 12px; color: #64748b; font-style: italic;"></span>
+
+                                <button onclick="runFullSimulation()"
+                                    style="padding: 5px 12px; font-size: 13px; background: #6366f1; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; display: flex; align-items: center; gap: 4px; transition: background 0.2s;">
+                                    🚀 Run Simulation
+                                </button>
+                                <button id="btn-autoplay" onclick="toggleAutoPlay()" style="display: none;"></button>
+                            </div>
+                        </div>
+                        <button onclick="clearHistory()">Reset Monitor</button>
+                    </div>
+
+                    <!-- AI Agent Console -->
+                    <div id="reasoning-console">
+                        <div><span class="reasoning-label">🧠 AI DIAGNOSIS:</span> <span id="diag-text">-</span></div>
+                        <div><span class="reasoning-label">🔮 SIMULATION:</span> <span id="sim-text">-</span></div>
+                        <div><span class="reasoning-label">🔎 KEY FACTORS (SHAP):</span> <span
+                                id="factor-list">檢索中...</span></div>
+                    </div>
+
+                    <!-- Layout Controls -->
+                    <div style="display: flex; justify-content: flex-end; margin-bottom: 10px; gap: 10px;">
+                        <button class="layout-btn active" onclick="setChartLayout('single')" title="單張檢視"
+                            style="padding: 6px 12px; background: white; border: 1px solid #e2e8f0; border-radius: 6px; cursor: pointer; display: flex; align-items: center; gap: 6px; font-size: 13px; color: #64748b; transition: all 0.2s;">
+                            <span style="font-size: 14px;">⬜</span> Single
+                        </button>
+                        <button class="layout-btn" onclick="setChartLayout('side')" title="側邊列表"
+                            style="padding: 6px 12px; background: white; border: 1px solid #e2e8f0; border-radius: 6px; cursor: pointer; display: flex; align-items: center; gap: 6px; font-size: 13px; color: #64748b; transition: all 0.2s;">
+                            <span style="font-size: 14px;">📑</span> Side List
+                        </button>
+                        <button class="layout-btn" onclick="setChartLayout('quad')" title="四分割"
+                            style="padding: 6px 12px; background: white; border: 1px solid #e2e8f0; border-radius: 6px; cursor: pointer; display: flex; align-items: center; gap: 6px; font-size: 13px; color: #64748b; transition: all 0.2s;">
+                            <span style="font-size: 14px;">田</span> Quad
+                        </button>
+                    </div>
+
+                    <div id="dashboard-main-area" style="display: flex; gap: 15px; width: 100%;">
+                        <!-- Primary Chart Area -->
+                        <div id="charts-wrapper" class="layout-single" style="flex: 1; min-width: 0;"></div>
+
+                        <!-- Side Panel (Initially hidden) -->
+                        <div id="chart-side-panel"
+                            style="display: none; width: 300px; background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; height: fit-content; flex-shrink: 0; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+                            <h4
+                                style="margin: 0 0 12px 0; font-size: 14px; font-weight: 700; color: #1e293b; border-bottom: 2px solid #f1f5f9; padding-bottom: 8px; display: flex; align-items: center; gap: 8px;">
+                                📊 參數列表
+                                <span style="font-size: 11px; color: #94a3b8; font-weight: 400; margin-left: auto;">Live
+                                    Data</span>
+                            </h4>
+                            <div id="side-param-list"
+                                style="font-size: 12px; color: #64748b; max-height: 500px; overflow-y: auto;">
+                                <div style="padding: 20px; text-align: center; color: #cbd5e1; font-style: italic;">
+                                    等待數據流入...
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Reasoning Logs Section -->
+                    <div style="margin-top: 40px; display: flex; align-items: center; justify-content: space-between;">
+                        <h3 style="margin: 0; color: #1e293b;">📜 Reasoning History Logs</h3>
+                        <span style="font-size: 12px; color: #94a3b8;">顯示最近 50 筆診斷紀錄</span>
+                    </div>
+                    <div id="reasoning-logs" class="log-container">
+                        <div id="log-empty-msg" style="color: #94a3b8; text-align: center; padding: 30px;">等待即時數據流中...
+                        </div>
+                    </div>
+
+                    <!-- LLM AI Report Section (Embedded in Dashboard) -->
+                    <div class="ai-report-card" id="ai-assistant-window">
+                        <div class="ai-report-header">
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <span style="font-size: 20px;">🤖</span>
+                                <h3 style="margin: 0; color: #7e22ce; font-size: 16px;">AI 專家助手</h3>
+                            </div>
+                            <div style="display: flex; gap: 8px; align-items: center;">
+                                <button id="btn-report" onclick="generateAIReport()"
+                                    style="background: #f3e8ff; color: #7e22ce; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 12px;">
+                                    ✨ 生成報告
+                                </button>
+                                <button onclick="toggleExpand()" title="切換寬度"
+                                    style="background:none; border:none; cursor:pointer; font-size:16px; color:#94a3b8; padding: 0 4px;">↔️</button>
+                                <button onclick="openDashboardChatPopup()" title="獨立視窗 (Pop-out)"
+                                    style="background:none; border:none; cursor:pointer; font-size:16px; color:#94a3b8; padding: 0 4px;">❐</button>
+                                <button onclick="toggleAssistant()"
+                                    style="background:none; border:none; cursor:pointer; font-size:20px; color:#94a3b8; padding: 0 4px;">×</button>
+                            </div>
+                        </div>
+                        <div id="ai-report-content" class="ai-report-body">
+                            <div class="ai-bubble chat-bubble">👋 您好！我是您的製程數位專家。點擊上方按鈕，我將為您分析最近 50
+                                筆紀錄並生成深度報告。之後您可以直接在下方與我對話。</div>
+                        </div>
+                        <div id="file-preview"></div>
+                        <div class="chat-input-wrapper">
+                            <button onclick="document.getElementById('chat-file').click()"
+                                style="background: #f3e8ff; color: #7e22ce; border: 1px solid #d8b4fe; padding: 0 10px; border-radius: 8px; font-size: 18px;">📎</button>
+                            <input type="file" id="chat-file" style="display: none;" multiple
+                                accept="image/*,.csv,.txt,.log" onchange="handleFileSelect(this)">
+                            <textarea id="chat-input" placeholder="對報告有疑問？在此輸入您的問題... (或是點擊左側夾帶圖標)"
+                                onkeydown="handleChatKey(event)"></textarea>
+                            <button onclick="sendChatMessage()"
+                                style="background: #a855f7; color: white; border: none; padding: 0 20px; border-radius: 8px; cursor: pointer; font-weight: bold;">發送</button>
+                        </div>
+                    </div>
+
+                    <!-- Floating Assistant FAB (Embedded in Dashboard) -->
+                    <button class="assistant-fab" id="assistant-trigger" onclick="toggleAssistant()">
+                        <span id="fab-icon">🤖</span>
+                    </button>
+
+                </div> <!-- End VIEW 1: Dashboard -->
+
+
+
+                <!-- VIEW 2: File Manager -->
+                <div id="view-files" style="display: block;">
+                    <div class="file-manager-container">
+                        <div
+                            style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0px;">
+                            <h3 style="margin: 0; color: #1e293b; font-size: 18px;">📑 已上傳檔案列表</h3>
+                            <button class="btn-primary" onclick="openUploadModal()">
+                                <span>📤</span> 上傳新檔案
+                            </button>
+                        </div>
+
+                        <!-- Upload Modal -->
+                        <div id="uploadModal" class="modal">
+                            <div class="modal-content">
+                                <button class="close-modal" onclick="closeUploadModal()">&times;</button>
+                                <h3 style="margin-top: 0; margin-bottom: 20px; color: #1e293b;">上傳檔案</h3>
+
+                                <div class="upload-area" id="upload-dropzone"
+                                    onclick="document.getElementById('file-input-main').click()">
+                                    <div style="font-size: 40px; margin-bottom: 10px;">☁️</div>
+                                    <div style="font-size: 18px; font-weight: bold;">點擊或拖曳檔案至此處上傳</div>
+                                    <div style="font-size: 14px; margin-top: 5px;">僅支援 CSV, XML 格式</div>
+                                    <input type="file" id="file-input-main" style="display: none;" accept=".csv,.xml"
+                                        onchange="handleMainFileUpload(this)">
+                                </div>
+                                <div id="upload-status"
+                                    style="margin-bottom: 10px; font-weight: bold; text-align: center;"></div>
+                                <div style="text-align: right;">
+                                    <button onclick="closeUploadModal()"
+                                        style="padding: 8px 16px; background: #e2e8f0; border: none; border-radius: 6px; cursor: pointer; color: #475569; font-weight: 600;">取消</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <table class="file-table">
+                            <thead>
+                                <tr>
+                                    <th>名稱</th>
+                                    <th>大小</th>
+                                    <th>上傳時間</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="file-list-body">
+                                <tr>
+                                    <td colspan="4" style="text-align: center; padding: 30px;">載入中...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+
+                        <!-- 檔案列表分頁控制區 -->
+                        <div id="file-list-pagination"
+                            style="margin-top: 20px; display: flex; justify-content: center; gap: 8px;">
+                        </div>
+
+                        <!-- View Data Modal -->
+                        <div id="viewDataModal" class="modal">
+                            <div class="modal-content" style="max-width: 800px;">
+                                <button class="close-modal" onclick="closeViewModal()">&times;</button>
+                                <h3 id="viewDataTitle" style="margin-top: 0; margin-bottom: 20px; color: #1e293b;">預覽檔案
+                                </h3>
+                                <pre id="viewDataContent"
+                                    style="background: #f8fafc; padding: 15px; border-radius: 8px; overflow: auto; max-height: 400px; border: 1px solid #e2e8f0; font-family: monospace; font-size: 13px;"></pre>
+                                <div style="text-align: right; margin-top: 15px;">
+                                    <button onclick="closeViewModal()" class="btn-primary">關閉</button>
+                                </div>
+                            </div>
+                        </div>
+
+
+
+                    </div>
+                </div>
+
+                <!-- File Selector Modal (Moved Outside) -->
+                <div id="fileSelectorModal" class="modal">
+                    <div class="modal-content" style="width: 400px; border-radius: 12px;">
+                        <div
+                            style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #f1f5f9;">
+                            <h3 style="margin: 0; color: #1e293b; font-size: 16px;">數據納編中心 (Data Center)</h3>
+                            <button class="close-modal" onclick="closeFileSelector()">&times;</button>
+                        </div>
+                        <div id="file-selector-list"
+                            style="max-height: 400px; overflow-y: auto; text-align: left; margin-bottom: 20px;">
+                            <!-- Files inserted here -->
+                        </div>
+                        <div style="text-align: right; padding-top: 10px; border-top: 1px solid #f1f5f9;">
+                            <button id="btn-confirm-file" onclick="confirmFileSelection()" disabled
+                                style="background: #3b82f6; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: not-allowed; font-weight: 600; opacity: 0.5; transition: all 0.2s;">
+                                確認選擇
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Unified Context Selector Modal (The Selection Hub) -->
+                <div id="trainingContextModal" class="modal">
+                    <div class="modal-content workspace-modal-content">
+                        <div
+                            style="display: flex; justify-content: space-between; align-items: center; padding: 20px; border-bottom: 1px solid #e2e8f0;">
+                            <h3 style="margin: 0; color: #1e293b; font-size: 18px;">資料納編中心 (Universal Loader)</h3>
+                            <button class="close-modal" onclick="closeTrainingContextModal()"
+                                style="position: static;">&times;</button>
+                        </div>
+
+                        <!-- Tabs -->
+                        <div class="modal-tabs">
+                            <div class="modal-tab active" id="tab-context-files" onclick="switchContextTab('files')">📂
+                                原始數據</div>
+                            <div class="modal-tab" id="tab-context-models" onclick="switchContextTab('models')">🧠 既有模型
+                            </div>
+                            <div class="modal-tab" id="tab-context-drafts" onclick="switchContextTab('drafts')">💾 暫存草稿
+                            </div>
+                        </div>
+
+                        <!-- Content List -->
+                        <div id="context-list-area" class="workspace-list custom-scroll">
+                            <!-- Populated via JS -->
+                            <div style="text-align: center; padding: 40px; color: #94a3b8;">載入中...</div>
+                        </div>
+
+                        <!-- Enhanced Footer -->
+                        <div id="workspace-modal-footer"
+                            style="padding: 15px 20px; border-top: 1px solid #e2e8f0; background: #fafafa; display: flex; justify-content: space-between; align-items: center;">
+                            <div class="selection-detail">
+                                <span
+                                    style="font-size: 11px; color: #94a3b8; display: block; margin-bottom: 2px;">當前選擇</span>
+                                <div id="context-selection-hint"
+                                    style="font-size: 13px; font-weight: 700; color: #1e293b;">請選擇來源以載入...</div>
+                            </div>
+
+                            <div id="context-action-group" style="display: flex; gap: 10px;">
+                                <!-- 預設單一按鈕 (檔案模式) -->
+                                <button id="btn-confirm-context" onclick="confirmContextSelection('full')" disabled
+                                    style="background: #3b82f6; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: not-allowed; font-weight: 700; opacity: 0.5; transition: all 0.2s; display: flex; align-items: center; gap: 6px;">
+                                    <span>納編並載入</span>
+                                </button>
+
+                                <!-- 雙模態按鈕 (草稿/模型模式 - 預設隱藏) -->
+                                <button id="btn-load-config-only" onclick="confirmContextSelection('config')"
+                                    style="display: none; background: #fff; color: #3b82f6; border: 1.5px solid #3b82f6; padding: 6px 14px; border-radius: 8px; cursor: pointer; font-weight: 700; transition: all 0.2s; flex-direction: column; align-items: center; justify-content: center; line-height: 1.2;">
+                                    <span>僅套用設定</span>
+                                    <small style="font-size: 10px; opacity: 0.7; font-weight: 400;">保留目前數據</small>
+                                </button>
+                                <button id="btn-load-full" onclick="confirmContextSelection('full')"
+                                    style="display: none; background: #3b82f6; color: white; border: none; padding: 6px 14px; border-radius: 8px; cursor: pointer; font-weight: 700; transition: all 0.2s; flex-direction: column; align-items: center; justify-content: center; line-height: 1.2;">
+                                    <span>數據與設定並更</span>
+                                    <small style="font-size: 10px; opacity: 0.8; font-weight: 400;">還原草稿數據檔案</small>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- VIEW 3: Data Analysis -->
+                <div id="view-analysis" style="display: none;">
+                    <div class="file-manager-container"
+                        style="padding: 15px; box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1); background: #fff; border-radius: 12px; box-sizing: border-box;">
+                        <!-- Accurate Header matching screenshot 1297 -->
+                        <div
+                            style="display: flex; align-items: center; padding: 10px 0; border-bottom: 1px solid #e2e8f0; margin-bottom: 15px; width: 100%; justify-content: flex-start;">
+                            <span style="font-size: 18px; margin-right: 12px;">📈</span>
+                            <span
+                                style="color: #1e293b; font-size: 16px; font-weight: bold; margin-right: 15px;">數據圖表</span>
+                            <div style="font-size: 14px; color: #94a3b8;">
+                                目前檔案 : <span id="analysis-filename"
+                                    style="color: #2563eb; font-weight: bold; cursor: pointer; text-decoration-line: underline; text-decoration-thickness: 1px; text-underline-offset: 4px;"
+                                    onclick="openFileSelector()" title="點擊切換檔案">未選擇</span>
+                                <span id="analysis-header-count"
+                                    style="margin-left: 10px; color: #64748b; font-size: 12px;"></span>
+                            </div>
+                            <div style="flex: 1;"></div> <!-- Spacer -->
+                            <div class="view-toggles"
+                                style="display: flex; background: #f1f5f9; padding: 4px; border-radius: 8px;">
+                                <button id="btn-mode-table" onclick="switchAnalysisMode('table')"
+                                    style="padding: 6px 12px; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; background: #fff; color: #3b82f6; box-shadow: 0 1px 2px rgba(0,0,0,0.1);">表格數據</button>
+                                <button id="btn-mode-chart" onclick="switchAnalysisMode('chart')"
+                                    style="padding: 6px 12px; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; background: transparent; color: #64748b;">繪圖分析</button>
+                            </div>
+                        </div>
+
+                        <!-- TABLE VIEW CONTAINER -->
+                        <div id="analysis-table-view">
+
+                            <div id="filter-bar-area" class="filter-bar" style="overflow: visible;">
+                                <div class="filter-actions-left">
+                                    <!-- Pills will be inserted HERE by JS -->
+                                    <div class="filter-menu-container">
+                                        <button class="add-filter-btn" onclick="toggleFilterMenu(event)">
+                                            <span>+</span> 篩選條件
+                                        </button>
+                                        <div id="filter-menu" class="filter-menu">
+                                            <div>
+                                                <label>選擇欄位</label>
+                                                <select id="filter-column-select"></select>
+                                            </div>
+                                            <div>
+                                                <label>搜尋關鍵字</label>
+                                                <input type="text" id="filter-value-input" placeholder="輸入文字..."
+                                                    onkeyup="handleFilterKey(event)">
+                                            </div>
+                                            <div style="margin-top: 10px; display: flex; align-items: center;">
+                                                <input type="checkbox" id="filter-not-empty-check"
+                                                    style="width: 16px; height: 16px; cursor: pointer; accent-color: #3b82f6;">
+                                                <label for="filter-not-empty-check"
+                                                    style="font-size: 14px; color: #334155; margin-left: 8px; cursor: pointer; user-select: none;">排除空白值
+                                                    (Exclude Empty)</label>
+                                            </div>
+                                            <div class="filter-menu-actions">
+                                                <button class="filter-menu-btn btn-cancel-filter"
+                                                    onclick="toggleFilterMenu(event)">取消</button>
+                                                <button class="filter-menu-btn btn-add-filter"
+                                                    onclick="addFilterFromMenu()">新增篩選</button>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Reset moved here -->
+                                    <span class="reset-filter-btn" onclick="resetAllFilters()"
+                                        style="font-size: 13px; color: #94a3b8; cursor: pointer; text-decoration: underline; margin-left: 15px;">重設</span>
+
+                                    <!-- Count display removed/hidden as requested -->
+                                    <span id="filter-bar-count-display" style="display: none;"></span>
+                                </div>
+
+                                <div class="filter-actions-right">
+                                    <button onclick="quickAnalysis()" class="add-filter-btn"
+                                        style="background: #3b82f6; color: white; border: none; font-size: 12px; padding: 6px 12px; margin-right: 10px;">
+                                        ⚡ 空值分析
+                                    </button>
+                                    <button onclick="saveFilteredData()" class="add-filter-btn"
+                                        style="background: #10b981; color: white; border: none; font-size: 12px; padding: 6px 12px;">
+                                        📦 匯出至檔案管理
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Column Picker Modal Structure -->
+                            <div id="col-picker-modal" class="col-picker-modal">
+                                <div class="col-picker-content">
+                                    <div class="col-picker-header">
+                                        <h3 style="margin: 0; color: #1e293b;">⚙️ 欄位顯示控制</h3>
+                                        <div style="display: flex; gap: 15px;">
+                                            <input type="text" id="col-search-input" placeholder="搜尋欄位名稱..."
+                                                style="padding: 6px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;"
+                                                onkeyup="filterColumnList()">
+                                            <button onclick="closeColumnPicker()"
+                                                style="background:none; border:none; font-size: 20px; cursor:pointer; color: #94a3b8;">&times;</button>
+                                        </div>
+                                    </div>
+                                    <div style="margin-top: 10px;">
+                                        <button class="btn-page" onclick="toggleAllColumns(true)">全選</button>
+                                        <button class="btn-page" onclick="toggleAllColumns(false)">全不選</button>
+                                        <span id="col-select-count"
+                                            style="margin-left: 10px; font-size: 13px; color: #64748b;"></span>
+                                    </div>
+                                    <div id="col-picker-list" class="col-picker-list">
+                                        <!-- Populated via JS -->
+                                    </div>
+                                    <div class="col-picker-footer">
+                                        <button class="btn-page" onclick="closeColumnPicker()"
+                                            style="background: #94a3b8;">取消</button>
+                                        <button class="btn-page" onclick="applyColumnVisibility()"
+                                            style="background: #3b82f6;">套用修改</button>
+                                    </div>
+                                </div>
+                            </div>
+
+
+                            <div id="analysis-content" style="width: 100%; margin: 0; text-align: left;">
+                                <!-- Table will be rendered here -->
+                                <div style="text-align: center; color: #94a3b8; padding: 40px;">
+                                    請從檔案列表中選擇檔案進行分析...
+                                </div>
+                            </div>
+                            <div id="analysis-pagination-container"
+                                style="margin-top: 20px; width: 100%; text-align: center;">
+                            </div>
+                        </div> <!-- End Table View -->
+
+                        <!-- CHART VIEW CONTAINER -->
+                        <div id="analysis-chart-view"
+                            style="display: none; height: calc(100vh - 200px); flex-direction: row; background: #fff;">
+
+                            <!-- LEFT SIDEBAR: Columns Source -->
+                            <div
+                                style="width: 260px; border-right: 1px solid #e2e8f0; display: flex; flex-direction: column; background: #f8fafc;">
+                                <div style="padding: 15px; border-bottom: 1px solid #e2e8f0; background: #fff;">
+                                    <div
+                                        style="font-weight: bold; color: #1e293b; margin-bottom: 10px; font-size: 14px;">
+                                        可用欄位</div>
+                                    <input type="text" placeholder="搜尋欄位..."
+                                        style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; margin-bottom: 12px;"
+                                        onkeyup="filterChartColumns(this.value)">
+
+                                    <div id="adv-selection-container">
+                                        <button onclick="openAdvancedModal()" class="btn-adv-selection">
+                                            <span>🔍</span> 進階挑選 (分析影響力)
+                                        </button>
+                                    </div>
+                                </div>
+                                <div id="chart-column-source"
+                                    style="flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 8px;">
+                                    <!-- Chips inserted here vertically -->
+                                </div>
+
+
+
+                                <div
+                                    style="padding: 10px; font-size: 12px; color: #64748b; text-align: center; border-top: 1px solid #e2e8f0; background: #f8fafc;">
+                                    拖拽欄位至軸或分選區
+                                </div>
+                            </div>
+
+                            <!-- CENTER: Main Chart Layout -->
+                            <div style="flex: 1; display: flex; flex-direction: column; min-width: 0;">
+                                <!-- Chart Toolbar (Added) -->
+                                <div
+                                    style="display: flex; gap: 10px; padding: 10px 20px; border-bottom: 1px solid #f1f5f9; background: #fff; align-items: center;">
+                                    <span
+                                        style="font-size: 13px; font-weight: 600; color: #64748b; margin-right: 5px;">圖表類型:</span>
+
+                                    <button class="chart-type-btn active" id="btn-chart-scatter"
+                                        onclick="setChartType('scatter')">
+                                        散布圖
+                                    </button>
+                                    <button class="chart-type-btn" id="btn-chart-line" onclick="setChartType('line')">
+                                        折線圖
+                                    </button>
+                                    <button class="chart-type-btn" id="btn-chart-boxplot"
+                                        onclick="setChartType('boxplot')">
+                                        盒鬚圖
+                                    </button>
+                                    <div style="flex: 1;"></div>
+                                    <button id="btn-selection-mode" class="add-filter-btn"
+                                        onclick="toggleSelectionMode()"
+                                        style="background: #fff; color: #475569; border: 1px solid #cbd5e1; font-size: 12px; padding: 6px 12px; margin-right: 10px;">
+                                        🖱️ 框選模式: 關閉
+                                    </button>
+                                    <button class="add-filter-btn" onclick="calculateCorrelation()"
+                                        style="background: #fff; color: #475569; border: 1px solid #cbd5e1; font-size: 12px; padding: 6px 12px;">
+                                        📈 相關係數分析
+                                    </button>
+                                    <div id="correlation-result"
+                                        style="font-size: 13px; color: #1e293b; margin-left: 15px; display: flex; flex-direction: column; align-items: flex-start; border-left: 2px solid #e2e8f0; padding-left: 15px;">
+                                    </div>
+                                </div>
+
+                                <div style="flex: 1; display: flex; align-items: stretch; padding: 20px 20px 0 20px;">
+                                    <!-- Left Y-Axis Dropzone -->
+                                    <div
+                                        style="width: 50px; display: flex; flex-direction: column; align-items: center; justify-content: center; margin-right: 10px;">
+                                        <!-- Removed Y Axis label -->
+                                        <div id="drop-y" class="axis-dropzone vertical" ondragover="allowDrop(event)"
+                                            ondragleave="handleDragLeave(event)" ondrop="handleDrop(event, 'y')"
+                                            style="width: 100%; height: 100%;">
+                                            <span class="placeholder" style="writing-mode: vertical-rl;">拖曳至此</span>
+                                        </div>
+                                    </div>
+
+                                    <!-- Chart Canvas Area -->
+                                    <div
+                                        style="flex: 1; position: relative; border: 1px solid #f1f5f9; border-radius: 8px; padding: 10px; box-shadow: inset 0 0 10px #f8fafc; overflow: hidden;">
+                                        <canvas id="analysis-chart-canvas"></canvas>
+                                        <div id="selection-box"
+                                            style="position: absolute; border: 2px solid #2563eb; background: rgba(37, 99, 235, 0.15); pointer-events: none; display: none; z-index: 100; box-shadow: 0 0 8px rgba(37, 99, 235, 0.3);">
+                                        </div>
+                                        <div id="chart-info-overlay"
+                                            style="position: absolute; top: 10px; right: 10px; font-size: 12px; color: #64748b; background: rgba(255,255,255,0.8); padding: 5px 10px; border-radius: 4px;">
+                                            尚未繪圖
+                                        </div>
+                                    </div>
+
+                                    <!-- Selection Details Modal (New Popup) -->
+                                    <!-- Mini Floating Toolbar (Simplified) -->
+                                    <div id="selection-modal"
+                                        style="display: none; position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 10000; pointer-events: auto; align-items: center; justify-content: center;">
+                                        <div
+                                            style="background: #fff; display: flex; align-items: center; gap: 15px; padding: 10px 20px; border-radius: 50px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); border: 1px solid #7c3aed;">
+                                            <div id="selection-count-text"
+                                                style="font-size: 14px; font-weight: 600; color: #1e293b; white-space: nowrap;">
+                                                已選取 0 筆</div>
+
+                                            <div
+                                                style="display: flex; gap: 8px; border-left: 1px solid #e2e8f0; padding-left: 15px;">
+                                                <button class="add-filter-btn" onclick="applySelectionAsFilter('keep')"
+                                                    style="padding: 6px 15px; font-size: 13px; background: #16a34a; color: #fff; border: none; border-radius: 20px; cursor: pointer;">保留</button>
+                                                <button class="add-filter-btn"
+                                                    onclick="applySelectionAsFilter('exclude')"
+                                                    style="padding: 6px 15px; font-size: 13px; background: #dc2626; color: #fff; border: none; border-radius: 20px; cursor: pointer;">排除</button>
+                                                <button onclick="clearChartSelection()"
+                                                    style="background: #f1f5f9; border: none; width: 28px; height: 28px; border-radius: 50%; color: #64748b; cursor: pointer; font-size: 18px; display: flex; align-items: center; justify-content: center;">&times;</button>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- NEW: Advanced Parameter Selection Modal (Refined UI) -->
+                                    <div id="advanced-param-modal" class="modal">
+                                        <div class="modal-content"
+                                            style="max-width: 480px; padding: 0; border: none; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); overflow: hidden;">
+
+                                            <!-- Header -->
+                                            <div
+                                                style="background: linear-gradient(to right, #f8fafc, #fff); padding: 20px 25px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
+                                                <div>
+                                                    <h3
+                                                        style="margin: 0; color: #0f172a; font-size: 18px; display: flex; align-items: center; gap: 8px;">
+                                                        進階參數挑選
+                                                    </h3>
+                                                    <p style="margin: 5px 0 0 0; font-size: 13px; color: #64748b;">
+                                                        設定目標與分析方式，AI 將為您計算影響力排名</p>
+                                                </div>
+                                                <button class="close-modal" onclick="closeAdvancedModal()"
+                                                    style="position: static; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 8px; transition: background 0.2s; font-size: 20px; color: #94a3b8;">&times;</button>
+                                            </div>
+
+                                            <div style="padding: 25px;">
+                                                <!-- Step 1 -->
+                                                <div style="margin-bottom: 25px;">
+                                                    <label
+                                                        style="display: block; margin-bottom: 10px; font-weight: 600; font-size: 14px; color: #334155; display: flex; justify-content: space-between;">
+                                                        <span>1. 選擇觀測對象 (Target)</span>
+                                                        <span
+                                                            style="font-size: 11px; color: #a855f7; background: #faf5ff; padding: 2px 8px; border-radius: 10px;">必填</span>
+                                                    </label>
+                                                    <div style="position: relative;">
+                                                        <select id="adv-target-select"
+                                                            style="width: 100%; padding: 12px 15px; border-radius: 8px; border: 1px solid #cbd5e1; background: #fff; font-size: 14px; outline: none; transition: border 0.2s; appearance: none; cursor: pointer;">
+                                                        </select>
+                                                        <div
+                                                            style="position: absolute; right: 15px; top: 50%; transform: translateY(-50%); pointer-events: none; color: #64748b;">
+                                                            ▼</div>
+                                                    </div>
+                                                </div>
+
+                                                <!-- Step 2 -->
+                                                <div style="margin-bottom: 25px;">
+                                                    <label
+                                                        style="display: block; margin-bottom: 12px; font-weight: 600; font-size: 14px; color: #334155;">2.
+                                                        選擇分析演算法</label>
+                                                    <div
+                                                        style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                                                        <!-- Card 1 -->
+                                                        <label class="algo-card">
+                                                            <input type="radio" name="adv-algo" value="xgboost" checked>
+                                                            <div class="algo-content">
+                                                                <div class="algo-info">
+                                                                    <div class="algo-title">XGBoost (SHAP)</div>
+                                                                    <div class="algo-desc">適合非線性關係，精準度高但較耗時</div>
+                                                                </div>
+                                                                <div class="check-circle"></div>
+                                                            </div>
+                                                        </label>
+                                                        <!-- Card 2 -->
+                                                        <label class="algo-card">
+                                                            <input type="radio" name="adv-algo" value="correlation">
+                                                            <div class="algo-content">
+                                                                <div class="algo-info">
+                                                                    <div class="algo-title">相關係數 (Abs)</div>
+                                                                    <div class="algo-desc">適合線性關係，運算速度極快</div>
+                                                                </div>
+                                                                <div class="check-circle"></div>
+                                                            </div>
+                                                        </label>
+                                                    </div>
+                                                </div>
+
+                                                <!-- Status -->
+                                                <div id="adv-status"
+                                                    style="margin-bottom: 20px; min-height: 24px; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 500; border-radius: 6px;">
+                                                </div>
+
+                                                <!-- Actions -->
+                                                <div style="display: flex; gap: 15px;">
+                                                    <button onclick="closeAdvancedModal()"
+                                                        style="flex: 1; padding: 12px; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; color: #64748b; font-weight: 600; cursor: pointer; transition: all 0.2s;">
+                                                        取消
+                                                    </button>
+                                                    <button onclick="runAdvancedAnalysis()" class="btn-primary"
+                                                        style="flex: 2; padding: 12px; background: linear-gradient(135deg, #7e22ce 0%, #9333ea 100%); border: none; border-radius: 10px; color: white; font-weight: 600; cursor: pointer; box-shadow: 0 4px 6px -1px rgba(126, 34, 206, 0.3); transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 8px;">
+                                                        <span id="adv-btn-text">開始智慧分析</span>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Right Y-Axis Dropzone -->
+                                    <div
+                                        style="width: 50px; display: flex; flex-direction: column; align-items: center; justify-content: center; margin-left: 10px;">
+                                        <!-- Removed Y Axis label -->
+                                        <div id="drop-y2" class="axis-dropzone vertical" ondragover="allowDrop(event)"
+                                            ondragleave="handleDragLeave(event)" ondrop="handleDrop(event, 'y2')"
+                                            style="width: 100%; height: 100%;">
+                                            <span class="placeholder" style="writing-mode: vertical-rl;">(選填)</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- X-Axis Dropzone -->
+                                <div
+                                    style="height: 60px; display: flex; align-items: center; justify-content: center; padding: 10px;">
+                                    <div
+                                        style="font-size: 12px; color: #94a3b8; font-weight: bold; margin-right: 10px;">
+                                        X 軸:</div>
+                                    <div id="drop-x" class="axis-dropzone horizontal" ondragover="allowDrop(event)"
+                                        ondragleave="handleDragLeave(event)" ondrop="handleDrop(event, 'x')"
+                                        style="width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;">
+                                        <span class="placeholder">拖曳至此</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Chart AI Assistant (精美版本，與原版風格一致) -->
+                    <div class="ai-report-card" id="chart-ai-assistant-window" style="display: none;">
+                        <div class="ai-report-header">
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <div
+                                    style="width: 32px; height: 32px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 18px; box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);">
+                                    📊
+                                </div>
+                                <h3
+                                    style="margin: 0; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; font-size: 16px; font-weight: 600;">
+                                    圖表 AI 專家助手</h3>
+                            </div>
+                            <div style="display: flex; gap: 8px; align-items: center;">
+                                <button id="btn-chart-report" onclick="generateChartAIReport()"
+                                    style="background: linear-gradient(135deg, #a78bfa 0%, #8b5cf6 100%); color: white; border: none; padding: 7px 14px; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 12px; box-shadow: 0 2px 6px rgba(139, 92, 246, 0.3); transition: all 0.2s;">
+                                    ✨ 生成報告
+                                </button>
+                                <button onclick="toggleChartExpand()" title="切換寬度"
+                                    style="background:none; border:none; cursor:pointer; font-size:16px; color:#94a3b8; padding: 0 4px;">↔️</button>
+                                <button onclick="openChartChatPopup()" title="獨立視窗 (Pop-out)"
+                                    style="background:none; border:none; cursor:pointer; font-size:16px; color:#94a3b8; padding: 0 4px;">❐</button>
+                                <button onclick="toggleChartAssistant()"
+                                    style="background:none; border:none; cursor:pointer; font-size:20px; color:#94a3b8; padding: 0 4px;">×</button>
+                            </div>
+                        </div>
+                        <div id="chart-ai-report-content" class="ai-report-body"
+                            style="background: linear-gradient(to bottom, #faf5ff 0%, #f5f3ff 100%);">
+                            <div class="ai-bubble chat-bubble"
+                                style="background: white; border-left: 4px solid #a78bfa; box-shadow: 0 2px 8px rgba(167, 139, 250, 0.15);">
+                                👋 <strong>您好！</strong>我是您的圖表分析專家。點擊上方按鈕，我將根據您最近的圖表分析記錄生成深度報告。您也可以直接與我對話，詢問關於圖表的任何問題。
+                            </div>
+                        </div>
+                        <!-- 檔案預覽區（在輸入框上方）-->
+                        <div id="chart-file-preview" style="display: none;"></div>
+                        <div class="chat-input-wrapper"
+                            style="background: linear-gradient(to top, #f8f9fa 0%, #ffffff 100%); border-top: 1px solid #e9ecef; padding: 15px; min-height: 80px;">
+                            <button onclick="document.getElementById('chart-chat-file').click()" title="附加檔案"
+                                style="background: linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%); color: #7c3aed; border: 1.5px solid #c4b5fd; padding: 10px 14px; border-radius: 10px; font-size: 18px; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 3px rgba(124, 58, 237, 0.1);">
+                                📎
+                            </button>
+                            <input type="file" id="chart-chat-file" style="display: none;" multiple
+                                accept="image/*,.csv,.txt,.log" onchange="handleChartFileSelect(this)">
+                            <textarea id="chart-chat-input" placeholder="對報告有疑問？在此輸入您的問題... (或是點擊左側夾帶圖標)"
+                                onkeydown="handleChartChatKey(event)"
+                                style="flex: 1; border: 1.5px solid #e9ecef; border-radius: 10px; padding: 12px 15px; font-size: 14px; resize: none; outline: none; transition: all 0.2s; min-height: 50px; line-height: 1.5;"></textarea>
+                            <button onclick="sendChartChatMessage()" title="發送訊息"
+                                style="background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); color: white; border: none; padding: 12px 24px; border-radius: 10px; cursor: pointer; font-weight: 600; font-size: 14px; box-shadow: 0 2px 8px rgba(124, 58, 237, 0.3); transition: all 0.2s;">
+                                發送
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Floating Chart Assistant FAB (精美版) -->
+                    <button class="assistant-fab" id="chart-assistant-trigger" onclick="toggleChartAssistant()"
+                        style="display: none; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);">
+                        <span id="chart-fab-icon" style="font-size: 24px;">📊</span>
+                    </button>
+
+                </div>
+
+                <!-- VIEW 4: Model Training -->
+                <div id="view-training" style="display: none;">
+                    <!-- Hidden Mission Type Selector for JS Compatibility -->
+                    <div style="display: none;">
+                        <input type="radio" name="mission-type" value="supervised" checked>
+                        <input type="radio" name="mission-type" value="rl">
+                    </div>
+                    <!-- Main Header (Level 1) - Slimmer for better vertical space -->
+                    <div
+                        style="display: flex; align-items: center; gap: 35px; margin-bottom: 4px; padding: 6px 20px; background: #fff; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
+                        <h2 style="margin: 0; color: #1e293b; font-size: 16px; font-weight: 700;">模型控制中心</h2>
+
+                        <!-- Main Tab Buttons (Closer to Title) -->
+                        <div style="display: flex; gap: 12px;">
+                            <button id="tab-train-main-build" onclick="switchTrainingMainTab('build')"
+                                style="padding: 6px 18px; border: none; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; background: #3b82f6; color: white; box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3); transition: all 0.2s;">
+                                建立模型
+                            </button>
+                            <button id="tab-train-main-registry" onclick="switchTrainingMainTab('registry')"
+                                style="padding: 6px 18px; border: none; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; background: #10b981; color: white; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.2); transition: all 0.2s;">
+                                模型庫管理
+                            </button>
+                        </div>
+                    </div>
+
+
+                    <!-- Main Tab Content: Build & Report -->
+                    <div id="training-main-build-content" style="padding: 0;">
+                        <!-- Unified White Card Container -->
+                        <div
+                            style="background: #fff; border-radius: 12px; padding: 6px 15px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+
+                            <!-- Card Header Row (Tabs & Status) -->
+                            <div
+                                style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; border-bottom: 1px solid #f1f5f9; padding-bottom: 6px;">
+                                <div style="display: flex; align-items: center; gap: 20px;">
+                                    <h3 id="training-view-title"
+                                        style="margin: 0; font-size: 16px; color: #1e293b; font-weight: 700;">配置訓練參數
+                                    </h3>
+
+                                    <div
+                                        style="font-size: 13px; color: #64748b; background: #f8fafc; padding: 5px 14px; border-radius: 8px; border: 1px solid #f1f5f9; display: flex; align-items: center; gap: 8px;">
+                                        <span style="color: #94a3b8;">模型名稱:</span>
+                                        <div id="model-name-container" style="display: flex; align-items: center;">
+                                            <span id="training-model-name-label" class="editable-label"
+                                                onclick="makeModelNameEditable()">未命名模型</span>
+                                            <input type="text" id="training-model-name-input" class="editable-input"
+                                                style="display: none;" onblur="finishModelNameEdit()"
+                                                onkeydown="if(event.key === 'Enter') finishModelNameEdit()">
+                                        </div>
+                                    </div>
+
+                                    <div
+                                        style="font-size: 13px; color: #64748b; background: #f8fafc; padding: 5px 14px; border-radius: 8px; border: 1px solid #f1f5f9; display: flex; align-items: center; gap: 8px;">
+                                        <span style="color: #94a3b8;">數據來源:</span>
+                                        <div id="training-context-display" onclick="openTrainingContextModal()"
+                                            style="display: flex; align-items: center; gap: 6px; cursor: pointer; color: #3b82f6; font-weight: 700; transition: opacity 0.2s;">
+                                            <span id="context-icon">📂</span>
+                                            <span id="training-active-file"
+                                                style="text-decoration: underline; text-underline-offset: 3px;">未選擇</span>
+                                            <span style="font-size: 10px; color: #94a3b8;">▾</span>
+                                        </div>
+                                        <button id="btn-save-draft" onclick="saveCurrentTrainingDraft()"
+                                            style="margin-left: 8px; padding: 4px 12px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer; background: #fff; color: #94a3b8; transition: all 0.2s;"
+                                            title="將目前的所有配置暫存為草稿">💾 暫存</button>
+                                    </div>
+                                </div>
+
+                                <!-- Top Right: Sub Tabs -->
+                                <div
+                                    style="display: flex; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; background: #fff;">
+                                    <button id="tab-train-sub-config" onclick="switchTrainingSubTab('config')"
+                                        style="padding: 10px 22px; border: none; font-size: 13px; font-weight: 600; cursor: pointer; background: #f8fafc; color: #3b82f6; border-right: 1px solid #e2e8f0; transition: all 0.2s;">建模配置</button>
+                                    <button id="tab-train-sub-report" onclick="switchTrainingSubTab('report')"
+                                        style="padding: 10px 22px; border: none; font-size: 13px; font-weight: 600; cursor: pointer; background: #fff; color: #64748b; border-right: 1px solid #e2e8f0; transition: all 0.2s;">訓練報告</button>
+                                </div>
+                            </div>
+
+                            <!-- Sub Tab Content: Config Form (Flow Stepper) -->
+                            <div id="training-sub-config-content" style="padding: 0;">
+                                <div
+                                    style="display: flex; gap: 0; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; height: clamp(450px, 75vh, 950px); margin-top: 10px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+
+                                    <!-- Sidebar Step Navigation -->
+                                    <div
+                                        style="width: 200px; background: #f8fafc; border-right: 1px solid #e2e8f0; display: flex; flex-direction: column;">
+                                        <div id="train-step-nav-1" class="flow-nav-item active"
+                                            onclick="switchTrainingStep(1)">
+                                            <span class="step-idx">STEP 01</span>
+                                            <span class="step-title">任務標的</span>
+                                        </div>
+                                        <div id="train-step-nav-2" class="flow-nav-item"
+                                            onclick="switchTrainingStep(2)">
+                                            <span class="step-idx">STEP 02</span>
+                                            <span class="step-title">最佳策略</span>
+                                        </div>
+                                        <div id="train-step-nav-3" class="flow-nav-item"
+                                            onclick="switchTrainingStep(3)">
+                                            <span class="step-idx">STEP 03</span>
+                                            <span class="step-title">預測配置</span>
+                                        </div>
+
+                                        <!-- Spacer to push btn to bottom -->
+                                        <div style="flex: 1;"></div>
+
+                                        <div style="padding: 15px; border-top: 1px solid #e2e8f0;">
+                                            <button id="final-train-btn" disabled onclick="startModelTraining()"
+                                                style="width: 100%; padding: 12px; border-radius: 12px; border: none; background: #cbd5e1; color: #fff; font-size: 15px; font-weight: 700; cursor: not-allowed; transition: all 0.3s; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); display: flex; align-items: center; justify-content: center; gap: 8px; opacity: 0.7;">
+                                                模型建立
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <!-- Step Content Panels -->
+                                    <div
+                                        style="flex: 1; padding: 15px; display: flex; flex-direction: column; overflow: hidden;">
+
+                                        <!-- Step 1: Goal Definition (Task Oriented) -->
+                                        <div id="train-step-panel-1" class="train-step-panel"
+                                            style="display: flex; flex-direction: column; height: 100%;">
+                                            <h3 style="margin: 0 0 10px 0; font-size: 15px; color: #1e293b;">第一步：🎯 任務標的
+                                            </h3>
+
+                                            <!-- Select Goal Column (Full Width Top) -->
+                                            <div
+                                                style="background: #f8fafc; padding: 8px 12px; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 10px;">
+                                                <label
+                                                    style="display: block; margin-bottom: 4px; font-weight: 700; font-size: 11px; color: #475569; display: flex; align-items: center; gap: 8px;">
+                                                    <span style="font-size: 14px;">🎯</span> 選擇標的欄位 (Goal Column)
+                                                </label>
+                                                <select id="model-goal-col"
+                                                    onmousedown="checkTrainingFileBeforeSelect(event)"
+                                                    onchange="syncGoalToAll(this.value); drawGoalChart(this.value)"
+                                                    style="width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 12px; background: #fff;">
+                                                    <option value="">-- 請先選擇數據源 --</option>
+                                                </select>
+                                            </div>
+
+                                            <div
+                                                style="display: flex; gap: 20px; flex: 1; min-height: 0; margin-bottom: 8px;">
+                                                <!-- Left: Scatter Plot -->
+                                                <div
+                                                    style="flex: 1; min-width: 0; background: #fff; border-radius: 12px; border: 1px solid #e2e8f0; position: relative; padding: 15px; display: flex; flex-direction: column; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+                                                    <div
+                                                        style="font-size: 11px; color: #64748b; margin-bottom: 8px; font-weight: 700; display: flex; align-items: center; gap: 6px;">
+                                                        <span
+                                                            style="width: 8px; height: 8px; background: #3b82f6; border-radius: 50%;"></span>
+                                                        數據分佈即時預覽 (SCATTER PREVIEW)
+                                                    </div>
+                                                    <div id="goal-column-chart"
+                                                        style="flex: 1; width: 100%; position: relative; overflow: hidden;">
+                                                        <canvas id="goal-column-chart-canvas"></canvas>
+                                                    </div>
+                                                </div>
+
+                                                <!-- Right: Settings Panel (Aligned with Scatter Plot) -->
+                                                <div
+                                                    style="flex: 0 0 210px; display: flex; flex-direction: column; gap: 8px; background: #f8fafc; padding: 12px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 2px 4px rgba(0,0,0,0.04);">
+                                                    <div
+                                                        style="font-size: 12px; font-weight: 800; color: #1e293b; margin-bottom: 5px; text-align: center; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; display: flex; align-items: center; justify-content: center; position: relative;">
+                                                        🎯 規格參數配置
+                                                        <button onclick="calculateThreeSigma()" title="自動計算 3 倍標準差"
+                                                            style="position: absolute; right: 0; background: #3b82f6; color: white; border: none; border-radius: 4px; padding: 2px 6px; font-size: 10px; cursor: pointer; display: flex; align-items: center; gap: 3px;">
+                                                            3&sigma;
+                                                        </button>
+                                                    </div>
+
+                                                    <div class="setting-item">
+                                                        <label
+                                                            style="display: block; font-size: 11px; font-weight: 700; color: #475569; margin-bottom: 3px;">目標值
+                                                            (Target)</label>
+                                                        <input type="number" id="goal-target" placeholder="輸入數值..."
+                                                            oninput="updateGoalChartLines()"
+                                                            style="width: 100%; padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 12px; outline: none; background: #fff; box-sizing: border-box;">
+                                                    </div>
+                                                    <div class="setting-item">
+                                                        <label
+                                                            style="display: block; font-size: 11px; font-weight: 700; color: #475569; margin-bottom: 3px;">上限
+                                                            (USL)</label>
+                                                        <input type="number" id="goal-usl" placeholder="輸入上限..."
+                                                            oninput="updateGoalChartLines()"
+                                                            style="width: 100%; padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 12px; outline: none; background: #fff; box-sizing: border-box;">
+                                                    </div>
+                                                    <div class="setting-item">
+                                                        <label
+                                                            style="display: block; font-size: 11px; font-weight: 700; color: #475569; margin-bottom: 3px;">下限
+                                                            (LSL)</label>
+                                                        <input type="number" id="goal-lsl" placeholder="輸入下限..."
+                                                            oninput="updateGoalChartLines()"
+                                                            style="width: 100%; padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 12px; outline: none; background: #fff; box-sizing: border-box;">
+                                                    </div>
+
+                                                    <div id="goal-stat-box"
+                                                        style="margin-top: auto; padding: 10px; background: #fff; border-radius: 10px; border: 1px solid #e2e8f0;">
+                                                        <div
+                                                            style="display: flex; justify-content: space-between; font-size: 11px; color: #64748b; margin-bottom: 4px;">
+                                                            <span>超規筆數:</span>
+                                                            <b style="color: #2563eb; font-size: 14px;">
+                                                                <span id="goal-out-count">0</span>
+                                                                <span id="goal-total-count"
+                                                                    style="font-size: 11px; color: #94a3b8; font-weight: 400; margin-left: 2px;">(0)</span>
+                                                            </b>
+                                                        </div>
+                                                        <div
+                                                            style="display: flex; justify-content: space-between; font-size: 11px; color: #64748b;">
+                                                            <span>超規比例:</span>
+                                                            <b id="goal-out-ratio"
+                                                                style="color: #2563eb; font-size: 13px;">0.00%</b>
+                                                        </div>
+                                                    </div>
+                                                </div> <!-- End Settings Panel -->
+                                            </div> <!-- End Flex Container -->
+                                        </div> <!-- End train-step-panel-1 -->
+
+                                        <!-- Step 2: Mission Selection (Optimal Strategy) -->
+                                        <div id="train-step-panel-2" class="train-step-panel"
+                                            style="display: none; flex-direction: column; height: 100%;">
+                                            <div
+                                                style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                                                <h3 style="margin: 0; font-size: 15px; color: #1e293b;">第二步：🏆 最佳策略配置
+                                                </h3>
+                                                <div id="step2-validation-warning"
+                                                    style="display: none; background: #fff1f0; border: 1px solid #ffa39e; padding: 6px 12px; border-radius: 6px; color: #cf1322; font-size: 12px; font-weight: 700; align-items: center; gap: 6px; box-shadow: 0 2px 4px rgba(245, 34, 45, 0.1);">
+                                                    <span style="font-size: 14px;">⚠️</span>
+                                                    <span id="step2-warn-msg">未完成參數配置</span>
+                                                </div>
+                                            </div>
+
+                                            <!-- Horizontal Sub-Nav -->
+                                            <div class="step2-sub-nav">
+                                                <div class="step2-sub-item active" id="sub-nav-1"
+                                                    onclick="switchStep2SubSection(1)">
+                                                    <div class="dot">1</div> 學習演算法
+                                                </div>
+                                                <div class="step2-sub-item" id="sub-nav-2"
+                                                    onclick="switchStep2SubSection(2)">
+                                                    <div class="dot">2</div> 控制參數
+                                                </div>
+                                                <div class="step2-sub-item" id="sub-nav-3"
+                                                    onclick="switchStep2SubSection(3)">
+                                                    <div class="dot">3</div> 背景參數
+                                                </div>
+                                            </div>
+
+                                            <!-- Scrollable Content Area -->
+                                            <div style="flex: 1; overflow: hidden; padding-right: 5px; display: flex; flex-direction: column;"
+                                                class="custom-scroll">
+                                                <!-- Panel 1: Algorithm (Enhanced Visual) -->
+                                                <div class="step2-panel active" id="step2-panel-1"
+                                                    style="overflow-y: auto;">
+                                                    <div class="config-grid-3">
+                                                        <!-- Left: Strategy Engine -->
+                                                        <div class="premium-card"
+                                                            style="display: flex; flex-direction: column;">
+                                                            <div class="config-section-header">
+                                                                <span>策略引擎選擇</span>
+                                                            </div>
+                                                            <div class="config-item" style="margin-bottom: 20px;">
+                                                                <label>選擇強化學習演算法</label>
+                                                                <select id="rl-algorithm"
+                                                                    onchange="renderHyperParameters(this.value)"
+                                                                    style="width: 100%; padding: 12px; border-radius: 12px; border: 1.5px solid #e2e8f0; font-size: 14px; font-weight: 700; color: #1e293b; background: #f8fafc; cursor: pointer;">
+                                                                    <option value="IQL">IQL (Implicit Q-Learning)
+                                                                    </option>
+                                                                </select>
+                                                            </div>
+
+                                                            <div id="algo-desc"
+                                                                style="font-size: 12.5px; color: #475569; line-height: 1.6; padding: 16px; background: #fffbe6; border-radius: 12px; border: 1px solid #ffe58f; margin-bottom: 20px;">
+                                                                * 離線數據建議使用 IQL，能穩定從歷史紀錄中學習最佳決策，並避免過度外推錯誤。
+                                                            </div>
+
+                                                            <div class="advice-box">
+                                                                <div
+                                                                    style="font-weight: 800; font-size: 12px; color: #1e40af; margin-bottom: 6px;">
+                                                                    專家建議</div>
+                                                                <div
+                                                                    style="font-size: 11.5px; color: #1e40af; opacity: 0.8; line-height: 1.5;">
+                                                                    針對當前工業製程數據，建議將 Batch 設為 1024 以上以加速收斂。若超標嚴重，可嘗試提高
+                                                                    Expectile 至 0.9。
+                                                                </div>
+                                                            </div>
+                                                        </div>
+
+                                                        <!-- Middle: Hyper Parameters & Training Conditions -->
+                                                        <div class="premium-card" style="grid-column: span 2;">
+                                                            <div
+                                                                style="display: grid; grid-template-columns: 1fr 240px; gap: 30px;">
+                                                                <!-- Sub-Column 1: Algo Specific -->
+                                                                <div>
+                                                                    <div class="config-section-header">
+                                                                        <span>演算法核心參數 (Hyperparameters)</span>
+                                                                    </div>
+                                                                    <div id="dynamic-hyper-params" class="params-well">
+                                                                        <!-- JS Dynamic Injection -->
+                                                                    </div>
+                                                                </div>
+
+                                                                <!-- Sub-Column 2: Training Conditions (Small space) -->
+                                                                <div
+                                                                    style="border-left: 1px solid #f1f5f9; padding-left: 30px;">
+                                                                    <div class="config-section-header">
+                                                                        <span>訓練停止條件</span>
+                                                                    </div>
+                                                                    <div class="config-grid"
+                                                                        style="display: grid; grid-template-columns: 1fr; gap: 15px;">
+                                                                        <div class="config-item">
+                                                                            <label>最大輪數 (Max Epochs)</label>
+                                                                            <input type="number" id="common-max-epochs"
+                                                                                value="500">
+                                                                        </div>
+                                                                        <div class="config-item">
+                                                                            <label>穩定閾值 (Precision)</label>
+                                                                            <input type="number" step="0.0001"
+                                                                                id="common-stable-threshold"
+                                                                                value="0.001">
+                                                                        </div>
+                                                                        <div class="config-item">
+                                                                            <label>訓練步數 (n_steps)</label>
+                                                                            <input type="number" id="common-n-steps"
+                                                                                value="500">
+                                                                        </div>
+                                                                        <div class="config-item">
+                                                                            <label>每輪步數 (n_steps_per_epoch)</label>
+                                                                            <input type="number"
+                                                                                id="common-n-steps-per-epoch"
+                                                                                value="500">
+                                                                        </div>
+                                                                        <div class="config-item">
+                                                                            <label>穩定判定次數</label>
+                                                                            <input type="number"
+                                                                                id="common-stable-count" value="5">
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div> <!-- End config-grid-3 -->
+                                                </div> <!-- End step2-panel-1 -->
+
+                                                <!-- Panel 2: Control Params -->
+                                                <div class="step2-panel" id="step2-panel-2">
+                                                    <div class="dual-list-grid">
+                                                        <div class="list-col">
+                                                            <div class="list-header">可用參數 (Action Space)</div>
+                                                            <div class="list-search"><input type="text"
+                                                                    placeholder="搜尋製程參數..."
+                                                                    oninput="filterList('control-avail', this.value)">
+                                                            </div>
+                                                            <div id="control-avail" class="list-content custom-scroll"
+                                                                ondragover="event.preventDefault()"
+                                                                ondrop="handleTrainingDrop(event, 'control', 'to-avail')">
+                                                            </div>
+                                                        </div>
+                                                        <div class="list-btns">
+                                                            <div id="control-to-selected-btn" class="move-btn disabled"
+                                                                onclick="moveItems('control', 'to-selected')">&rarr;
+                                                            </div>
+                                                            <div id="control-to-avail-btn" class="move-btn disabled"
+                                                                onclick="moveItems('control', 'to-avail')">&larr;
+                                                            </div>
+                                                        </div>
+                                                        <div class="list-col">
+                                                            <div id="control-selected-header" class="list-header"
+                                                                style="background: #2563eb;">已選動作
+                                                            </div>
+                                                            <div class="list-search"><input type="text"
+                                                                    placeholder="搜尋..."
+                                                                    oninput="filterList('control-selected', this.value)">
+                                                            </div>
+                                                            <div id="control-selected"
+                                                                class="list-content custom-scroll"
+                                                                ondragover="event.preventDefault()"
+                                                                ondrop="handleTrainingDrop(event, 'control', 'to-selected')">
+                                                            </div>
+                                                        </div>
+                                                        <div class="preview-col">
+                                                            <div
+                                                                style="font-size: 11px; font-weight: 700; color: #64748b; margin-bottom: 8px;">
+                                                                數據分佈預覽</div>
+                                                            <div style="flex: 1; position: relative;">
+                                                                <canvas id="control-preview-chart"></canvas>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <!-- Panel 3: State Params -->
+                                                <div class="step2-panel" id="step2-panel-3">
+                                                    <div class="dual-list-grid">
+                                                        <div class="list-col">
+                                                            <div class="list-header">環境狀態 (State Space)</div>
+                                                            <div class="list-search"><input type="text"
+                                                                    placeholder="搜尋參數..."
+                                                                    oninput="filterList('state-avail', this.value)">
+                                                            </div>
+                                                            <div id="state-avail" class="list-content custom-scroll"
+                                                                ondragover="event.preventDefault()"
+                                                                ondrop="handleTrainingDrop(event, 'state', 'to-avail')">
+                                                            </div>
+                                                        </div>
+                                                        <div class="list-btns">
+                                                            <div id="state-to-selected-btn" class="move-btn disabled"
+                                                                onclick="moveItems('state', 'to-selected')">&rarr;
+                                                            </div>
+                                                            <div id="state-to-avail-btn" class="move-btn disabled"
+                                                                onclick="moveItems('state', 'to-avail')">&larr;
+                                                            </div>
+                                                        </div>
+                                                        <div class="list-col">
+                                                            <div id="state-selected-header" class="list-header"
+                                                                style="background: #475569;">已選狀態
+                                                                (Observations)</div>
+                                                            <div class="list-search"><input type="text"
+                                                                    placeholder="搜尋..."
+                                                                    oninput="filterList('state-selected', this.value)">
+                                                            </div>
+                                                            <div id="state-selected" class="list-content custom-scroll"
+                                                                ondragover="event.preventDefault()"
+                                                                ondrop="handleTrainingDrop(event, 'state', 'to-selected')">
+                                                            </div>
+                                                        </div>
+                                                        <div class="preview-col">
+                                                            <div
+                                                                style="font-size: 11px; font-weight: 700; color: #64748b; margin-bottom: 8px;">
+                                                                數據分佈預覽</div>
+                                                            <div style="flex: 1; position: relative;"
+                                                                id="state-preview-box">
+                                                                <canvas id="state-preview-chart"></canvas>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div> <!-- End Scrollable Area -->
+                                        </div>
+
+                                        <!-- Step 3: Prediction Configuration (New Implementation) -->
+                                        <div id="train-step-panel-3" class="train-step-panel"
+                                            style="display: none; flex-direction: column; height: 100%;">
+                                            <div
+                                                style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                                                <h3 style="margin: 0; font-size: 15px; color: #1e293b;">第三步：📊 預測配置系統
+                                                </h3>
+                                            </div>
+
+                                            <!-- Step 3 Horizontal Sub-Nav -->
+                                            <div class="step2-sub-nav">
+                                                <div class="step2-sub-item active" id="sub-nav-3-1"
+                                                    onclick="switchStep3SubSection(1)">
+                                                    <div class="dot">1</div> 預測演算法
+                                                </div>
+                                                <div class="step2-sub-item" id="sub-nav-3-2"
+                                                    onclick="switchStep3SubSection(2)">
+                                                    <div class="dot">2</div> 製程參數
+                                                </div>
+                                                <div class="step2-sub-item" id="sub-nav-3-3"
+                                                    onclick="switchStep3SubSection(3)">
+                                                    <div class="dot">3</div> 診斷與啟動
+                                                </div>
+                                            </div>
+
+                                            <!-- Step 3 Scrollable Content -->
+                                            <div style="flex: 1; overflow: hidden; padding-right: 5px; display: flex; flex-direction: column;"
+                                                class="custom-scroll">
+                                                <!-- Panel 3-1: Prediction Engine -->
+                                                <div class="step2-panel active" id="step3-panel-1"
+                                                    style="overflow-y: auto;">
+                                                    <div class="config-grid-3">
+                                                        <!-- Left: Engine Selector -->
+                                                        <div class="premium-card">
+                                                            <div class="config-section-header">
+                                                                <span>預測引擎系統</span>
+                                                            </div>
+                                                            <div class="config-item" style="margin-bottom: 20px;">
+                                                                <label>選擇機器學習演算法</label>
+                                                                <select id="pred-algorithm"
+                                                                    onchange="renderPredHyperParameters(this.value)"
+                                                                    style="width: 100%; padding: 12px; border-radius: 12px; border: 1.5px solid #e2e8f0; font-size: 14px; font-weight: 700; color: #1e293b; background: #f8fafc; cursor: pointer;">
+                                                                    <option value="XGBoost">XGBoost Regressor (推薦)
+                                                                    </option>
+                                                                    <option value="RandomForest">Random Forest</option>
+                                                                    <option value="LightGBM">LightGBM</option>
+                                                                </select>
+                                                            </div>
+                                                            <div id="pred-algo-desc"
+                                                                style="font-size: 12px; color: #475569; line-height: 1.5; padding: 12px; background: #eff6ff; border-radius: 10px; border: 1px solid #bfdbfe;">
+                                                                * XGBoost 是處理結構化工業數據最穩定的選擇，具備極強的非線性擬合能力。
+                                                            </div>
+                                                            <div class="advice-box" style="margin-top: 15px;">
+                                                                <div
+                                                                    style="font-weight: 800; font-size: 11px; color: #1e40af; text-transform: uppercase;">
+                                                                    專家系統建議</div>
+                                                                <div id="pred-expert-advice"
+                                                                    style="font-size: 11px; color: #1e40af; opacity: 0.8; margin-top: 4px;">
+                                                                    建置預測模型時，建議保持至少 20% 數據作為驗證集以防過擬合。</div>
+                                                            </div>
+                                                        </div>
+
+                                                        <!-- Middle: Hyperparams -->
+                                                        <div class="premium-card" style="grid-column: span 2;">
+                                                            <div
+                                                                style="display: grid; grid-template-columns: 1fr 240px; gap: 30px;">
+                                                                <div>
+                                                                    <div class="config-section-header">
+                                                                        <span>模型超參數設計 (Hyperparameters)</span>
+                                                                    </div>
+                                                                    <div id="pred-dynamic-hyper-params"
+                                                                        class="params-well">
+                                                                        <!-- JS Dynamic Injection -->
+                                                                    </div>
+                                                                </div>
+                                                                <!-- Right: Common Training Control -->
+                                                                <div
+                                                                    style="border-left: 1px solid #f1f5f9; padding-left: 30px;">
+                                                                    <div class="config-section-header">
+                                                                        <span>訓練守則配置</span>
+                                                                    </div>
+                                                                    <div class="config-grid"
+                                                                        style="display: grid; grid-template-columns: 1fr; gap: 15px;">
+                                                                        <div class="config-item">
+                                                                            <label>估計器數量 (Estimators)</label>
+                                                                            <input type="number" id="pred-n-estimators"
+                                                                                value="100">
+                                                                        </div>
+                                                                        <div class="config-item">
+                                                                            <label>早停輪數 (Early Stop)</label>
+                                                                            <input type="number" id="pred-early-stop"
+                                                                                value="10">
+                                                                        </div>
+                                                                        <div class="config-item">
+                                                                            <label>數據驗證比例</label>
+                                                                            <select id="pred-val-split"
+                                                                                style="padding: 8px; border-radius: 8px; border: 1px solid #e2e8f0;">
+                                                                                <option value="0.1">10% (高速)</option>
+                                                                                <option value="0.2" selected>20% (推薦)
+                                                                                </option>
+                                                                                <option value="0.3">30% (嚴謹)</option>
+                                                                            </select>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <!-- Panel 3-2: Process Parameters (Dual List) -->
+                                                <div class="step2-panel" id="step3-panel-2">
+                                                    <div class="dual-list-grid">
+                                                        <div class="list-col">
+                                                            <div class="list-header">可用製程欄位 (Pool)</div>
+                                                            <div class="list-search"><input type="text"
+                                                                    placeholder="搜尋欄位..."
+                                                                    oninput="filterList('pred-avail', this.value)">
+                                                            </div>
+                                                            <div id="pred-avail" class="list-content custom-scroll"
+                                                                ondragover="event.preventDefault()"
+                                                                ondrop="handleTrainingDrop(event, 'pred', 'to-avail')">
+                                                            </div>
+                                                        </div>
+                                                        <div class="list-btns">
+                                                            <div id="pred-to-selected-btn" class="move-btn disabled"
+                                                                onclick="moveItems('pred', 'to-selected')">&rarr;</div>
+                                                            <div id="pred-to-avail-btn" class="move-btn disabled"
+                                                                onclick="moveItems('pred', 'to-avail')">&larr;</div>
+                                                        </div>
+                                                        <div class="list-col">
+                                                            <div class="list-header" style="background: #0ea5e9;">預測特徵集
+                                                                (Features)</div>
+                                                            <div class="list-search"><input type="text"
+                                                                    placeholder="搜尋已選..."
+                                                                    oninput="filterList('pred-selected', this.value)">
+                                                            </div>
+                                                            <div id="pred-selected" class="list-content custom-scroll"
+                                                                ondragover="event.preventDefault()"
+                                                                ondrop="handleTrainingDrop(event, 'pred', 'to-selected')">
+                                                            </div>
+                                                        </div>
+                                                        <div class="preview-col">
+                                                            <div
+                                                                style="font-size: 11px; font-weight: 700; color: #64748b; margin-bottom: 8px;">
+                                                                特徵對標的分佈 PREVIEW</div>
+                                                            <div style="flex: 1; position: relative;">
+                                                                <canvas id="pred-preview-chart"></canvas>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <!-- Panel 3-3: Diagnosis & Run -->
+                                                <div class="step2-panel" id="step3-panel-3">
+                                                    <div
+                                                        style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; flex: 1;">
+                                                        <!-- Left: Diagnostic Report -->
+                                                        <div class="premium-card">
+                                                            <div class="config-section-header"><span>模型預分析診斷</span>
+                                                            </div>
+                                                            <div
+                                                                style="display: flex; flex-direction: column; gap: 12px;">
+                                                                <div id="pred-diag-features"
+                                                                    style="padding: 12px; background: #f0fdf4; border-radius: 10px; border-left: 4px solid #22c55e;">
+                                                                    <div
+                                                                        style="font-size: 11px; color: #15803d; font-weight: 800;">
+                                                                        特徵完整度</div>
+                                                                    <div
+                                                                        style="font-size: 13px; color: #166534; margin-top: 4px;">
+                                                                        已選定 <span id="pred-feat-count">0</span> 個關鍵製程參數
+                                                                    </div>
+                                                                </div>
+                                                                <div
+                                                                    style="padding: 12px; background: #fff7ed; border-radius: 10px; border-left: 4px solid #f97316;">
+                                                                    <div
+                                                                        style="font-size: 11px; color: #9a3412; font-weight: 800;">
+                                                                        數據偏態檢查</div>
+                                                                    <div
+                                                                        style="font-size: 13px; color: #7c2d12; margin-top: 4px;">
+                                                                        標的分佈：<span id="pred-target-status">待診斷...</span>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                            <div class="nn-viz-container"
+                                                                style="height: 180px; margin-top: 20px;">
+                                                                <div style="font-size: 30px;">🧠</div>
+                                                                <div
+                                                                    style="font-size: 12px; margin-top: 10px; font-weight: 600;">
+                                                                    智能分析引擎已就緒</div>
+                                                            </div>
+                                                        </div>
+                                                        <!-- Right: Final Action -->
+                                                        <div class="premium-card"
+                                                            style="display: flex; flex-direction: column; align-items: center; justify-content: center; background: linear-gradient(135deg, #ffffff 0%, #f1f5f9 100%);">
+                                                            <div style="margin-bottom: 30px; text-align: center;">
+                                                                <div style="font-size: 40px; margin-bottom: 15px;">🚀
+                                                                </div>
+                                                                <div
+                                                                    style="font-size: 18px; font-weight: 800; color: #1e293b;">
+                                                                    即將啟動預測模型訓練</div>
+                                                                <p
+                                                                    style="font-size: 13px; color: #64748b; margin-top: 8px;">
+                                                                    預計執行時間：15 ~ 45 秒 (取決於數據量)</p>
+                                                            </div>
+                                                            <button class="btn-primary" onclick="startModelTraining()"
+                                                                style="padding: 15px 80px; border-radius: 12px; background: #3b82f6; font-weight: 800; font-size: 16px; box-shadow: 0 10px 20px -5px rgba(59, 130, 246, 0.4); text-transform: uppercase; letter-spacing: 1px;">
+                                                                啟動預測訓練
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div> <!-- End Scrollable -->
+                                        </div> <!-- End train-step-panel-3 -->
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Sub Tab Content: Report -->
+                            <div id="training-sub-report-content" style="display: none;">
+                                <div style="display: grid; grid-template-columns: 1fr; gap: 20px;">
+                                    <!-- Metrics Row -->
+                                    <div style="display: grid; grid-template-columns: 280px 1fr 1fr; gap: 20px;">
+                                        <div
+                                            style="background: #f8fafc; border-radius: 12px; padding: 20px; border: 1px solid #e2e8f0; text-align: center;">
+                                            <div
+                                                style="font-size: 12px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px;">
+                                                訓練狀態</div>
+                                            <div id="training-status-text"
+                                                style="font-size: 20px; font-weight: 700; color: #64748b; margin-top: 12px;">
+                                                等待啟動</div>
+                                        </div>
+                                        <div
+                                            style="background: #fff; border-radius: 12px; padding: 20px; border: 1px solid #e2e8f0; text-align: center;">
+                                            <div style="font-size: 12px; color: #94a3b8; text-transform: uppercase;">
+                                                R-Squared (R²)</div>
+                                            <div id="model-metric-r2"
+                                                style="font-size: 28px; font-weight: 800; color: #cbd5e1; margin-top: 8px;">
+                                                --</div>
+                                        </div>
+                                        <div
+                                            style="background: #fff; border-radius: 12px; padding: 20px; border: 1px solid #e2e8f0; text-align: center;">
+                                            <div style="font-size: 12px; color: #94a3b8; text-transform: uppercase;">
+                                                RMSE
+                                            </div>
+                                            <div id="model-metric-rmse"
+                                                style="font-size: 28px; font-weight: 800; color: #cbd5e1; margin-top: 8px;">
+                                                --</div>
+                                        </div>
+                                    </div>
+                                    <!-- Importance Chart -->
+                                    <div
+                                        style="background: #fff; border-radius: 12px; padding: 25px; border: 1px solid #e2e8f0; min-height: 450px; display: flex; flex-direction: column;">
+                                        <h3 style="margin-top: 0; font-size: 16px; color: #334155;">特徵重要性分析 (Feature
+                                            Importance)</h3>
+                                        <div
+                                            style="flex: 1; display: flex; align-items: center; justify-content: center; background: #f8fafc; border-radius: 10px; margin-top: 15px; color: #94a3b8; border: 1px dashed #cbd5e1;">
+                                            <div style="text-align: center;">
+                                                <div style="font-size: 40px; margin-bottom: 10px;">📊</div>
+                                                <div style="font-style: italic;">訓練完成後，此處將自動生成視覺化報告</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div> <!-- End training-sub-report-content -->
+                            </div> <!-- End Unified White Card -->
+                        </div>
+                    </div> <!-- End training-main-build-content -->
+
+                    <!-- Main Tab Content: Model Registry -->
+                    <div id="training-main-registry-content" style="display: none;">
+                        <div
+                            style="padding: 25px; background: #fff; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
+                            <div
+                                style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px;">
+                                <h3 style="margin: 0; color: #1e293b; font-size: 18px; font-weight: 700;">儲存的模型清單
+                                </h3>
+                                <div
+                                    style="background: #eff6ff; color: #3b82f6; padding: 4px 12px; border-radius: 20px; font-size: 13px; font-weight: 600;">
+                                    共有 <span id="model-count-text">0</span> 個模型
+                                </div>
+                            </div>
+                            <table style="width: 100%; border-collapse: collapse; text-align: left;">
+                                <thead style="background: #004da0; color: #fff; border-bottom: none;">
+                                    <tr>
+                                        <th style="padding: 12px 15px; font-weight: 600; font-size: 14px;">名稱</th>
+                                        <th style="padding: 12px 15px; font-weight: 600; font-size: 14px;">狀態</th>
+                                        <th style="padding: 12px 15px; font-weight: 600; font-size: 14px;">目標標的</th>
+                                        <th style="padding: 12px 15px; font-weight: 600; font-size: 14px;">策略</th>
+                                        <th style="padding: 12px 15px; font-weight: 600; font-size: 14px;">預測</th>
+                                        <th style="padding: 12px 15px; font-weight: 600; font-size: 14px;">資料筆數</th>
+                                        <th style="padding: 12px 15px; font-weight: 600; font-size: 14px;">創建時間</th>
+                                        <th
+                                            style="padding: 12px 15px; font-weight: 600; font-size: 14px; text-align: center;">
+                                            操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="model-list-body">
+                                    <tr>
+                                        <td colspan="8"
+                                            style="text-align: center; padding: 50px; color: #94a3b8; font-style: italic;">
+                                            目前模型庫中尚未儲存任何模型
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+
+                            <!-- 分頁控制區 -->
+                            <div id="model-registry-pagination"
+                                style="margin-top: 20px; display: flex; justify-content: center; gap: 8px;">
+                            </div>
+                        </div>
+                    </div>
+                </div> <!-- End view-training -->
+
+            </div> <!-- End Main Content Area -->
+        </div> <!-- End App Content -->
+    </div> <!-- End Container -->
+
+    <!-- Dashboard 核心邏輯 (Modular) -->
+    <script type="module" src="/static/js/dashboard_main.js"></script>
+
+    <!-- 📊 圖表 AI 助手功能 (Legacy Support) -->
+    <script src="/static/js/dashboard_modules/chart_ai_helpers.js"></script>
+    <script src="/static/js/dashboard_modules/chart_ai_dragdrop.js"></script>
+
+    <!-- 🔧 強制初始化 UI (避免模組載入延遲導致 loading) -->
+    <script>
+        (function () {
+            try {
+                const sid = localStorage.getItem("sigma2_session_id") || "default";
+                const span = document.getElementById("current-user-id");
+                if (span) {
+                    span.innerText = sid;
+                    span.style.color = "#22c55e"; // Green to indicate success
+                }
+            } catch (e) {
+                console.error("UI Init Error:", e);
+            }
+        })();
+    </script>
+
+    <!-- 🛡️ Failsafe Script -->
+    <!-- 🛡️ Failsafe Script Removed -->
+    <!-- Simple Failsafe Script for Dashboard Lists -->
+    <script>
+        async function directLoadDashboardLists() {
+            console.log("Directly loading dashboard lists...");
+            const fileSelect = document.getElementById('dashboard-file-select');
+            const modelSelect = document.getElementById('dashboard-model-select');
+
+            // Try to get session ID from UI, fallback to 'default'
+            let sid = 'default';
+            if (window.Sigma2 && window.Sigma2.session) {
+                sid = window.Sigma2.session.getSessionId();
+            } else {
+                const uiSid = document.getElementById('current-user-id');
+                if (uiSid && uiSid.innerText !== 'loading...') {
+                    sid = uiSid.innerText;
+                }
+            }
+
+            try {
+                // 1. Load Files
+                const fRes = await fetch(`/api/list_files?session_id=${sid}`);
+                const fData = await fRes.json();
+                if (fData.files && fData.files.length > 0) {
+                    fileSelect.innerHTML = '<option value="">請選擇檔案...</option>';
+                    fData.files.forEach(f => {
+                        const opt = document.createElement('option');
+                        opt.value = f.filename;
+                        opt.text = f.filename;
+                        fileSelect.appendChild(opt);
+                    });
+                } else {
+                    fileSelect.innerHTML = '<option value="">無可用檔案</option>';
+                }
+
+                // 2. Load Models
+                const mRes = await fetch(`/api/simulator/models?session_id=${sid}`);
+                const mData = await mRes.json();
+                if (Array.isArray(mData) && mData.length > 0) {
+                    modelSelect.innerHTML = '<option value="">請選擇模型...</option>';
+                    mData.forEach(m => {
+                        const opt = document.createElement('option');
+                        // Support both legacy string list and new object list
+                        if (typeof m === 'object' && m !== null) {
+                            opt.value = m.id;
+                            opt.text = m.name;
+                        } else {
+                            opt.value = m;
+                            opt.text = m.length > 20 ? m.substring(0, 20) + '...' : m;
+                        }
+                        modelSelect.appendChild(opt);
+                    });
+                } else {
+                    modelSelect.innerHTML = '<option value="">無可用模型</option>';
+                }
+            } catch (e) {
+                console.error("Direct load failed:", e);
+            }
+        }
+
+        // Run after page load
+        document.addEventListener('DOMContentLoaded', () => {
+            setTimeout(directLoadDashboardLists, 1500);
+        });
+
+        // Also bind to the click as backup
+        window.refreshDashboardLists = directLoadDashboardLists;
+    </script>
+    <!-- Duplicate script removed -->
+    <!-- Layout Control Scripts & Styles -->
+    <style>
+        /* Layout Styles */
+        .layout-btn.active {
+            background: #eff6ff !important;
+            color: #3b82f6 !important;
+            border-color: #3b82f6 !important;
+            font-weight: 700;
+        }
+
+        /* Single View: Charts are 100% width, stacked */
+        .layout-single .chart-container {
+            width: 100%;
+            margin-bottom: 20px;
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 15px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+        }
+
+        /* Quad View: Grid 2x2 */
+        .layout-quad {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            align-content: start;
+            width: 100%;
+        }
+
+        .layout-quad .chart-container {
+            width: 100%;
+            margin-bottom: 0;
+            border: 1px solid #e2e8f0;
+            padding: 10px;
+            border-radius: 8px;
+            background: #fff;
+            height: 320px;
+            /* fixed height for uniformity */
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+        }
+
+        .layout-quad canvas {
+            flex: 1;
+            width: 100% !important;
+            height: 100% !important;
+        }
+
+        .btn-adv-selection {
+            width: 100%;
+            padding: 6px;
+            border: 1px solid #d8b4fe;
+            border-radius: 6px;
+            background: #fdf4ff;
+            color: #7e22ce;
+            font-weight: bold;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            font-size: 12px;
+            transition: all 0.2s;
+        }
+
+        .btn-adv-selection:hover {
+            background: #f5e7ff !important;
+        }
+    </style>
+
+    <script>
+        function setChartLayout(mode) {
+            // Update Buttons
+            const buttons = document.querySelectorAll('.layout-btn');
+            buttons.forEach(btn => btn.classList.remove('active'));
+
+            if (mode === 'single') buttons[0].classList.add('active');
+            if (mode === 'side') buttons[1].classList.add('active');
+            if (mode === 'quad') buttons[2].classList.add('active');
+
+            const wrapper = document.getElementById('charts-wrapper');
+            const sidePanel = document.getElementById('chart-side-panel');
+
+            // Reset classes
+            wrapper.className = '';
+
+            if (mode === 'single') {
+                wrapper.classList.add('layout-single');
+                sidePanel.style.display = 'none';
+            } else if (mode === 'side') {
+                wrapper.classList.add('layout-single'); // Reuse single stack style
+                sidePanel.style.display = 'block';
+                // Trigger update if we have data
+                if (typeof window.renderSidePanelParams === 'function' && window.lastDashboardData) {
+                    window.renderSidePanelParams(window.lastDashboardData.current_measure, window.lastDashboardData);
+                }
+            } else if (mode === 'quad') {
+                wrapper.classList.add('layout-quad');
+                sidePanel.style.display = 'none';
+            }
+
+            // Trigger resize for Chart.js
+            setTimeout(() => {
+                window.dispatchEvent(new Event('resize'));
+            }, 50);
+        }
+
+        // Helper to render params in side panel (To be called from dashboard_full.js)
+        window.renderSidePanelParams = function (measure, fullData) {
+            const list = document.getElementById('side-param-list');
+            if (!list || list.offsetParent === null) return; // Don't update if hidden
+
+            let html = '';
+
+            // 1. Target Measure
+            html += `<div style="margin-bottom: 12px; padding: 10px; background: #f8fafc; border-radius: 6px; border: 1px solid #e2e8f0;">
+                <div style="font-size: 11px; color: #64748b; font-weight: 700; text-transform: uppercase; margin-bottom: 4px;">TARGET</div>
+                <div style="font-size: 16px; color: #0f172a; font-weight: 800;">${(measure || 0).toFixed(4)}</div>
+            </div>`;
+
+            // 2. Recommendations / Adjustments
+            if (fullData.recommendations) {
+                html += `<div style="font-size: 11px; color: #64748b; font-weight: 700; text-transform: uppercase; margin-bottom: 6px; letter-spacing: 0.5px;">Control Parameters</div>`;
+                for (let [key, val] of Object.entries(fullData.recommendations)) {
+                    // val can be "KEEP" or numbers
+                    const isAdj = val !== "KEEP";
+                    html += `<div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #f1f5f9;">
+                        <span style="font-weight: 500; color: ${isAdj ? '#2563eb' : '#334155'}; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 180px;" title="${key}">${key}</span>
+                        <span style="font-weight: 700; color: ${isAdj ? '#dc2626' : '#64748b'}; font-size: 11px;">${val}</span>
+                    </div>`;
+                }
+            }
+
+            // 3. SHAP (if available in global context)
+            // ...
+
+            list.innerHTML = html;
+        };
+    </script>
+    <!-- Y-Axis Settings Modal (Moved to root level) -->
+    <div id="yaxis-settings-modal-OLD" style="display:none"></div>
+
+    <!-- NEW Y-Axis Settings Modal -->
+    <div id="yaxis-settings-modal" class="modal"
+        style="backdrop-filter: blur(5px); background-color: rgba(0, 0, 0, 0.4);">
+        <div class="modal-content"
+            style="max-width: 320px; padding: 25px; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.15); border: none;">
+            <span class="close-modal" onclick="closeYAxisSettings()"
+                style="top: 15px; right: 20px; font-size: 24px; color: #64748b; font-weight: normal;">&times;</span>
+
+            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 25px;">
+                <span style="font-size: 20px;">📐</span>
+                <h3 style="margin: 0; color: #1e293b; font-size: 18px; font-weight: 600;">Y 軸範圍設定</h3>
+            </div>
+
+            <div style="margin-bottom: 20px;">
+                <label style="display:block; margin-bottom: 8px; font-size: 13px; color: #475569; font-weight: 600;">上限
+                    (Max)</label>
+                <div style="position: relative;">
+                    <input type="number" id="yaxis-max-input" step="0.01" class="editable-input"
+                        style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 15px; background: #f8fafc; transition: all 0.2s;"
+                        onfocus="this.style.borderColor='#3b82f6'; this.style.background='#fff';"
+                        onblur="this.style.borderColor='#cbd5e1'; this.style.background='#f8fafc';">
+                </div>
+            </div>
+
+            <div style="margin-bottom: 25px;">
+                <label style="display:block; margin-bottom: 8px; font-size: 13px; color: #475569; font-weight: 600;">下限
+                    (Min)</label>
+                <div style="position: relative;">
+                    <input type="number" id="yaxis-min-input" step="0.01" class="editable-input"
+                        style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 15px; background: #f8fafc; transition: all 0.2s;"
+                        onfocus="this.style.borderColor='#3b82f6'; this.style.background='#fff';"
+                        onblur="this.style.borderColor='#cbd5e1'; this.style.background='#f8fafc';">
+                </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <button onclick="resetYAxisSettings()"
+                    style="padding: 10px; background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 14px; transition: all 0.2s;">
+                    重置自動
+                </button>
+                <button onclick="applyYAxisSettings()"
+                    style="padding: 10px; background: #3b82f6; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 14px; box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.3); transition: all 0.2s;">
+                    確認套用
+                </button>
+            </div>
+        </div>
+    </div>
+    <!-- Old modal content follows below but is hidden and ID changed... -->
+    <div style="display:none">
+        <div class="modal-content" style="max-width: 400px;">
+            <span class="close-modal" onclick="closeYAxisSettings()">&times;</span>
+            <h3 style="margin-top: 0; margin-bottom: 20px; color: #1e293b;">📐 Y 軸範圍設定</h3>
+
+            <div style="margin-bottom: 15px;">
+                <label style="display:block; margin-bottom:5px; font-weight:bold;">最小值 (Min):</label>
+                <input type="number" id="yaxis-min-input" step="0.01" class="editable-input" style="width: 100%;">
+            </div>
+
+            <div style="margin-bottom: 20px;">
+                <label style="display:block; margin-bottom:5px; font-weight:bold;">最大值 (Max):</label>
+                <input type="number" id="yaxis-max-input" step="0.01" class="editable-input" style="width: 100%;">
+            </div>
+
+            <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                <button onclick="resetYAxisSettings()"
+                    style="padding: 8px 16px; background: #94a3b8; color: white; border: none; border-radius: 6px; cursor: pointer;">自動
+                    (Auto)</button>
+                <button onclick="applyYAxisSettings()"
+                    style="padding: 8px 16px; background: #3b82f6; color: white; border: none; border-radius: 6px; cursor: pointer;">套用</button>
+            </div>
+        </div>
+    </div>
+
+</body>
+
+</html>
