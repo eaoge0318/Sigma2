@@ -101,16 +101,17 @@ def run_parameterized_rl(
 
     y2_range = None
     if y2_cols:
-        y2_min = df[y2_cols].min().min()
-        y2_max = df[y2_cols].max().max()
-        span = y2_max - y2_min
+        # Calculate Global Mean and Std for 6 Sigma Range
+        all_values = df[y2_cols].values.flatten()
+        mean_val = np.nanmean(all_values)
+        std_val = np.nanstd(all_values)
 
-        # Handle zero span
-        if span == 0:
-            span = abs(y2_max) * 0.1 if y2_max != 0 else 1.0
+        # 避免 std 為 0 的情況
+        if std_val == 0:
+            std_val = 1.0 if mean_val == 0 else abs(mean_val) * 0.1
 
-        y2_range = [float(y2_min - 0.1 * span), float(y2_max + 0.1 * span)]
-        print(f"[INFO] Calculated Y2 Range: {y2_range}")
+        y2_range = [float(mean_val - 6 * std_val), float(mean_val + 6 * std_val)]
+        print(f"[INFO] Calculated Y2 Range (Mean +/- 6 Sigma): {y2_range}")
 
     # 2. 構建 MDPDataset
     states, actions, rewards, terminals = [], [], [], []
