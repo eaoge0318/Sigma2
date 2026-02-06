@@ -85,33 +85,32 @@ def run_parameterized_rl(
     delta_actions = df[action_features].diff().dropna()
     action_stds = delta_actions.std().values.astype(np.float32) + 1e-6
 
-    # Calculate Y2 Axis Range (BG + Action + 10% padding)
-    all_cols = df.columns.tolist()
-    # Filter numeric and exclude target/actions logic if needed, but for simplicity:
-    # BG generally implies everything else. But here we have state_features.
-    # We can use state_features + action_features as the "Inputs".
+    # Calculate Y2 Axis Range for ALL Numeric Parameters in the dataset
+    # This ensures both Strategy and Prediction model parameters are covered.
+    y2_candidates = df.select_dtypes(include=[np.number]).columns.tolist()
 
-    y2_candidates = state_features + action_features
-    # Filter valid numeric columns
-    y2_cols = [
-        c
-        for c in y2_candidates
-        if c in df.columns and np.issubdtype(df[c].dtype, np.number)
-    ]
+    # Filter valid numeric columns (double check)
+    y2_cols = [c for c in y2_candidates if c in df.columns]
 
-    y2_range = None
+    y2_ranges = {}
     if y2_cols:
-        # Calculate Global Mean and Std for 6 Sigma Range
-        all_values = df[y2_cols].values.flatten()
-        mean_val = np.nanmean(all_values)
-        std_val = np.nanstd(all_values)
+        print("[INFO] Calculating individual Y2 ranges (Mean +/- 6 Sigma):")
+        for col in y2_cols:
+            col_data = df[col].dropna()
+            if len(col_data) == 0:
+                continue
 
-        # 避免 std 為 0 的情況
-        if std_val == 0:
-            std_val = 1.0 if mean_val == 0 else abs(mean_val) * 0.1
+            mean_v = col_data.mean()
+            std_v = col_data.std()
 
-        y2_range = [float(mean_val - 6 * std_val), float(mean_val + 6 * std_val)]
-        print(f"[INFO] Calculated Y2 Range (Mean +/- 6 Sigma): {y2_range}")
+            # Handle zero std
+            if std_v == 0:
+                std_v = 1.0 if mean_v == 0 else abs(mean_v) * 0.1
+
+            min_v = float(mean_v - 6 * std_v)
+            max_v = float(mean_v + 6 * std_v)
+            y2_ranges[col] = [min_v, max_v]
+            print(f"   Parameter '{col}': {[min_v, max_v]}")
 
     # 2. 構建 MDPDataset
     states, actions, rewards, terminals = [], [], [], []
@@ -271,7 +270,7 @@ def run_parameterized_rl(
         action_stds,
         final_epoch,
         diff,
-        global_y2_range=y2_range,
+        action_ranges=y2_ranges,
     )
 
     return {
@@ -279,7 +278,7 @@ def run_parameterized_rl(
         "run_dir": run_dir,
         "final_epoch": final_epoch,
         "final_diff": diff,
-        "y2_range": y2_range,
+        "y2_ranges": y2_ranges,
     }
 
 
@@ -328,8 +327,8 @@ def run_from_json(json_path):
         job_config["final_diff"] = round(result.get("final_diff", 0), 6)
         job_config["run_dir"] = result.get("run_dir")
 
-        if result.get("y2_range"):
-            job_config["y2_axis_range"] = result.get("y2_range")
+        if result.get("y2_ranges"):
+            job_config["y2_axis_ranges"] = result.get("y2_ranges")
 
         # 關鍵：在策略輸出資料夾內也存一份「暫存緩存」
         run_path = result.get("run_dir")

@@ -24,6 +24,16 @@ let y2AxisConfig = {
     max: null
 };
 
+// Global Y2-Axis Ranges (Per Parameter)
+let y2AxisRanges = {};
+
+export function setAllY2Ranges(ranges) {
+    console.log("Setting Y2 Ranges:", ranges);
+    y2AxisRanges = ranges || {};
+    updateAllChartsYAxis();
+}
+window.setAllY2Ranges = setAllY2Ranges;
+
 export function setY2Range(min, max) {
     y2AxisConfig.min = min;
     y2AxisConfig.max = max;
@@ -85,8 +95,8 @@ export function createMainChart(canvasId, actionName, deadzone, goalName, yAxisM
             maintainAspectRatio: false,
             animation: false,
             onHover: (e, elements, chart) => {
-                // Change cursor when hovering Y-Axis area
-                if (e.x < chart.chartArea.left) {
+                // Change cursor when hovering Y-Axis area (Left or Right)
+                if (e.x < chart.chartArea.left || e.x > chart.chartArea.right) {
                     e.native.target.style.cursor = 'pointer';
                 } else {
                     e.native.target.style.cursor = 'default';
@@ -130,15 +140,24 @@ export function createMainChart(canvasId, actionName, deadzone, goalName, yAxisM
             const rect = canvas.getBoundingClientRect();
             const x = e.clientX - rect.left;
 
-            // Debug Log
-            console.log(`Native Click Check: x=${x}, Boundary=${chart.chartArea ? chart.chartArea.left : 'N/A'}`);
+            if (!chart.chartArea) return;
 
-            if (chart.chartArea && x < chart.chartArea.left) {
-                console.log('Native Y-Axis Triggered');
+            // Check Y1 Axis (Left)
+            if (x < chart.chartArea.left) {
+                console.log('Y1 Axis Clicked');
                 if (typeof window.openYAxisModal === 'function') {
                     window.openYAxisModal();
                 } else {
                     console.error('window.openYAxisModal missing');
+                }
+            }
+            // Check Y2 Axis (Right)
+            else if (x > chart.chartArea.right) {
+                console.log('Y2 Axis Clicked:', actionName);
+                if (typeof window.openY2AxisModal === 'function') {
+                    window.openY2AxisModal(actionName);
+                } else {
+                    console.error('window.openY2AxisModal missing');
                 }
             }
         });
@@ -484,8 +503,18 @@ function updateAllChartsYAxis() {
         }
 
         // Update Y2 Action Axis
+        // Update Y2 Action Axis
         if (chart.options.scales.yAction) {
-            if (y2AxisConfig.min !== null && y2AxisConfig.max !== null) {
+            // Try to find parameter specific range first
+            const paramName = chart.options.scales.yAction.title.text;
+            const specificRange = y2AxisRanges[paramName];
+
+            if (specificRange && Array.isArray(specificRange)) {
+                // Apply specific 6-sigma range
+                chart.options.scales.yAction.min = specificRange[0];
+                chart.options.scales.yAction.max = specificRange[1];
+            } else if (y2AxisConfig.min !== null && y2AxisConfig.max !== null) {
+                // Fallback to global manual setting
                 chart.options.scales.yAction.min = y2AxisConfig.min;
                 chart.options.scales.yAction.max = y2AxisConfig.max;
             } else {
@@ -506,6 +535,109 @@ window.destroyChart = destroyChart;
 window.getChart = getChart;
 window.registerChart = registerChart;
 window.resizeAllCharts = resizeAllCharts;
+
+// --- Y2-Axis Control Functions ---
+let currentY2ParamName = null;
+
+function y2SettingsModalEscHandler(e) {
+    if (e.key === 'Escape') {
+        closeY2AxisSettings();
+    }
+}
+
+export function openY2AxisModal(paramName) {
+    currentY2ParamName = paramName;
+    const modal = document.getElementById('y2axis-settings-modal');
+    if (modal) {
+        modal.style.display = 'flex';
+        modal.style.zIndex = '99999';
+        modal.style.visibility = 'visible';
+        modal.style.opacity = '1';
+
+        // Update modal title with parameter name
+        const titleElem = document.getElementById('y2axis-modal-title');
+        if (titleElem) {
+            titleElem.textContent = `Y2 軸範圍設定 (${paramName})`;
+        }
+
+        // Add Esc listener
+        window.addEventListener('keydown', y2SettingsModalEscHandler);
+
+        // Pre-fill with current range if exists
+        const currentRange = y2AxisRanges[paramName];
+        if (currentRange && Array.isArray(currentRange)) {
+            document.getElementById('y2axis-min-input').value = currentRange[0].toFixed(3);
+            document.getElementById('y2axis-max-input').value = currentRange[1].toFixed(3);
+        } else {
+            // Try to get from chart
+            const targetChart = Object.values(charts).find(c =>
+                c && c.options.scales.yAction && c.options.scales.yAction.title.text === paramName
+            );
+            if (targetChart && targetChart.scales.yAction) {
+                document.getElementById('y2axis-min-input').value = targetChart.scales.yAction.min ? targetChart.scales.yAction.min.toFixed(3) : '';
+                document.getElementById('y2axis-max-input').value = targetChart.scales.yAction.max ? targetChart.scales.yAction.max.toFixed(3) : '';
+            } else {
+                document.getElementById('y2axis-min-input').value = '';
+                document.getElementById('y2axis-max-input').value = '';
+            }
+        }
+    }
+}
+
+export function closeY2AxisSettings() {
+    const modal = document.getElementById('y2axis-settings-modal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+    window.removeEventListener('keydown', y2SettingsModalEscHandler);
+    currentY2ParamName = null;
+}
+
+export function applyY2AxisSettings() {
+    if (!currentY2ParamName) {
+        alert("錯誤：未指定參數名稱");
+        return;
+    }
+
+    const minVal = parseFloat(document.getElementById('y2axis-min-input').value);
+    const maxVal = parseFloat(document.getElementById('y2axis-max-input').value);
+
+    if (isNaN(minVal) || isNaN(maxVal)) {
+        alert("請輸入有效的數字");
+        return;
+    }
+
+    if (minVal >= maxVal) {
+        alert("最小值必須小於最大值");
+        return;
+    }
+
+    // Update specific parameter range
+    y2AxisRanges[currentY2ParamName] = [minVal, maxVal];
+    console.log(`Updated Y2 range for ${currentY2ParamName}:`, [minVal, maxVal]);
+
+    closeY2AxisSettings();
+    updateAllChartsYAxis();
+}
+
+export function resetY2AxisSettings() {
+    if (!currentY2ParamName) {
+        alert("錯誤：未指定參數名稱");
+        return;
+    }
+
+    // Remove specific parameter range (fallback to auto or backend 6-sigma)
+    delete y2AxisRanges[currentY2ParamName];
+    console.log(`Reset Y2 range for ${currentY2ParamName} to auto`);
+
+    closeY2AxisSettings();
+    updateAllChartsYAxis();
+}
+
+window.openY2AxisModal = openY2AxisModal;
+window.closeY2AxisSettings = closeY2AxisSettings;
+window.applyY2AxisSettings = applyY2AxisSettings;
+window.resetY2AxisSettings = resetY2AxisSettings;
 
 // Auto-init drag listeners when loaded
 setTimeout(initGoalChartDrag, 1000);
