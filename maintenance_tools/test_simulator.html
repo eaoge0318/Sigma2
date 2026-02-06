@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>載入測試</title>
+</head>
+
+<body>
+    <h1>即時看板載入測試頁面</h1>
+
+    <div style="padding: 20px; background: #f0f0f0; margin: 20px;">
+        <h2>測試 1：選擇檔案</h2>
+        <select id="test-file-select" onchange="testFileLoad(this.value)" style="padding: 10px; font-size: 14px;">
+            <option value="">請選擇檔案</option>
+            <option value="KL00_0411_ALL_4.csv">KL00_0411_ALL_4.csv</option>
+            <option value="test.csv">test.csv</option>
+        </select>
+        <div id="file-status" style="margin-top: 10px; padding: 10px; background: white;"></div>
+    </div>
+
+    <div style="padding: 20px; background: #f0f0f0; margin: 20px;">
+        <h2>測試 2：選擇模型</h2>
+        <select id="test-model-select" onchange="testModelLoad(this.value)" style="padding: 10px; font-size: 14px;">
+            <option value="">請選擇模型</option>
+            <option value="job_7ba3af9e.json">Model_KL00_041_22_1818</option>
+        </select>
+        <div id="model-status" style="margin-top: 10px; padding: 10px; background: white;"></div>
+    </div>
+
+    <div style="padding: 20px; background: #f0f0f0; margin: 20px;">
+        <h2>測試 3：執行模擬</h2>
+        <button onclick="testSimulation()"
+            style="padding: 10px 20px; font-size: 14px; background: #7e22ce; color: white; border: none; cursor: pointer;">執行模擬</button>
+        <div id="sim-status" style="margin-top: 10px; padding: 10px; background: white;"></div>
+    </div>
+
+    <div style="padding: 20px; background: #ffe0e0; margin: 20px;">
+        <h2>完整日誌</h2>
+        <div id="log"
+            style="background: white; padding: 10px; font-family: monospace; white-space: pre-wrap; max-height: 400px; overflow-y: auto;">
+        </div>
+    </div>
+
+    <script>
+        const sessionId = 'Mantle';  // 使用您的 session ID
+
+        function log(message) {
+            const logEl = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            logEl.textContent += `[${timestamp}] ${message}\n`;
+            logEl.scrollTop = logEl.scrollHeight;
+            console.log(message);
+        }
+
+        log('測試頁面載入完成');
+        log(`Session ID: ${sessionId}`);
+
+        async function testFileLoad(filename) {
+            const statusEl = document.getElementById('file-status');
+
+            if (!filename) {
+                statusEl.textContent = '請選擇檔案';
+                return;
+            }
+
+            log(`\n========== 測試檔案載入 ==========`);
+            log(`檔案: ${filename}`);
+            log(`Session ID: ${sessionId}`);
+
+            statusEl.textContent = '正在載入...';
+            statusEl.style.color = 'blue';
+
+            try {
+                log('發送 API 請求...');
+                const response = await fetch('/api/simulator/load_file', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        filename: filename,
+                        session_id: sessionId
+                    })
+                });
+
+                log(`API 回應狀態: ${response.status} ${response.statusText}`);
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    log(`錯誤: ${errorText}`);
+                    statusEl.textContent = `❌ 失敗 (${response.status}): ${errorText}`;
+                    statusEl.style.color = 'red';
+                    alert(`檔案載入失敗:\n${errorText}`);
+                    return;
+                }
+
+                const result = await response.json();
+                log(`API 回應: ${JSON.stringify(result)}`);
+
+                if (result.status === 'success') {
+                    statusEl.textContent = `✅ 成功載入: ${filename} (${result.rows} 筆數據)`;
+                    statusEl.style.color = 'green';
+                    alert(`✅ 檔案載入成功!\n${filename}\n${result.rows} 筆數據`);
+                } else {
+                    statusEl.textContent = `❌ 失敗: ${result.message}`;
+                    statusEl.style.color = 'red';
+                    alert(`載入失敗:\n${result.message}`);
+                }
+            } catch (e) {
+                log(`Exception: ${e.message}`);
+                statusEl.textContent = `❌ 錯誤: ${e.message}`;
+                statusEl.style.color = 'red';
+                alert(`錯誤:\n${e.message}`);
+            }
+        }
+
+        async function testModelLoad(modelPath) {
+            const statusEl = document.getElementById('model-status');
+
+            if (!modelPath) {
+                statusEl.textContent = '請選擇模型';
+                return;
+            }
+
+            log(`\n========== 測試模型載入 ==========`);
+            log(`模型: ${modelPath}`);
+            log(`Session ID: ${sessionId}`);
+
+            statusEl.textContent = '正在載入...';
+            statusEl.style.color = 'blue';
+
+            try {
+                log('發送 API 請求...');
+                const response = await fetch('/api/model/load', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        model_path: modelPath,
+                        session_id: sessionId
+                    })
+                });
+
+                log(`API 回應狀態: ${response.status} ${response.statusText}`);
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    log(`錯誤: ${errorText}`);
+                    statusEl.textContent = `❌ 失敗 (${response.status})`;
+                    statusEl.style.color = 'red';
+                    alert(`模型載入失敗:\n${errorText}`);
+                    return;
+                }
+
+                const result = await response.json();
+                log(`API 回應: ${JSON.stringify(result)}`);
+
+                if (result.status === 'success') {
+                    statusEl.textContent = `✅ 成功載入模型`;
+                    statusEl.style.color = 'green';
+                    alert(`✅ 模型載入成功!\n${modelPath}`);
+                } else {
+                    statusEl.textContent = `❌ 失敗: ${result.message}`;
+                    statusEl.style.color = 'red';
+                    alert(`模型載入失敗:\n${result.message}`);
+                }
+            } catch (e) {
+                log(`Exception: ${e.message}`);
+                statusEl.textContent = `❌ 錯誤: ${e.message}`;
+                statusEl.style.color = 'red';
+                alert(`錯誤:\n${e.message}`);
+            }
+        }
+
+        async function testSimulation() {
+            const statusEl = document.getElementById('sim-status');
+
+            log(`\n========== 測試模擬執行 ==========`);
+            log(`Session ID: ${sessionId}`);
+
+            statusEl.textContent = '正在執行...';
+            statusEl.style.color = 'blue';
+
+            try {
+                log('發送 API 請求...');
+                const response = await fetch('/api/simulator/next', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        session_id: sessionId
+                    })
+                });
+
+                log(`API 回應狀態: ${response.status} ${response.statusText}`);
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    log(`錯誤: ${JSON.stringify(errorData)}`);
+                    statusEl.textContent = `❌ 失敗 (${response.status}): ${errorData.detail}`;
+                    statusEl.style.color = 'red';
+                    alert(`模擬失敗:\n${errorData.detail}`);
+                    return;
+                }
+
+                const result = await response.json();
+                log(`API 回應: ${JSON.stringify(result)}`);
+
+                statusEl.textContent = `✅ 模擬成功`;
+                statusEl.style.color = 'green';
+                alert(`✅ 模擬執行成功!`);
+            } catch (e) {
+                log(`Exception: ${e.message}`);
+                statusEl.textContent = `❌ 錯誤: ${e.message}`;
+                statusEl.style.color = 'red';
+                alert(`錯誤:\n${e.message}`);
+            }
+        }
+    </script>
+</body>
+
+</html>
