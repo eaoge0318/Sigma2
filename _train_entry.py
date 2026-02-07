@@ -180,7 +180,12 @@ def run_training(job_config_path=None):
     stable_counter = 0
 
     for epoch in range(1, config.MAX_EPOCHS + 1):
-        iql.fit(dataset, n_steps=500, n_steps_per_epoch=500, show_progress=False)
+        iql.fit(
+            dataset,
+            n_steps=500,
+            n_steps_per_epoch=500,
+            show_progress=False,
+        )
 
         diff = callback.on_epoch_end(iql)
         print(f"Epoch {epoch} | Policy Diff: {diff:.6e}")
