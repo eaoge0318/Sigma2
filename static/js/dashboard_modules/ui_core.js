@@ -59,12 +59,13 @@ export function initAutoSidebar() {
 }
 
 export function switchView(viewName) {
-    const navItems = ['dashboard', 'files', 'analysis', 'training'];
+    const navItems = ['dashboard', 'files', 'analysis', 'training', 'intelligent-analysis'];
     const views = {
         'dashboard': 'view-dashboard',
         'files': 'view-files',
         'analysis': 'view-analysis',
-        'training': 'view-training'
+        'training': 'view-training',
+        'intelligent-analysis': 'view-intelligent-analysis'
     };
 
     // Update Nav State

@@ -13,10 +13,14 @@ router = APIRouter()
 async def upload_file(
     file: UploadFile = File(...),
     session_id: str = Form("default"),
+    is_mapping: bool = Form(False),
+    file_id: str = Form(None),  # Optional: Bind mapping to specific file
     file_service: FileService = Depends(get_file_service),
 ):
     """上傳檔案"""
-    return await file_service.upload_file(file, session_id)
+    return await file_service.upload_file(
+        file, session_id, is_mapping=is_mapping, file_id=file_id
+    )
 
 
 @router.get("/list")

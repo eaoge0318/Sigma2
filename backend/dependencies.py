@@ -11,6 +11,14 @@ from backend.services.ai_service import AIService
 from backend.services.chart_ai_service import ChartAIService
 from backend.services.draft_service import DraftService
 
+# 新增 Intelligent Analysis 服務
+from backend.services.analysis.analysis_service import (
+    AnalysisService as IntelligentAnalysisService,
+)
+import config
+from backend.services.analysis.agent import LLMAnalysisAgent
+from backend.services.analysis.tools.executor import ToolExecutor
+
 # 單例實例
 _session_service: SessionService = None
 _file_service: FileService = None
@@ -18,6 +26,11 @@ _prediction_service: PredictionService = None
 _analysis_service: AnalysisService = None
 _ai_service: AIService = None
 _chart_ai_service: ChartAIService = None
+_draft_service: DraftService = None
+
+# Intelligent Analysis 單例
+_intelligent_analysis_service: IntelligentAnalysisService = None
+_llm_agent: LLMAnalysisAgent = None
 
 
 def get_session_service() -> SessionService:
@@ -45,7 +58,7 @@ def get_prediction_service() -> PredictionService:
 
 
 def get_analysis_service() -> AnalysisService:
-    """取得分析服務"""
+    """取得分析服務 (舊版：進階分析與模型訓練)"""
     global _analysis_service
     if _analysis_service is None:
         _analysis_service = AnalysisService()
@@ -53,7 +66,7 @@ def get_analysis_service() -> AnalysisService:
 
 
 def get_ai_service() -> AIService:
-    """取得 AI 服務"""
+    """取得 AI 服務 (舊版：基本報告)"""
     global _ai_service
     if _ai_service is None:
         _ai_service = AIService()
@@ -68,12 +81,35 @@ def get_chart_ai_service() -> ChartAIService:
     return _chart_ai_service
 
 
-_draft_service: DraftService = None
-
-
 def get_draft_service() -> DraftService:
     """取得暫存服務"""
     global _draft_service
     if _draft_service is None:
         _draft_service = DraftService()
     return _draft_service
+
+
+def get_intelligent_analysis_service() -> IntelligentAnalysisService:
+    """取得智能分析服務 (新版：CSV索引與工具查詢)"""
+    global _intelligent_analysis_service
+    if _intelligent_analysis_service is None:
+        _intelligent_analysis_service = IntelligentAnalysisService()
+    return _intelligent_analysis_service
+
+
+def get_llm_agent() -> LLMAnalysisAgent:
+    """取得 LLM 智能分析代理"""
+    global _llm_agent
+    if _llm_agent is None:
+        # 依賴 IntelligentAnalysisService
+        service = get_intelligent_analysis_service()
+        # 初始化 Tools Executor
+        executor = ToolExecutor(service)
+
+        # 初始化 Agent
+        _llm_agent = LLMAnalysisAgent(
+            tool_executor=executor,
+            model_name=config.LLM_MODEL,
+            ollama_api_url=config.LLM_API_URL,
+        )
+    return _llm_agent

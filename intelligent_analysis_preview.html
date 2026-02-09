@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <script>
+        // CRITICAL: Robust Polyfill for crypto.randomUUID (Fix for insecure contexts/HTTP)
+        (function () {
+            try {
+                if (!window.crypto || !window.crypto.randomUUID) {
+                    var polyfill = function () {
+                        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+                            var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+                            return v.toString(16);
+                        });
+                    };
+                    if (!window.crypto) {
+                        Object.defineProperty(window, 'crypto', { value: { randomUUID: polyfill }, writable: true, configurable: true });
+                    } else {
+                        try {
+                            Object.defineProperty(window.crypto, 'randomUUID', { value: polyfill }, { writable: true, configurable: true });
+                        } catch (e) {
+                            console.warn("Could not redefine crypto.randomUUID, trying fallback shadow.");
+                        }
+                    }
+                }
+            } catch (err) { console.error("UUID Polyfill error:", err); }
+        })();
+    </script>
+    <title>智能分析 - UI 预览</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #eceff4;
+            padding: 20px;
+        }
+
+        /* ========== 智能分析樣式（完全隔離，統一系統風格） ========== */
+
+        /* 主容器 */
+        #intelligent-analysis-section {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        #intelligent-analysis-section .ia-section-header {
+            margin-bottom: 20px;
+            padding: 0 5px;
+        }
+
+        #intelligent-analysis-section .ia-section-header h2 {
+            font-size: 24px;
+            font-weight: 600;
+            color: #2c3e50;
+            margin: 0 0 6px 0;
+        }
+
+        #intelligent-analysis-section .ia-subtitle {
+            color: #7f8c8d;
+            font-size: 14px;
+        }
+
+        /* 布局容器 */
+        #intelligent-analysis-section .ia-container {
+            display: grid;
+            grid-template-columns: 340px 1fr;
+            gap: 16px;
+        }
+
+        /* 側邊欄 */
+        #intelligent-analysis-section .ia-sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        #intelligent-analysis-section .ia-card {
+            background: white;
+            border-radius: 6px;
+            padding: 18px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+            border: 1px solid #e8ecef;
+        }
+
+        #intelligent-analysis-section .ia-card h3 {
+            font-size: 15px;
+            font-weight: 600;
+            margin: 0 0 14px 0;
+            color: #2c3e50;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        /* 表單元素 */
+        #intelligent-analysis-section .ia-form-select {
+            width: 100%;
+            padding: 9px 12px;
+            border: 1px solid #d1d8dd;
+            border-radius: 4px;
+            font-size: 13px;
+            background: white;
+            color: #2c3e50;
+            transition: all 0.2s;
+        }
+
+        #intelligent-analysis-section .ia-form-select:focus {
+            outline: none;
+            border-color: #5c9ce6;
+            box-shadow: 0 0 0 3px rgba(92, 156, 230, 0.1);
+        }
+
+        #intelligent-analysis-section .ia-btn {
+            padding: 9px 18px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        #intelligent-analysis-section .ia-btn-primary {
+            background: #5c9ce6;
+            color: white;
+        }
+
+        #intelligent-analysis-section .ia-btn-primary:hover {
+            background: #4a8dd4;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 6px rgba(92, 156, 230, 0.3);
+        }
+
+        #intelligent-analysis-section .ia-btn-secondary {
+            background: #95a5a6;
+            color: white;
+        }
+
+        #intelligent-analysis-section .ia-btn-secondary:hover {
+            background: #7f8c8d;
+        }
+
+        /* 檔案資訊 */
+        #intelligent-analysis-section .ia-info-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 9px 0;
+            border-bottom: 1px solid #f0f3f5;
+            font-size: 13px;
+        }
+
+        #intelligent-analysis-section .ia-info-item:last-child {
+            border-bottom: none;
+        }
+
+        #intelligent-analysis-section .ia-info-item .ia-label {
+            font-weight: 500;
+            color: #7f8c8d;
+        }
+
+        #intelligent-analysis-section .ia-info-item span:not(.ia-label):not(.ia-badge) {
+            color: #2c3e50;
+            font-weight: 500;
+        }
+
+        #intelligent-analysis-section .ia-badge {
+            padding: 3px 10px;
+            border-radius: 10px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        #intelligent-analysis-section .ia-badge.ia-ready {
+            background: #d4edda;
+            color: #28a745;
+        }
+
+        #intelligent-analysis-section .ia-badge.ia-not-ready {
+            background: #fff3cd;
+            color: #ffc107;
+        }
+
+        /* 快捷按鈕 */
+        #intelligent-analysis-section .ia-quick-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        #intelligent-analysis-section .ia-quick-btn {
+            padding: 11px 14px;
+            background: #f7f9fb;
+            border: 1px solid #e1e8ed;
+            border-radius: 4px;
+            text-align: left;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 13px;
+            color: #2c3e50;
+            font-weight: 500;
+        }
+
+        #intelligent-analysis-section .ia-quick-btn:hover {
+            background: #5c9ce6;
+            color: white;
+            border-color: #5c9ce6;
+            transform: translateX(3px);
+        }
+
+        /* 工具列表 */
+        #intelligent-analysis-section .ia-tools-list {
+            max-height: 280px;
+            overflow-y: auto;
+        }
+
+        #intelligent-analysis-section .ia-tool-item {
+            padding: 10px 12px;
+            margin-bottom: 8px;
+            background: #f7f9fb;
+            border-radius: 4px;
+            font-size: 13px;
+            border: 1px solid #e8ecef;
+            transition: all 0.2s;
+        }
+
+        #intelligent-analysis-section .ia-tool-item:hover {
+            border-color: #5c9ce6;
+            background: #f0f7ff;
+        }
+
+        #intelligent-analysis-section .ia-tool-name {
+            font-weight: 600;
+            color: #5c9ce6;
+            margin-bottom: 3px;
+        }
+
+        #intelligent-analysis-section .ia-tool-desc {
+            color: #7f8c8d;
+            font-size: 12px;
+        }
+
+        /* 聊天歷史 */
+        #intelligent-analysis-section .ia-history-list {
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        #intelligent-analysis-section .ia-history-item {
+            padding: 10px 12px;
+            margin-bottom: 8px;
+            background: #f7f9fb;
+            border-radius: 4px;
+            border: 1px solid #e8ecef;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        #intelligent-analysis-section .ia-history-item:hover {
+            border-color: #5c9ce6;
+            background: #f0f7ff;
+            transform: translateX(3px);
+        }
+
+        #intelligent-analysis-section .ia-history-question {
+            font-size: 13px;
+            color: #2c3e50;
+            font-weight: 500;
+            margin-bottom: 4px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        #intelligent-analysis-section .ia-history-time {
+            font-size: 11px;
+            color: #95a5a6;
+        }
+
+        /* 對話區域 */
+        #intelligent-analysis-section .ia-chat {
+            background: white;
+            border-radius: 6px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+            border: 1px solid #e8ecef;
+            display: flex;
+            flex-direction: column;
+            height: calc(100vh - 180px);
+            min-height: 600px;
+        }
+
+        #intelligent-analysis-section .ia-chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            background: #fafbfc;
+        }
+
+        #intelligent-analysis-section .ia-welcome-message {
+            text-align: center;
+            padding: 50px 20px;
+            color: #7f8c8d;
+        }
+
+        #intelligent-analysis-section .ia-welcome-message h3 {
+            margin-bottom: 12px;
+            color: #2c3e50;
+            font-weight: 600;
+            font-size: 18px;
+        }
+
+        #intelligent-analysis-section .ia-welcome-message p {
+            color: #7f8c8d;
+            font-size: 14px;
+        }
+
+        #intelligent-analysis-section .ia-welcome-message .ia-tip {
+            margin-top: 20px;
+            padding: 14px;
+            background: #e7f3ff;
+            border-radius: 4px;
+            color: #2980b9;
+            border-left: 3px solid #5c9ce6;
+            font-size: 13px;
+        }
+
+        /* 消息氣泡 */
+        #intelligent-analysis-section .ia-message {
+            margin-bottom: 16px;
+            animation: iaFadeIn 0.3s;
+        }
+
+        @keyframes iaFadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        #intelligent-analysis-section .ia-message.ia-user {
+            display: flex;
+            justify-content: flex-end;
+        }
+
+        #intelligent-analysis-section .ia-message.ia-user .ia-message-content {
+            background: #5c9ce6;
+            color: white;
+            padding: 11px 15px;
+            border-radius: 16px 16px 4px 16px;
+            max-width: 70%;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+
+        #intelligent-analysis-section .ia-message.ia-assistant {
+            display: flex;
+            justify-content: flex-start;
+        }
+
+        #intelligent-analysis-section .ia-message.ia-assistant .ia-message-content {
+            background: white;
+            color: #2c3e50;
+            padding: 11px 15px;
+            border-radius: 16px 16px 16px 4px;
+            max-width: 80%;
+            font-size: 14px;
+            line-height: 1.5;
+            border: 1px solid #e8ecef;
+        }
+
+        /* 輸入區 */
+        #intelligent-analysis-section .ia-chat-input-area {
+            border-top: 1px solid #e8ecef;
+            padding: 16px;
+            background: white;
+        }
+
+        #intelligent-analysis-section .ia-chat-input-area textarea {
+            width: 100%;
+            padding: 11px 14px;
+            border: 1px solid #d1d8dd;
+            border-radius: 4px;
+            resize: none;
+            font-size: 13px;
+            font-family: inherit;
+            color: #2c3e50;
+            transition: all 0.2s;
+        }
+
+        #intelligent-analysis-section .ia-chat-input-area textarea:focus {
+            outline: none;
+            border-color: #5c9ce6;
+            box-shadow: 0 0 0 3px rgba(92, 156, 230, 0.1);
+        }
+
+        #intelligent-analysis-section .ia-input-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        /* 響應式 */
+        @media (max-width: 1200px) {
+            #intelligent-analysis-section .ia-container {
+                grid-template-columns: 1fr;
+            }
+
+            #intelligent-analysis-section .ia-sidebar {
+                display: grid;
+                grid-template-columns: repeat(3, 1fr);
+                gap: 12px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <!-- ========== 智能分析区块（完全隔离） ========== -->
+    <section id="intelligent-analysis-section">
+        <div class="ia-section-header">
+            <h2>💡 智能分析助手</h2>
+            <p class="ia-subtitle">用自然語言提問，AI 幫您深入分析資料</p>
+        </div>
+
+        <div class="ia-container">
+            <!-- 左側邊欄：檔案選擇與工具 -->
+            <div class="ia-sidebar">
+                <!-- 檔案選擇卡片 -->
+                <div class="ia-card">
+                    <h3>📂 選擇資料檔案</h3>
+                    <select id="analysis-file-selector" class="ia-form-select">
+                        <option value="">-- 請選擇檔案 --</option>
+                        <option value="demo1">銷售資料.csv ✓</option>
+                        <option value="demo2">房地產資訊.csv</option>
+                        <option value="demo3">股票歷史.csv ✓</option>
+                    </select>
+
+                    <button id="prepare-file-btn" class="ia-btn ia-btn-primary"
+                        style="margin-top: 10px; display: none;">
+                        準備分析索引
+                    </button>
+
+                    <!-- 檔案資訊 -->
+                    <div id="file-info-card" style="margin-top: 15px;">
+                        <div class="ia-info-item">
+                            <span class="ia-label">檔案名稱:</span>
+                            <span id="info-filename">銷售資料.csv</span>
+                        </div>
+                        <div class="ia-info-item">
+                            <span class="ia-label">總行數:</span>
+                            <span id="info-rows">12,458</span>
+                        </div>
+                        <div class="ia-info-item">
+                            <span class="ia-label">欄位數:</span>
+                            <span id="info-params">28</span>
+                        </div>
+                        <div class="ia-info-item">
+                            <span class="ia-label">狀態:</span>
+                            <span id="info-status" class="ia-badge ia-ready">已準備</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 聊天歷史 -->
+                <div class="ia-card">
+                    <h3>💬 最近對話</h3>
+                    <div id="chat-history-list" class="ia-history-list">
+                        <div class="ia-history-item">
+                            <div class="ia-history-question">有哪些欄位？</div>
+                            <div class="ia-history-time">2分鐘前</div>
+                        </div>
+                        <div class="ia-history-item">
+                            <div class="ia-history-question">價格相關的欄位有哪些？</div>
+                            <div class="ia-history-time">5分鐘前</div>
+                        </div>
+                        <div class="ia-history-item">
+                            <div class="ia-history-question">分析銷售額和地區的關係</div>
+                            <div class="ia-history-time">10分鐘前</div>
+                        </div>
+                    </div>
+                    <button id="clear-history-btn" class="ia-btn ia-btn-secondary"
+                        style="margin-top: 10px; width: 100%; font-size: 12px; padding: 7px;">
+                        清空歷史
+                    </button>
+                </div>
+            </div>
+
+            <!-- 右側對話區 -->
+            <div class="ia-chat">
+                <div class="ia-chat-messages" id="chat-messages">
+                    <div class="ia-welcome-message">
+                        <h3>👋 歡迎使用智能分析助手</h3>
+                        <p>請先選擇一個CSV檔案，然後開始提問。</p>
+                        <p class="ia-tip">💡 提示：您可以問「有哪些欄位？」、「價格趨勢如何？」、「分析相關性」等</p>
+                    </div>
+
+                    <!-- 示例對話 -->
+                    <div class="ia-message ia-user">
+                        <div class="ia-message-content">有哪些欄位？</div>
+                    </div>
+                    <div class="ia-message ia-assistant">
+                        <div class="ia-message-content">該資料集包含28個欄位，主要包括：銷售金額、客戶數量、日期、地區、產品類別等。您想瞭解哪個欄位的詳細資訊？</div>
+                    </div>
+                    <div class="ia-message ia-user">
+                        <div class="ia-message-content">價格相關的欄位有哪些？</div>
+                    </div>
+                    <div class="ia-message ia-assistant">
+                        <div class="ia-message-content">找到5個價格相關欄位：單價、總價、折扣價、成本價、利潤。這些欄位都是數值型，可以進行統計分析。</div>
+                    </div>
+                </div>
+
+                <div class="ia-chat-input-area">
+                    <textarea id="user-question" placeholder="在此輸入您的問題，例如：影響因素有哪些？哪些欄位相關性最強？" rows="2"></textarea>
+                    <div class="ia-input-actions">
+                        <button id="clear-chat-btn" class="ia-btn ia-btn-secondary">清除對話</button>
+                        <button id="send-question-btn" class="ia-btn ia-btn-primary">傳送</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <script>
+        // 基礎交互（功能留空，僅UI演示）
+        console.log('智能分析UI已載入');
+
+        // 檔案選擇
+        document.getElementById('analysis-file-selector').addEventListener('change', function (e) {
+            console.log('檔案已選擇:', e.target.value);
+            alert('檔案選擇功能演示（實際功能待實現）');
+        });
+
+
+
+        // 傳送按鈕
+        document.getElementById('send-question-btn').addEventListener('click', function () {
+            const input = document.getElementById('user-question');
+            if (input.value.trim()) {
+                console.log('傳送問題:', input.value);
+                alert('傳送功能演示（實際功能待實現）\n問題: ' + input.value);
+                input.value = '';
+            }
+        });
+
+        // 清空歷史
+        document.getElementById('clear-history-btn').addEventListener('click', function () {
+            console.log('清空歷史');
+            if (confirm('確定要清空所有歷史記錄嗎？')) {
+                alert('清空歷史功能演示（實際功能待實現）');
+            }
+        });
+
+        // 點擊歷史項目
+        document.querySelectorAll('.ia-history-item').forEach(item => {
+            item.addEventListener('click', function () {
+                const question = this.querySelector('.ia-history-question').textContent;
+                document.getElementById('user-question').value = question;
+                alert('已載入歷史問題：' + question);
+            });
+        });
+
+        // 清除對話
+        document.getElementById('clear-chat-btn').addEventListener('click', function () {
+            console.log('清除對話');
+            if (confirm('確定要清除對話歷史嗎？')) {
+                alert('清除功能演示（實際功能待實現）');
+            }
+        });
+    </script>
+</body>
+
+</html>

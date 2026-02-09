@@ -39,7 +39,7 @@ logging.getLogger("httpcore").setLevel(logging.WARNING)
 logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
 
 logger.info("=" * 60)
-logger.info("🚀 Starting Sigma2 API Server")
+logger.info("Starting Sigma2 API Server")
 logger.info("=" * 60)
 
 # 匯入各個 Router
@@ -84,16 +84,16 @@ async def startup_event():
 
     # 顯示啟動訊息
     print("=" * 60)
-    print("🚀 Sigma2 Agentic Reasoning API v2.0 啟動成功")
+    print("Sigma2 Agentic Reasoning API v2.0 啟動成功")
     print("=" * 60)
-    print("📊 已載入模組：")
-    print("  ✅ Dashboard Router (即時看板)")
-    print("  ✅ File Router (檔案管理)")
-    print("  ✅ Analysis Router (數據分析)")
-    print("  ✅ AI Router (智能助手)")
+    print("已載入模組：")
+    print("  Dashboard Router (即時看板)")
+    print("  File Router (檔案管理)")
+    print("  Analysis Router (數據分析)")
+    print("  AI Router (智能助手)")
     print("=" * 60)
-    print(f"🌐 API 文件：http://localhost:{config.API_PORT}/docs")
-    print(f"🎯 Dashboard：http://localhost:{config.API_PORT}/dashboard")
+    print(f"API 文件：http://localhost:{config.API_PORT}/docs")
+    print(f"Dashboard：http://localhost:{config.API_PORT}/dashboard")
     print("=" * 60)
 
 
@@ -400,13 +400,29 @@ async def test_simulator():
 
 
 if __name__ == "__main__":
+    import sys
+
     print(f"Server starting in: {os.getcwd()}")
-    # 使用多個 workers 以支援並發請求（LLM + Dashboard）
-    # 注意：Windows 上 workers 參數可能無效，需使用 --workers 命令行參數
-    uvicorn.run(
-        app,
-        host="0.0.0.0",
-        port=config.API_PORT,
-        workers=1,  # Windows 限制，使用 1 個 worker
-        log_level="debug",
-    )
+
+    # 檢查是否帶有 --reload 參數
+    use_reload = "--reload" in sys.argv
+    use_reload = True
+    if use_reload:
+        print("[Development Mode] Auto-reload enabled. Monitoring file changes...")
+        # 必須使用字串 "api_entry:app" 才能在 uvicorn 中啟用 reload
+        uvicorn.run(
+            "api_entry:app",
+            host="0.0.0.0",
+            port=config.API_PORT,
+            reload=True,
+            log_level="debug",
+        )
+    else:
+        # 生產/標準模式：直接運行 app 物件
+        uvicorn.run(
+            app,
+            host="0.0.0.0",
+            port=config.API_PORT,
+            workers=1,
+            log_level="debug",
+        )

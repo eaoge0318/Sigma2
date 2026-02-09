@@ -155,11 +155,14 @@ def run_parameterized_rl(
             f"WARNING: Dataset size ({len(states)}) is very small for RL. Training might be unstable or ineffective."
         )
 
+    from d3rlpy.constants import ActionSpace
+
     dataset = d3rlpy.dataset.MDPDataset(
-        observations=np.array(states),
-        actions=np.array(actions),
-        rewards=np.array(rewards),
-        terminals=np.array(terminals),
+        observations=np.array(states, dtype=np.float32),
+        actions=np.array(actions, dtype=np.float32),
+        rewards=np.array(rewards, dtype=np.float32),
+        terminals=np.array(terminals, dtype=np.float32),
+        action_space=ActionSpace.CONTINUOUS,
     )
 
     # 3. 初始化 IQL 模型 (參數優先級：UI > config.py > Hardcoded)

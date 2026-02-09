@@ -38,7 +38,11 @@ export async function loadModelRegistry() {
         const endIdx = startIdx + MODEL_REGISTRY_PAGE_SIZE;
         const displayedModels = models.slice(startIdx, endIdx);
 
-        displayedModels.forEach((m) => {
+        displayedModels.forEach((raw) => {
+            // --- Smart Unpacking ---
+            // Handles both new API (flat) and old API (nested data)
+            const m = raw.data ? { ...raw.data, ...raw } : raw;
+
             const tr = document.createElement('tr');
             tr.style.borderBottom = '1px solid #f1f5f9';
             tr.style.transition = 'background 0.2s';
