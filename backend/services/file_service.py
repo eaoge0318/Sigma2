@@ -5,8 +5,10 @@
 
 import os
 import shutil
-from typing import List, Dict, Any
+import hashlib  # Ensure hash lib is available
+from typing import List, Dict, Any, Optional
 from datetime import datetime
+from pathlib import Path
 from fastapi import UploadFile, HTTPException
 
 
@@ -41,23 +43,65 @@ class FileService:
         return self.get_user_path(session_id, "uploads")
 
     async def upload_file(
-        self, file: UploadFile, session_id: str = "default"
-    ) -> Dict[str, Any]:
-        """上傳檔案"""
+        self,
+        file: UploadFile,
+        session_id: str,
+        is_mapping: bool = False,
+        file_id: Optional[str] = None,
+    ):
+        """上傳檔案 (支援綁定特定 file_id 的對應表)"""
         try:
+            # 1. 如果是綁定特定檔案的對應表
+            if is_mapping and file_id:
+                analysis_path = self.base_dir / session_id / "analysis" / file_id
+                if not analysis_path.exists():
+                    # 如果尚未分析過，資料夾可能不存在，嘗試建立 (通常只有 analysis/prepare 後才會有)
+                    # 但為了讓用戶能預先上傳，我們可以建立它
+                    analysis_path.mkdir(parents=True, exist_ok=True)
+
+                # 固定命名為 mapping.csv，方便讀取
+                file_path = analysis_path / "mapping.csv"
+
+                content = await file.read()
+                with open(file_path, "wb") as f:
+                    f.write(content)
+
+                return {
+                    "filename": "mapping.csv",
+                    "path": str(file_path),
+                    "size": len(content),
+                    "is_bound": True,
+                    "bound_file_id": file_id,
+                }
+
+            # 2. 一般上傳邏輯 (含全域對應表)
             upload_dir = self.get_user_upload_dir(session_id)
-            # 安全檢查檔名
-            filename = os.path.basename(file.filename)
+            base_filename = file.filename
+
+            # 如果是全域參數對應表，加上特定前綴
+            if is_mapping:
+                filename = f"(參數對應表)_{base_filename}"
+                # 清理該會話下舊的全域對應表
+                for f in os.listdir(upload_dir):
+                    if "(參數對應表)_" in f:
+                        try:
+                            os.remove(os.path.join(upload_dir, f))
+                        except Exception:
+                            pass
+            else:
+                filename = base_filename
+
             file_path = os.path.join(upload_dir, filename)
 
-            with open(file_path, "wb") as buffer:
-                shutil.copyfileobj(file.file, buffer)
+            content = await file.read()
+            with open(file_path, "wb") as f:
+                f.write(content)
 
             return {
-                "status": "success",
                 "filename": filename,
-                "message": f"檔案 {filename} 上傳成功",
-                "session_id": session_id,
+                "path": file_path,
+                "size": len(content),
+                "is_bound": False,
             }
         except Exception as e:
             raise HTTPException(500, detail=f"Upload failed: {str(e)}")
@@ -65,16 +109,32 @@ class FileService:
     async def list_files(
         self, session_id: str = "default"
     ) -> Dict[str, List[Dict[str, Any]]]:
-        """列出已上傳的檔案"""
+        """列出已上傳的檔案 (含索引狀態檢查，並隱藏參數對應表)"""
+        import hashlib  # Ensure hash lib is available
+
         try:
             upload_dir = self.get_user_upload_dir(session_id)
+            analysis_base_dir = os.path.join(self.base_dir, session_id, "analysis")
+
             files = []
             if os.path.exists(upload_dir):
                 for filename in os.listdir(upload_dir):
+                    # 1. 隱藏參數對應表 (這些檔案由系統自動生成前綴，不應出現在列表中)
+                    if "(參數對應表)_" in filename:
+                        continue
+
                     file_path = os.path.join(upload_dir, filename)
                     if os.path.isfile(file_path):
                         try:
                             stats = os.stat(file_path)
+
+                            # 2. 檢查是否已索引 (Look for summary.json in analysis folder)
+                            file_id = hashlib.md5(filename.encode()).hexdigest()[:12]
+                            summary_path = os.path.join(
+                                analysis_base_dir, file_id, "summary.json"
+                            )
+                            is_indexed = os.path.exists(summary_path)
+
                             files.append(
                                 {
                                     "filename": filename,
@@ -82,6 +142,7 @@ class FileService:
                                     "uploaded_at": datetime.fromtimestamp(
                                         stats.st_mtime
                                     ).strftime("%Y-%m-%d %H:%M:%S"),
+                                    "is_indexed": is_indexed,
                                 }
                             )
                         except OSError:

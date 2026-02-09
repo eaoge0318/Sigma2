@@ -87,6 +87,19 @@ export function renderDashboardData(history) {
             statusText.innerText = `[數據流 #${history.length.toString().padStart(4, '0')}] ${goalName}: ${last.current_measure.toFixed(3)} | 狀態: ${last.status}`;
         }
 
+        // Update Real-time Value Cards
+        const actualValueElem = DOM.get('current-actual-value');
+        const predictedValueElem = DOM.get('current-predicted-value');
+        if (actualValueElem) {
+            actualValueElem.textContent = last.current_measure.toFixed(3);
+        }
+        if (predictedValueElem && last.predicted_measure !== undefined) {
+            predictedValueElem.textContent = last.predicted_measure.toFixed(3);
+        } else if (predictedValueElem) {
+            // 如果沒有預測值,顯示當前量測值作為預測基準
+            predictedValueElem.textContent = last.current_measure.toFixed(3);
+        }
+
         // Side Panel Hook
         window.lastDashboardData = last;
         if (typeof window.renderSidePanelParams === 'function') window.renderSidePanelParams(last.current_measure, last);
@@ -178,3 +191,73 @@ export function renderDashboardData(history) {
         });
     } catch (err) { console.error(err); }
 }
+
+// Side Panel Rendering Function
+export function renderSidePanelParams(currentMeasure, data) {
+    const paramList = DOM.get('side-param-list');
+    if (!paramList || !data || !data.recommendations) return;
+
+    const recommendations = data.recommendations;
+    const currentValues = data.current_values || {};
+
+    let html = `
+        <div style="background: #f8fafc; border-radius: 8px; padding: 12px; margin-bottom: 12px;">
+            <div style="font-size: 11px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">TARGET</div>
+            <div style="font-size: 22px; font-weight: 800; color: #1e293b; font-family: 'Roboto Mono', monospace;">${currentMeasure.toFixed(4)}</div>
+        </div>
+        
+        <div style="font-size: 11px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin: 16px 0 8px 0; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px;">
+            CONTROL PARAMETERS
+        </div>
+    `;
+
+    for (const [paramName, recObj] of Object.entries(recommendations)) {
+        const currentVal = recObj.current || 0;
+        const suggestedNext = recObj.suggested_next || 0;
+        const delta = suggestedNext - currentVal;
+
+        console.log(`${paramName}: current=${currentVal}, suggested=${suggestedNext}, delta=${delta}`);
+
+        // 根據變化方向決定顏色
+        let deltaColor, deltaIcon, deltaBg;
+        if (delta > 0.001) {
+            // 往上調（正值）= 藍色
+            deltaColor = '#3b82f6';
+            deltaBg = '#dbeafe';
+            deltaIcon = '↑';
+        } else if (delta < -0.001) {
+            // 往下調（負值）= 綠色
+            deltaColor = '#10b981';
+            deltaBg = '#d1fae5';
+            deltaIcon = '↓';
+        } else {
+            // 持平
+            deltaColor = '#94a3b8';
+            deltaBg = '#f1f5f9';
+            deltaIcon = '→';
+        }
+
+        html += `
+            <div style="border-left: 3px solid ${deltaColor}; padding: 8px 10px; margin-bottom: 8px; background: ${deltaBg}20; border-radius: 4px; cursor: pointer; transition: all 0.2s;" 
+                 onclick="window.scrollToChart && window.scrollToChart('${paramName}')">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                    <span style="font-weight: 600; color: #1e293b; font-size: 12px;">${paramName}</span>
+                    <span style="font-size: 16px;">${deltaIcon}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 11px;color: #64748b;">
+                    <div>
+                        <span style="color: #94a3b8;">實際:</span> <span style="font-weight: 600; font-family: 'Roboto Mono', monospace; color: #475569;">${currentVal.toFixed(3)}</span>
+                    </div>
+                    <div>
+                        <span style="color: #94a3b8;">控制:</span> <span style="font-weight: 600; font-family: 'Roboto Mono', monospace; color: ${deltaColor};">${suggestedNext.toFixed(3)}</span>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    paramList.innerHTML = html;
+}
+
+// 導出為 window 函數供外部使用
+window.renderSidePanelParams = renderSidePanelParams;

@@ -1392,3 +1392,18 @@ button:hover {
     border-color: #a855f7;
     box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.1);
 }
+/* Fix for chat bubble extra space */
+.message-bubble {
+    margin-bottom: 12px;
+    padding: 12px 16px;
+    border-radius: 12px;
+    line-height: 1.6;
+    word-wrap: break-word;
+}
+.message-bubble :last-child {
+    margin-bottom: 0 !important;
+}
+.message-bubble p {
+    margin-top: 0.5em;
+    margin-bottom: 0.5em;
+}
