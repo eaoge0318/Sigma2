@@ -237,7 +237,6 @@
                 <!-- Welcome State -->
                 <div id="welcome-screen"
                     class="flex flex-col items-center justify-center text-slate-400 space-y-4 py-8">
-                    <div class="text-4xl">👋</div>
                     <div class="text-xl font-bold text-slate-600">歡迎使用智能分析助手</div>
                     <p>請先選擇一個CSV檔案，然後開始提問。</p>
                     <div
@@ -252,6 +251,8 @@
                         </div>
                         <div class="flex flex-wrap gap-2">
                             <button
+                                class="suggested-query px-2 py-1 bg-white border border-blue-200 rounded-md hover:bg-blue-600 hover:text-white transition-all">檔案概況摘要</button>
+                            <button
                                 class="suggested-query px-2 py-1 bg-white border border-blue-200 rounded-md hover:bg-blue-600 hover:text-white transition-all">有哪些欄位？</button>
                             <button
                                 class="suggested-query px-2 py-1 bg-white border border-blue-200 rounded-md hover:bg-blue-600 hover:text-white transition-all">數據分佈趨勢</button>
@@ -264,6 +265,15 @@
 
             <!-- Input Area -->
             <div class="p-4 bg-white border-t border-gray-100">
+                <!-- Mode Selector -->
+                <div class="flex justify-center gap-3 mb-4">
+                    <button id="mode-fast" class="mode-pill active" onclick="setAnalysisMode('fast')">
+                        快速回應
+                    </button>
+                    <button id="mode-full" class="mode-pill" onclick="setAnalysisMode('full')">
+                        深度分析
+                    </button>
+                </div>
                 <div class="flex items-center gap-3">
                     <!-- Attachment Button -->
                     <button id="btn-attach"
@@ -497,6 +507,33 @@
             40% {
                 transform: scale(1);
             }
+        }
+
+        /* Mode Selector Styling */
+        .mode-pill {
+            padding: 6px 18px;
+            border-radius: 9999px;
+            font-size: 12px;
+            font-weight: 600;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            border: 1px solid #e2e8f0;
+            background: #f8fafc;
+            color: #64748b;
+            cursor: pointer;
+            outline: none;
+        }
+
+        .mode-pill.active {
+            background: #3b82f6;
+            color: white;
+            border-color: #3b82f6;
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.25);
+        }
+
+        .mode-pill:hover:not(.active) {
+            background: #f1f5f9;
+            border-color: #cbd5e1;
+            transform: translateY(-1px);
         }
     </style>
     <script src="/static/js/analysis.js"></script>
