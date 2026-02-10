@@ -14,7 +14,7 @@ export async function loadModelRegistry() {
     if (!tbody) return;
 
     try {
-        const models = await API.get('/api/analysis/list_models');
+        const models = await API.get('/api/simulator/models');
 
         if (countText) countText.innerText = models.length;
         tbody.innerHTML = '';

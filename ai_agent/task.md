@@ -12,6 +12,7 @@
   - [x] 03_api_design.md - API设计
   - [x] 04_frontend.md - 前端实现
   - [x] 05_implementation_steps.md - 实作步骤
+- [x] 整合新功能意圖 (智慧圖表、自我糾錯) <!-- id: 33 -->
 
 ## 实作阶段 - 后端核心 (3-4天)
 
@@ -120,7 +121,7 @@
   - [ ] PerformRegression
 
 ### 优化与增强
-- [ ] 图表可视化集成
-- [ ] 对话历史持久化
+- [x] 圖表視覺化集成 (Histogram, Scatter, Dual-Axis) <!-- id: 34 -->
+- [ ] 對話歷史持久化
 - [ ] 导出报告功能
 - [ ] 性能优化

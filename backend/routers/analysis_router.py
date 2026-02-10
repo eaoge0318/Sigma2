@@ -1,17 +1,21 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, PlainTextResponse
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
-import os
+import json
 import logging
-from pathlib import Path
+import asyncio  # Added
 
-# 使用新的 AnalysisService
+# 使用新的 AnalysisService 與 Workflow
 from backend.services.analysis.analysis_service import AnalysisService
-from backend.services.analysis.agent import LLMAnalysisAgent
+from backend.services.analysis.agent import SigmaAnalysisWorkflow
+from backend.services.analysis.types import (
+    MonologueEvent,
+    ProgressEvent,
+)
+from backend.services.analysis.tools.executor import ToolExecutor
 from backend.dependencies import (
     get_intelligent_analysis_service,
-    get_llm_agent,
     get_analysis_service as get_old_analysis_service,
 )
 from backend.models.request_models import (
@@ -24,19 +28,31 @@ from backend.models.request_models import (
 router = APIRouter(tags=["Intelligent Analysis"])
 logger = logging.getLogger(__name__)
 
+# ========== 依賴注入 ==========
+
+
+def get_tool_executor(
+    analysis_service: AnalysisService = Depends(get_intelligent_analysis_service),
+) -> ToolExecutor:
+    return ToolExecutor(analysis_service)
+
+
+def get_analysis_workflow(
+    analysis_service: AnalysisService = Depends(get_intelligent_analysis_service),
+    tool_executor: ToolExecutor = Depends(get_tool_executor),
+) -> SigmaAnalysisWorkflow:
+    return SigmaAnalysisWorkflow(tool_executor, analysis_service)
+
+
 # ========== 請求/響應模型 ==========
 
 
 class PrepareFileRequest(BaseModel):
-    """準備文件分析的請求"""
-
     filename: str
     session_id: str = "default"
 
 
 class PrepareFileResponse(BaseModel):
-    """準備文件分析的響應"""
-
     status: str
     file_id: str
     summary: Dict[str, Any]
@@ -44,8 +60,6 @@ class PrepareFileResponse(BaseModel):
 
 
 class ChatRequest(BaseModel):
-    """智能對話請求"""
-
     session_id: str = "default"
     file_id: str
     message: str
@@ -53,25 +67,16 @@ class ChatRequest(BaseModel):
 
 
 class ChatResponse(BaseModel):
-    """智能對話響應"""
-
     response: str
-    tool_used: Optional[str] = None
-    tool_params: Optional[Dict] = None
-    tool_result: Optional[Any] = None
-    all_tool_calls: Optional[List[Dict[str, Any]]] = None
-    thoughts: Optional[List[str]] = None
+    data: Optional[Any] = None
+    chart: Optional[Any] = None
 
 
 class FileListResponse(BaseModel):
-    """文件列表響應"""
-
     files: List[Dict[str, Any]]
 
 
 class MappingStatusResponse(BaseModel):
-    """對應表狀態響應"""
-
     active_mapping: Optional[str] = None
     status: str
 
@@ -84,14 +89,7 @@ async def prepare_file_for_analysis(
     request: PrepareFileRequest,
     analysis_service: AnalysisService = Depends(get_intelligent_analysis_service),
 ):
-    """
-    為CSV文件建立分析索引
-    這是一次性操作，後續分析會使用緩存的索引
-    時間：根據文件大小，約1-3分鐘
-    """
     try:
-        # 獲取文件路徑
-        # 這裡假設上傳路徑規則與 analysis_service 一致
         csv_path = (
             analysis_service.base_dir
             / request.session_id
@@ -102,7 +100,6 @@ async def prepare_file_for_analysis(
         if not csv_path.exists():
             raise HTTPException(404, detail=f"File not found: {request.filename}")
 
-        # 建立索引
         summary = await analysis_service.build_analysis_index(
             csv_path=str(csv_path),
             session_id=request.session_id,
@@ -115,105 +112,176 @@ async def prepare_file_for_analysis(
             summary=summary,
             message=f"Analysis index built for {request.filename}",
         )
-
-    except HTTPException:
-        raise
     except Exception as e:
         raise HTTPException(500, detail=f"Failed to build index: {str(e)}")
-
-
-@router.post("/stop_generation")
-async def stop_generation_endpoint(
-    session_id: str = Query("default"),
-    analysis_service: AnalysisService = Depends(get_intelligent_analysis_service),
-):
-    """
-    停止當前的 AI 生成過程
-    """
-    analysis_service.stop_generation(session_id)
-    return {"status": "success", "message": "Stop signal sent"}
 
 
 @router.post("/chat", response_model=ChatResponse)
 async def chat_with_ai(
     request: ChatRequest,
-    analysis_service: AnalysisService = Depends(get_intelligent_analysis_service),
-    llm_agent: LLMAnalysisAgent = Depends(get_llm_agent),
+    workflow: SigmaAnalysisWorkflow = Depends(get_analysis_workflow),
 ):
     """
-    智能對話分析
-    用戶用自然語言提問，AI 自動調用工具並回答
+    智能對話分析 (同步模式)
     """
     try:
-        # 清除之前的停止信號
-        analysis_service.clear_stop_signal(request.session_id)
-
-        # 驗證 file_id 有效性
-        analysis_path = analysis_service.get_analysis_path(
-            request.session_id, request.file_id
-        )
-
-        # 檢查 summary.json 是否存在
-        if not (analysis_path / "summary.json").exists():
-            raise HTTPException(
-                400, detail="File analysis not ready. Please call /prepare first."
-            )
-
-        # 調用 LLM Agent
-        result = await llm_agent.analyze(
-            session_id=request.session_id,
+        result = await workflow.run(
+            query=request.message,
             file_id=request.file_id,
-            user_question=request.message,
+            session_id=request.session_id,
+            history="",  # TODO: 從資料庫加載歷史
         )
 
-        return ChatResponse(**result)
+        # 解析 workflow 結果
+        try:
+            res_dict = json.loads(result)
+            return ChatResponse(
+                response=res_dict.get("summary", ""),
+                data=res_dict.get("data"),
+                chart=res_dict.get("chart"),
+            )
+        except:
+            return ChatResponse(response=str(result))
 
-    except HTTPException:
-        raise
     except Exception as e:
-        raise HTTPException(500, detail=f"Analysis failed: {str(e)}")
+        logger.error(f"Chat failed: {e}")
+        raise HTTPException(500, detail=str(e))
 
 
 @router.post("/chat/stream")
 async def chat_stream(
     request: ChatRequest,
-    analysis_service: AnalysisService = Depends(get_intelligent_analysis_service),
-    llm_agent: LLMAnalysisAgent = Depends(get_llm_agent),
+    workflow: SigmaAnalysisWorkflow = Depends(get_analysis_workflow),
 ):
     """
     智能對話分析 (SSE串流模式)
-    回傳 Server-Sent Events (SSE) 格式的數據流
     """
-    try:
-        # 清除之前的停止信號
-        analysis_service.clear_stop_signal(request.session_id)
 
-        # 驗證 file_id 有效性
-        analysis_path = analysis_service.get_analysis_path(
-            request.session_id, request.file_id
-        )
+    # 設置 Streaming Handler (LlamaIndex Workflow 原生支援 stream_events)
+    # 設置 Streaming Handler
+    async def event_generator():
+        event_queue = asyncio.Queue()
 
-        if not (analysis_path / "summary.json").exists():
-            raise HTTPException(
-                400, detail="File analysis not ready. Please call /prepare first."
-            )
+        # 1. 定義事件處理器，將 MonologueEvent 放入隊列
+        async def event_handler(ev):
+            await event_queue.put(ev)
 
-        async def event_generator():
-            async for event_json in llm_agent.stream_analyze(
-                session_id=request.session_id,
-                file_id=request.file_id,
-                user_question=request.message,
-                analysis_service=analysis_service,
-            ):
-                # SSE 格式: data: <content>\n\n
-                yield f"data: {event_json}\n\n"
+        # 2. 綁定 Handler 到 Workflow
+        workflow.event_handler = event_handler
 
-        return StreamingResponse(event_generator(), media_type="text/event-stream")
+        # 3. 在背景任務中執行 Workflow
+        async def run_workflow():
+            try:
+                result = await workflow.run(
+                    query=request.message,
+                    file_id=request.file_id,
+                    session_id=request.session_id,
+                    history="",  # TODO: 從資料庫加載歷史
+                )
+                await event_queue.put({"type": "done", "result": result})
+            except Exception as e:
+                await event_queue.put({"type": "error", "error": e})
 
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(500, detail=f"Stream analysis failed: {str(e)}")
+        task = asyncio.create_task(run_workflow())
+
+        # 4. 消費隊列並產生 SSE
+        get_task = None
+        try:
+            while True:
+                # 只有當前沒有等待中的 get_task 時才創建新的
+                if get_task is None:
+                    get_task = asyncio.create_task(event_queue.get())
+
+                # 等待隊列中的新事件 或 Workflow 任務結束
+                done, pending = await asyncio.wait(
+                    [get_task, task], return_when=asyncio.FIRST_COMPLETED
+                )
+
+                if get_task in done:
+                    event = get_task.result()
+                    get_task = None  # 重置以便下一輪讀取
+
+                    if isinstance(event, dict):
+                        if event["type"] == "done":
+                            # 最終結果
+                            result = event["result"]
+
+                            # 確保 result 是 JSON 格式
+                            json_result = ""
+                            try:
+                                if isinstance(result, str):
+                                    json.loads(result)
+                                    json_result = result
+                                else:
+                                    json_result = json.dumps(result, ensure_ascii=False)
+                            except json.JSONDecodeError:
+                                json_result = json.dumps(
+                                    {"summary": str(result)}, ensure_ascii=False
+                                )
+                            except Exception as e:
+                                json_result = json.dumps(
+                                    {
+                                        "summary": f"Result serialization failed: {str(e)}"
+                                    },
+                                    ensure_ascii=False,
+                                )
+
+                            yield f"data: {json_result}\n\n"
+                            yield "event: done\ndata: [DONE]\n\n"
+                            break
+
+                        elif event["type"] == "error":
+                            error = event["error"]
+                            logger.error(f"Stream error in background task: {error}")
+                            error_json = json.dumps(
+                                {"detail": str(error)}, ensure_ascii=False
+                            )
+                            yield f"event: error\ndata: {error_json}\n\n"
+                            break
+
+                    elif isinstance(event, MonologueEvent):
+                        # 串流 Monologue
+                        logger.info(
+                            f"Streaming monologue event: {event.monologue[:50]}..."
+                        )
+                        thought_payload = json.dumps(
+                            {"content": event.monologue}, ensure_ascii=False
+                        )
+                        yield f"event: thought\ndata: {thought_payload}\n\n"
+
+                        tool_call_data = json.dumps(
+                            {"tool": event.tool_name, "params": event.tool_params},
+                            ensure_ascii=False,
+                        )
+                        yield f"event: tool_call\ndata: {tool_call_data}\n\n"
+
+                    elif isinstance(event, ProgressEvent):
+                        logger.info(f"Stream Status: {event.msg}")
+                        # 使用 json.dumps 確保特殊字符 (如引號) 被轉義
+                        status_json = json.dumps(
+                            {"content": event.msg}, ensure_ascii=False
+                        )
+                        yield f"event: status\ndata: {status_json}\n\n"
+
+                if task in done:
+                    # 如果 workflow task 結束但沒有放入 "done" 事件 (異常情況?)
+                    if task.exception():
+                        ex = task.exception()
+                        logger.error(f"Workflow task failed with exception: {ex}")
+                        error_json = json.dumps({"detail": str(ex)}, ensure_ascii=False)
+                        yield f"event: error\ndata: {error_json}\n\n"
+                        break
+                    # 如果正常結束，迴圈會繼續直到處理到 "done" 事件 (由 get_task 處理)
+
+        except asyncio.CancelledError:
+            logger.info("Stream cancelled by client")
+            task.cancel()
+            raise
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+# ========== 檔案與其他輔助端點 ==========
 
 
 @router.get("/files", response_model=FileListResponse)
@@ -221,40 +289,29 @@ async def list_analysis_files(
     session_id: str = Query("default"),
     analysis_service: AnalysisService = Depends(get_intelligent_analysis_service),
 ):
-    """
-    獲取當前用戶可分析的文件列表
-    返回已上傳的CSV文件及其分析狀態
-    """
     try:
         uploads_dir = analysis_service.base_dir / session_id / "uploads"
-
         files_with_status = []
         if uploads_dir.exists():
             for file_path in uploads_dir.glob("*.csv"):
                 filename = file_path.name
                 file_id = analysis_service.get_file_id(filename)
                 analysis_path = analysis_service.get_analysis_path(session_id, file_id)
-
-                # 檢查是否已建立索引
                 is_indexed = (analysis_path / "summary.json").exists()
-
                 stats = file_path.stat()
-
                 files_with_status.append(
                     {
                         "filename": filename,
                         "file_id": file_id,
                         "size": stats.st_size,
-                        "uploaded_at": str(stats.st_mtime),  # 簡單時間戳
+                        "uploaded_at": str(stats.st_mtime),
                         "is_indexed": is_indexed,
                         "status": "ready" if is_indexed else "not_prepared",
                     }
                 )
-
         return FileListResponse(files=files_with_status)
-
     except Exception as e:
-        raise HTTPException(500, detail=f"Failed to list files: {str(e)}")
+        raise HTTPException(500, detail=str(e))
 
 
 @router.get("/summary/{file_id}")
@@ -263,32 +320,10 @@ async def get_file_summary(
     session_id: str = Query("default"),
     analysis_service: AnalysisService = Depends(get_intelligent_analysis_service),
 ):
-    """獲取文件的分析摘要"""
-    try:
-        summary = analysis_service.load_summary(session_id, file_id)
-        if not summary:
-            raise HTTPException(404, detail="Summary not found")
-        return summary
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(500, detail=f"Failed to get summary: {str(e)}")
-
-
-@router.delete("/clear-session")
-async def clear_conversation_session(
-    session_id: str = Query("default"),
-    conversation_id: str = Query("default"),
-    llm_agent: LLMAnalysisAgent = Depends(get_llm_agent),
-):
-    """
-    清除對話歷史
-    """
-    # 調用 Agent 的清除方法
-    if hasattr(llm_agent, "clear_session"):
-        await llm_agent.clear_session()
-
-    return {"status": "success", "message": "Session cleared"}
+    summary = analysis_service.load_summary(session_id, file_id)
+    if not summary:
+        raise HTTPException(404, detail="Summary not found")
+    return summary
 
 
 @router.get("/mapping-status", response_model=MappingStatusResponse)
@@ -296,18 +331,14 @@ async def get_mapping_status(
     session_id: str = Query("default"),
     analysis_service: AnalysisService = Depends(get_intelligent_analysis_service),
 ):
-    """
-    獲取當前會話的對應表狀態
-    """
-    try:
-        mapping_file = analysis_service._get_mapping_file_name(session_id)
-        return MappingStatusResponse(
-            active_mapping=mapping_file,
-            status="success" if mapping_file else "no_mapping",
-        )
-    except Exception as e:
-        logger.error(f"Failed to get mapping status: {str(e)}")
-        return MappingStatusResponse(status="error")
+    mapping_file = analysis_service._get_mapping_file_name(session_id)
+    return MappingStatusResponse(
+        active_mapping=mapping_file,
+        status="success" if mapping_file else "no_mapping",
+    )
+
+
+# ========== 模型管理端點 (Restore) ==========
 
 
 @router.get("/list_models")
@@ -354,13 +385,12 @@ async def get_model_log(
     """
     獲取模型訓練日誌
     """
-    from fastapi.responses import PlainTextResponse
-
     log_content = await analysis_service.get_training_log(job_id, session_id)
     return PlainTextResponse(log_content)
 
 
-# ========== 恢復舊版關鍵端點 (橋接到 Old AnalysisService) ==========
+# ========== 舊版兼容端點 ==========
+# (保留原有的舊版端點以確保相容性)
 
 
 @router.post("/train")
@@ -369,7 +399,6 @@ async def train_model(
     session_id: str = Query("default"),
     analysis_service=Depends(get_old_analysis_service),
 ):
-    """啟動模型訓練 (橋接舊服務)"""
     return await analysis_service.train_model(request, session_id)
 
 
@@ -379,7 +408,6 @@ async def quick_analysis(
     session_id: str = Query("default"),
     analysis_service=Depends(get_old_analysis_service),
 ):
-    """快速數據診斷 (橋接舊服務)"""
     return await analysis_service.quick_analysis(request, session_id)
 
 
@@ -390,7 +418,6 @@ async def get_column_data(
     session_id: str = Query("default"),
     analysis_service=Depends(get_old_analysis_service),
 ):
-    """獲取欄位數據分佈 (橋接舊服務)"""
     return await analysis_service.get_column_data(filename, column, session_id)
 
 
@@ -400,7 +427,6 @@ async def save_filtered_file(
     session_id: str = Query("default"),
     analysis_service=Depends(get_old_analysis_service),
 ):
-    """儲存過濾後的檔案 (橋接舊服務)"""
     return await analysis_service.save_filtered_file(request, session_id)
 
 
@@ -410,5 +436,4 @@ async def advanced_analysis(
     session_id: str = Query("default"),
     analysis_service=Depends(get_old_analysis_service),
 ):
-    """執行進階分析 (橋接舊服務)"""
     return await analysis_service.advanced_analysis(request, session_id)

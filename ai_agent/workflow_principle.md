@@ -20,8 +20,12 @@ graph TD
 
     %% 路徑 B: 複雜任務 (如：數據量化分析)
     Router -- "數據分析" --> Query[DataQueryStep<br/>參數檢索]
-    Query --> Calc[AnalysisStep<br/>統計與模式計算]
-    Calc --> Refine[RefineStep<br/>結果優化/翻譯]
+    Query --> Check{結果為空?}
+    Check -- Yes --> Expand[ExpandConcept<br/>語義擴展重試]
+    Expand --> Query
+    Check -- No --> Calc[AnalysisStep<br/>統計與模式計算]
+    Calc --> Vis[Visualizer<br/>智慧圖表工廠]
+    Vis --> Refine[Humanizer<br/>結果總結/翻譯]
     Refine --> Stop
 
     %% 路徑 C: 錯誤處理 (如：迴圈防護)
@@ -136,7 +140,8 @@ graph TD
 | **ExecuteAnalysis** | Local | 執行地端 Pandas 運算。具備**搜尋結果檢查**機制。 | **18 個** 工具 |
 | **ExpandConcept** | **LLM** | **[自主糾錯]** 若搜尋無效，自動聯想技術術語並重試。 | 1 (LLM 聯想) |
 | **ExecuteTranslation**| **LLM** | 處理純文字翻譯或一般聊天。 | 1 (LLM 處理) |
-| **Humanizer** | **LLM** | 將 JSON 數據轉為繁體中文，並負責 Chart JSON 生成。 | 3 (Helper Tools) |
+| **Visualizer** | Local | **[智慧圖表]** 整合直方圖、散佈圖與雙軸偵測邏輯。 | 3 (Visual Logic) |
+| **Humanizer** | **LLM** | 將 JSON 數據轉為繁體中文，並負責數據解讀。 | 3 (Helper Tools) |
 | **FinalStop** | Local | 輸出 StopEvent，完成 SSE 串流封裝。 | 0 |
 
 ---
@@ -222,7 +227,21 @@ class SigmaAnalysisWorkflow(Workflow):
     `await workflow.run(input="幫我分析這張表")`。
 
 3.  **錯誤與停止控制**：
-    如果工廠發生意外（循環、出錯、或您按了停止），我們只需要在工廠的「中央控制室」（Workflow 循環中）按一下紅燈，所有的工作站都會立刻停下來，這就是為什麼它比 Agent 更穩定。
+    如果工廠發生意外（循環、出錯、或您按了停止），我們只需要在工廠的「中央控制室」（Workflow 循環中）按一下紅燈，所有的工作站都會立刻停下來。
+
+---
+
+## 23. 迴圈防護機制 (Infinite Loop Protection)
+
+針對自動重試與語義擴展路徑，我們實施了 **「三層防護網」** 確保系統永遠不會陷入無限迴圈：
+
+1.  **框架級超時 (Workflow Timeout)**：
+    *   LlamaIndex Workflow 內建 `timeout` 參數（調優至 **600 秒**）。確保複雜的工業分析能有充足時間完成深度推理。
+2.  **計數器限制 (Retry Counter)**：
+    *   在 `expand_concept` 與 `execute_analysis` 之間的循環路徑中，限制調至 **5 次**。
+    *   這允許 AI 在面對極端生僻詞時，有更多機會進行多輪術語聯想。
+3.  **硬性步數限制 (Max Steps)**：
+    *   內部狀態機上限調至 **30 步**。支持更長的「思維鏈」與多輪數據對比。
 
 ---
 

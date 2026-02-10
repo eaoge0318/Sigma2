@@ -213,12 +213,13 @@ class IntelligentAnalysis {
             this.scrollToBottom();
 
             // Start Timer
-            this.startTimer(streamState.timerLabel, streamState.detailsLabel);
+            this.startTimer(streamState);
 
             // 4. Read Stream
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             let buffer = '';
+            let currentEventName = null;
 
             try {
                 while (true) {
@@ -230,11 +231,26 @@ class IntelligentAnalysis {
                     buffer = lines.pop();
 
                     for (const line of lines) {
-                        if (line.startsWith('data: ')) {
+                        if (line.startsWith('event: ')) {
+                            currentEventName = line.slice(7).trim();
+                        } else if (line.startsWith('data: ')) {
                             try {
                                 const jsonStr = line.slice(6);
-                                const event = JSON.parse(jsonStr);
-                                this.handleStreamEvent(streamState, event);
+                                let eventData = {};
+                                try {
+                                    eventData = JSON.parse(jsonStr);
+                                } catch (e) {
+                                    // Handle raw string data (like status messages)
+                                    eventData = { content: jsonStr };
+                                }
+
+                                // Inject event type if missing
+                                if (currentEventName && !eventData.type) {
+                                    eventData.type = currentEventName;
+                                }
+
+                                this.handleStreamEvent(streamState, eventData);
+                                currentEventName = null; // Reset for next event
                             } catch (e) {
                                 console.error('SSE Parse Error', e);
                             }
@@ -267,19 +283,21 @@ class IntelligentAnalysis {
         }
     }
 
-    startTimer(labelElement, detailsLabel = null) {
+    startTimer(state) {
         if (this.timerInterval) clearInterval(this.timerInterval);
         const startTime = Date.now();
+        state.statusText = '思考中...';
 
-        // Initial set
-        if (labelElement) labelElement.textContent = '思考中... (0s)';
-        if (detailsLabel) detailsLabel.textContent = '思考中... (0s)';
-
-        this.timerInterval = setInterval(() => {
+        const update = () => {
             const elapsed = Math.floor((Date.now() - startTime) / 1000);
-            if (labelElement) labelElement.textContent = `思考中... (${elapsed}s)`;
-            if (detailsLabel) detailsLabel.textContent = `思考中... (${elapsed}s)`;
-        }, 1000);
+            const text = `${state.statusText} (${elapsed}s)`;
+
+            if (state.timerLabel) state.timerLabel.textContent = text;
+            if (state.detailsLabel) state.detailsLabel.textContent = text;
+        };
+
+        update(); // Initial
+        this.timerInterval = setInterval(update, 1000);
     }
 
     stopTimer() {
@@ -567,6 +585,9 @@ class IntelligentAnalysis {
                     </summary>
                     
                     <div class="details-content mt-2 space-y-3">
+                        <!-- 狀態日誌 (新增) -->
+                        <div class="status-log space-y-1 text-xs text-gray-600 font-mono border-l-2 border-gray-300 pl-2 bg-gray-50/50 py-1 rounded-r"></div>
+
                         <!-- 思考區塊 -->
                         <div class="ai-thoughts p-2.5 bg-blue-50/20 border-l-2 border-blue-400 rounded-r hidden">
                             <div class="text-[10px] font-bold text-blue-500 uppercase tracking-widest mb-1 opacity-60">AI 思考流程</div>
@@ -589,6 +610,7 @@ class IntelligentAnalysis {
             row: row,
             detailsWrapper: row.querySelector('.workflow-details'),
             detailsLabel: row.querySelector('.thought-label'),
+            statusLog: row.querySelector('.status-log'),
             thoughtsContainer: row.querySelector('.ai-thoughts'),
             thoughtsContent: row.querySelector('.thoughts-content'),
             toolsContainer: row.querySelector('.tool-execution-chain'),
@@ -632,6 +654,7 @@ class IntelligentAnalysis {
 
         switch (event.type) {
             case 'thought':
+                // state.statusText = 'AI 思考中...'; // Managed by backend ProgressEvent
                 state.thoughtsContainer.classList.remove('hidden');
                 const tDiv = document.createElement('div');
                 tDiv.className = "mb-1.5 last:mb-0 line-clamp-3 hover:line-clamp-none cursor-default transition-all";
@@ -641,6 +664,7 @@ class IntelligentAnalysis {
                 break;
 
             case 'tool_call':
+                // state.statusText = `執行工具: ${event.tool}...`; // Managed by backend ProgressEvent
                 state.toolsContainer.classList.remove('hidden');
                 const toolIndex = state.toolsContainer.children.length + 1;
                 const toolDiv = document.createElement('div');
@@ -685,7 +709,19 @@ class IntelligentAnalysis {
                 this.scrollToBottom();
                 break;
 
+            case 'status':
+                // Append to log instead of replacing statusText header
+                if (event.content && state.statusLog) {
+                    const logItem = document.createElement('div');
+                    logItem.textContent = event.content;
+                    // Add a small timestamp? Optional.
+                    // logItem.textContent = `[${new Date().toLocaleTimeString()}] ${event.content}`;
+                    state.statusLog.appendChild(logItem);
+                }
+                break;
+
             case 'tool_result':
+                // state.statusText = '分析數據中...'; // Managed by backend ProgressEvent
                 // 找到對應的 tool (假設順序一致，或最後一個)
                 // 簡單起見，找最後一個 tool step
                 const lastTool = state.toolsContainer.lastElementChild;

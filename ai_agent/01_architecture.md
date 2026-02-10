@@ -2,6 +2,18 @@
 
 ## 系统架构总览
 
+### 🚀 核心設計哲學：打破「單向分析」
+
+本架構的核心改良在於從舊版的 **「單向線性流程」** 轉化為 **「循環迭代流程」**。
+
+*   **現狀問題**：AI 抓取一次資料後就必須寫結論，導致「邏輯跳躍」且內容空洞。
+*   **v2.0 解決方案：螺旋式推理循環 (Iterative Reasoning Loop)**：
+    *   **多步連續調用 (Multi-turn Tool Usage)**：具備「先看目錄、再抓數據、後做比較」的深度分析鏈條，不限制單次工具調用。
+    *   **推理暫存與策略 (Internal Monologue)**：AI 在每步執行前需輸出思維鏈（CoT），明確其分析策略。
+    *   **自我修正與結論校驗 (Self-Correction)**：在撰寫結論前，由系統自動核對是否有實質數據支持。
+
+---
+
 ```
 ┌─────────────────────────────────────────────────────┐
 │                   前端层 (Frontend)                  │
@@ -190,18 +202,31 @@ class SigmaAnalysisWorkflow(Workflow):
 
     @step
     async def visualize_data(self, ev: VisualizingEvent) -> SummarizeEvent:
-        # 繪圖工作站：專責生成 Chart JSON
-        ...
-
-    @step
-    async def expand_concept(self, ev: ConceptExpansionEvent) -> AnalysisEvent:
-        # 語義擴展站：LLM 聯想專業術語並重試搜尋
+        # [智慧圖表工廠]：根據數據特徵自動選擇：
+        # 1. 趨勢圖 (Line) + 雙軸自動偵測
+        # 2. 直方圖 (Bar) + 自動分箱
+        # 3. 散佈圖 (Scatter) + X-Y 配對
         ...
 
     @step
     async def humanizer(self, ev: SummarizeEvent) -> StopEvent:
         # 結果總結站：專注於生成繁體中文分析報告
         ...
+
+---
+
+## 3.3 ExpandConcept 工作站 (自我偵錯與循環)
+
+這是本系統實現「智慧化」的核心工作站。其運作邏輯如下：
+
+1.  **觸發條件**：當 `execute_analysis` 步驟執行工具後，如果返回結果為空（例如關鍵字搜尋零匹配），且該請求具備語義擴展的可能性。
+2.  **邏輯處理**：
+    *   **上下文感知**：讀取當前 `query` 與檔案 `summary`。
+    *   **領域聯想**：利用 LLM 的專家知識，針對用戶的模糊詞彙（如「斷紙」）聯想出多個工業對應詞（如 `WEB_BREAK`, `PaperBreak`, `STOP_PAGE`）。
+    *   **閉環重試**：拋出一個帶有新關鍵字的 `AnalysisEvent`，讓 Workflow 回到分析站重新執行。
+3.  **目標**：將「失敗的搜尋」轉化為「成功的分析」，實現分析邏輯的自我修復。
+
+---
 ```
 
 ---
@@ -246,33 +271,38 @@ AnalysisService.build_analysis_index()
 返回: {file_id, summary}
 ```
 
-### 流程 2: 智能對話與自主糾錯 (Self-Correction)
+### 流程 2: 智能對話與「自我偵錯與分析」循環 (Self-Correction Cycle)
+
+這是系統具備「邏輯深度」的核心機制，確保 AI 在初步搜尋失敗時不會輕易放棄：
 
 ```
 用戶提問: "有沒有斷紙相關參數？"
     │
-意圖識別 (route_intent)
+1. 意圖識別 (route_intent)
     → 識別為: 'analysis'
     │
-地端工具執行 (execute_analysis)
+2. 地端工具執行 (execute_analysis)
     → 嘗試搜尋 "斷紙" → 失敗 (0結果)
     │
-語義擴展工作站 (expand_concept) ──┐
-    → LLM 聯想: "Paper Break", "WebBreak" 
-    │                             │
-    └─────────────────────────────┘ (自動重試搜尋)
+3. [自主偵錯] 語義擴展工作站 (expand_concept) ──┐
+    → LLM 聯想: "Paper Break", "WebBreak"      │
+    │                                          │
+    └──────────────────────────────────────────┘ (自動發起重試循環)
     │
-地端工具執行 (execute_analysis)
+4. [再分析] 地端工具執行 (execute_analysis)
     → 搜尋 "Paper Break" → 成功！
     │
-數據可視化 (visualize_data)
-    → 專屬 Prompt 生成 Chart JSON
+5. 數據可視化 (visualize_data)
+    → 智慧圖表工廠：自動生成配對圖表 JSON
     │
-結果總結 (humanizer)
+6. 結果總結 (humanizer)
     → 生成繁體中文報告 (Expert Summary)
     │
 返回前端渲染
 ```
+
+> [!NOTE]
+> **ExpandConcept 工作站** 是實現「循環」的關鍵。它將 LLM 作為語義索引的補償器，大幅提升了對工業專業術語的容錯率。
 
 ---
 
@@ -355,8 +385,10 @@ class NewStatTool(AnalysisTool):
 - CSV 格式验证
 - 文件大小限制（< 100MB）
 
-### 3. SQL注入防护
-- 使用 pandas，不直接拼接 SQL
+### 4. 迴圈與無限遞歸防護 (Loop Prevention)
+- **Retry Counter**: 在分析循環中設置上限為 **5 次**，給予 AI 充分的自我修正空間。
+- **Timeout**: 設置 **600 秒** (10分鐘) 超時，確保地端推理與大數據運算不被中斷。
+- **Max Steps**: 限制單次工作流的最大執行步數為 **30 步**。
 
 ---
 

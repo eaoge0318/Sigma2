@@ -16,7 +16,9 @@ from backend.services.analysis.analysis_service import (
     AnalysisService as IntelligentAnalysisService,
 )
 import config
-from backend.services.analysis.agent import LLMAnalysisAgent
+
+# UPDATE: 使用新的 Workflow
+from backend.services.analysis.agent import SigmaAnalysisWorkflow
 from backend.services.analysis.tools.executor import ToolExecutor
 
 # 單例實例
@@ -30,7 +32,7 @@ _draft_service: DraftService = None
 
 # Intelligent Analysis 單例
 _intelligent_analysis_service: IntelligentAnalysisService = None
-_llm_agent: LLMAnalysisAgent = None
+_llm_agent: SigmaAnalysisWorkflow = None
 
 
 def get_session_service() -> SessionService:
@@ -97,8 +99,8 @@ def get_intelligent_analysis_service() -> IntelligentAnalysisService:
     return _intelligent_analysis_service
 
 
-def get_llm_agent() -> LLMAnalysisAgent:
-    """取得 LLM 智能分析代理"""
+def get_llm_agent() -> SigmaAnalysisWorkflow:
+    """取得 LLM 智能分析工作流 (Workflow)"""
     global _llm_agent
     if _llm_agent is None:
         # 依賴 IntelligentAnalysisService
@@ -106,10 +108,10 @@ def get_llm_agent() -> LLMAnalysisAgent:
         # 初始化 Tools Executor
         executor = ToolExecutor(service)
 
-        # 初始化 Agent
-        _llm_agent = LLMAnalysisAgent(
+        # 初始化 Workflow (取代舊的 Agent)
+        _llm_agent = SigmaAnalysisWorkflow(
             tool_executor=executor,
-            model_name=config.LLM_MODEL,
-            ollama_api_url=config.LLM_API_URL,
+            analysis_service=service,
+            timeout=600,  # 設定為 10 分鐘
         )
     return _llm_agent

@@ -1,77 +1,64 @@
 from .base import AnalysisTool
 from typing import Dict, Any, List
-import pandas as pd
-
-
-class ExplainResultTool(AnalysisTool):
-    """解釋分析結果工具"""
-
-    name = "explain_result"
-    description = "對之前的分析結果進行自然語言解釋"
-
-    # 但如果需要強制生成解釋，可以調用此工具來標記意圖
-    def execute(self, params: Dict, session_id: str) -> Dict[str, Any]:
-        context = params.get("context", {})
-        # 明確指示 Agent 停止調用並直接回答
-        return (
-            "請根據上下文分析結果，直接用繁體中文回答用戶的疑問。不需要再次調用此工具。"
-        )
 
 
 class SuggestNextAnalysisTool(AnalysisTool):
-    """推薦下一步分析工具"""
+    """根據當前結果推薦下一步分析"""
 
-    name = "suggest_next_analysis"
-    description = "根據當前分析結果，推薦後續的分析方向"
-    required_params = ["file_id"]
+    @property
+    def name(self) -> str:
+        return "suggest_next_analysis"
+
+    @property
+    def description(self) -> str:
+        return "基於當前的分析發現，推薦用戶可以進一步探索的方向。"
 
     def execute(self, params: Dict, session_id: str) -> Dict[str, Any]:
-        file_id = params.get("file_id")
-        current_analysis = params.get("current_analysis_type", "unknown")
-
-        summary = self.service.load_summary(session_id, file_id)
-        if not summary:
-            return {"error": "Summary not found"}
+        # 這是一個輕量級工具，主要用於構造提示詞上下文
+        current_focus = params.get("current_focus", "")
 
         suggestions = []
-        params_list = summary.get("parameters", [])
-
-        # 簡單的規則引擎
-        if current_analysis == "correlation":
-            suggestions.append("Try regression analysis on highly correlated pairs.")
-            suggestions.append("Check for outliers in the correlated parameters.")
-        elif current_analysis == "outliers":
-            suggestions.append("Analyze distribution of parameters with outliers.")
-            suggestions.append(
-                "Check temporal patterns to see if outliers are time-related."
-            )
+        if current_focus:
+            suggestions.append(f"分析 {current_focus} 的時間趨勢")
+            suggestions.append(f"尋找影響 {current_focus} 的相關因子")
+            suggestions.append(f"檢查 {current_focus} 的異常分佈")
         else:
-            suggestions.append("Check parameter statistics.")
-            suggestions.append("Analyze correlations between key parameters.")
-            suggestions.append("Find temporal patterns if time series data exists.")
+            suggestions.append("探索數據中的主要異常值")
+            suggestions.append("分析關鍵參數的相關性")
 
-        return {"current_analysis": current_analysis, "suggestions": suggestions}
+        return {"suggestions": suggestions}
 
 
-class AskClarificationTool(AnalysisTool):
-    """詢問澄清工具"""
+class ExplainResultTool(AnalysisTool):
+    """解釋統計術語"""
 
-    name = "ask_clarification"
-    description = "當用戶意圖不明時，生成澄清問題"
+    @property
+    def name(self) -> str:
+        return "explain_result"
+
+    @property
+    def description(self) -> str:
+        return "為非技術用戶解釋統計結果（如：什麼是 P-value，什麼是相關係數）。"
 
     def execute(self, params: Dict, session_id: str) -> Dict[str, Any]:
-        missing_info = params.get("missing_info", [])
+        term = params.get("term", "")
+        # 簡單的查找表
+        definitions = {
+            "correlation": "相關係數 (Correlation) 表示兩個變數變化的同步程度。1 表示完全正相關，-1 表示完全負相關，0 表示無關。",
+            "std": "標準差 (Standard Deviation) 反映數據的離散程度。數值越大，代表數據波動越劇烈。",
+            "outlier": "異常值 (Outlier) 是指顯著偏離其他數據點的數值，可能代表故障或特殊事件。",
+            "p-value": "P-value 用於判斷結果是否顯著。通常小於 0.05 代表具有統計意義。",
+            "distribution": "分佈 (Distribution) 描述數據出現的頻率概況。",
+        }
 
-        questions = []
-        for info in missing_info:
-            if info == "target":
-                questions.append("請問您想分析哪個目標參數？")
-            elif info == "file":
-                questions.append("請問您指的是哪個文件？")
-            elif info == "time_range":
-                questions.append("請問您想分析哪個時間段？")
+        term_clean = term.lower().strip()
+        desc = definitions.get(term_clean)
 
-        if not questions:
-            questions.append("你能提供更多細節嗎？")
+        if not desc:
+            # 模糊匹配
+            for k, v in definitions.items():
+                if k in term_clean:
+                    desc = v
+                    break
 
-        return {"action": "ask_clarification", "questions": questions}
+        return {"term": term, "explanation": desc or "暫無該術語的內建解釋。"}

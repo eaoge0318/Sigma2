@@ -9,9 +9,9 @@
 ```
 階段一: 後端核心 (5-6天)
   ├─ Day 1-2: 基礎服務 + 查詢工具（5個）
-  ├─ Day 3-4: 統計工具（6個）+ LlamaIndex Agent 遷移
+  ├─ Day 3-4: 統計工具（6個）+ LlamaIndex Workflow 遷移 (含自我糾錯)
   ├─ Day 5: 模式工具（4個）+ 輔助工具（3個）
-  └─ Day 6: API 層 + 工具執行器
+  └─ Day 6: API 層 + 智慧圖表工廠 (Visualizer)
 
 阶段二: 前端 (2天)
   ├─ Day 7: UI 基础
@@ -131,19 +131,21 @@ for tool in tools:
 5. `AnalyzeDistributionTool` (~50行) - 分布分析
 6. `PerformRegressionTool` (~70行) - 回归分析
 
-#### 3.2 實現 LlamaIndex Agent (~300行)
+#### 3.2 實現 LlamaIndex Workflow (SigmaAnalysisWorkflow) (~300行)
 
 **文件**: `backend/services/analysis/agent.py`
 
 **安裝依賴**:
 ```bash
-pip install llama-index-core llama-index-llms-ollama llama-index-embeddings-ollama
+pip install llama-index-core llama-index-llms-ollama
 ```
 
-**核心方法**:
-- `__init__()` - 初始化 Ollama 與 ReAct Agent
-- `_wrap_tools()` - 將原生工具封裝為 FunctionTool
-- `analyze()` - 呼叫 LlamaIndex `achat` 進行推理
+**核心站點實作**:
+- `route_intent()` - 意圖分流 (Analysis/Chat/Translation)
+- `execute_analysis()` - 工具執行站
+- `expand_concept()` - **[自我糾錯]** 語義擴展循環，當搜尋結果為空時進入此站點聯想術語並重試
+- `visualize_data()` - **[智慧圖表]** 整合直方圖、散佈圖與雙軸偵測邏輯
+- `humanizer()` - 總結報告站
 
 ✅ **測試**:
 ```python
