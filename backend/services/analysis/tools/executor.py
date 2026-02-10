@@ -1,101 +1,87 @@
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
+import logging
 from .base import AnalysisTool
-
-# 導入所有工具
 from .data_query import (
     GetParameterListTool,
-    GetParameterStatisticsTool,
-    SearchParametersByConceptTool,
     GetDataOverviewTool,
+    SearchParametersTool,
     GetTimeSeriesDataTool,
 )
 from .statistics import (
-    CalculateCorrelationTool,
-    GetTopCorrelationsTool,
-    CompareGroupsTool,
-    DetectOutliersTool,
     AnalyzeDistributionTool,
-    PerformRegressionTool,
+    DetectOutliersTool,
+    GetTopCorrelationsTool,
 )
-from .patterns import (
-    FindTemporalPatternsTool,
-    FindEventPatternsTool,
-    ClusterAnalysisTool,
-    FindAssociationRulesTool,
-)
-from .helpers import ExplainResultTool, SuggestNextAnalysisTool, AskClarificationTool
+from .patterns import FindTemporalPatternsTool, FindEventPatternsTool
+from .helpers import SuggestNextAnalysisTool, ExplainResultTool
+
+logger = logging.getLogger(__name__)
 
 
 class ToolExecutor:
     """
     工具執行器
-    負責管理和執行所有分析工具
+    負責管理所有分析工具的實例化與調用
     """
 
     def __init__(self, analysis_service):
         self.analysis_service = analysis_service
-        self.tools = self._register_tools()
+        self.tools: Dict[str, AnalysisTool] = {}
+        self._register_tools()
 
-    def _register_tools(self) -> Dict[str, AnalysisTool]:
-        """註冊所有分析工具"""
-        return {
-            # 查詢工具 (5個)
-            "get_parameter_list": GetParameterListTool(self.analysis_service),
-            "get_parameter_statistics": GetParameterStatisticsTool(
-                self.analysis_service
-            ),
-            "search_parameters_by_concept": SearchParametersByConceptTool(
-                self.analysis_service
-            ),
-            "get_data_overview": GetDataOverviewTool(self.analysis_service),
-            "get_time_series_data": GetTimeSeriesDataTool(self.analysis_service),
-            # 統計工具 (6個)
-            "calculate_correlation": CalculateCorrelationTool(self.analysis_service),
-            "get_top_correlations": GetTopCorrelationsTool(self.analysis_service),
-            "compare_groups": CompareGroupsTool(self.analysis_service),
-            "detect_outliers": DetectOutliersTool(self.analysis_service),
-            "analyze_distribution": AnalyzeDistributionTool(self.analysis_service),
-            "perform_regression": PerformRegressionTool(self.analysis_service),
-            # 模式工具 (4個)
-            "find_temporal_patterns": FindTemporalPatternsTool(self.analysis_service),
-            "find_event_patterns": FindEventPatternsTool(self.analysis_service),
-            "cluster_analysis": ClusterAnalysisTool(self.analysis_service),
-            "find_association_rules": FindAssociationRulesTool(self.analysis_service),
-            # 輔助工具 (3個)
-            "explain_result": ExplainResultTool(self.analysis_service),
-            "suggest_next_analysis": SuggestNextAnalysisTool(self.analysis_service),
-            "ask_clarification": AskClarificationTool(self.analysis_service),
-        }
-
-    def execute_tool(
-        self, tool_name: str, params: Dict[str, Any], session_id: str
-    ) -> Dict[str, Any]:
-        """執行指定工具"""
-        tool = self.tools.get(tool_name)
-        if not tool:
-            return {"error": f"Tool not found: {tool_name}"}
-
-        # 驗證參數
-        missing = tool.validate_params(params)
-        if missing:
-            return {"error": f"Missing required parameters: {', '.join(missing)}"}
-
-        try:
-            return tool.execute(params, session_id)
-        except Exception as e:
-            return {"error": f"Tool execution failed: {str(e)}"}
-
-    def list_tools(self) -> List[Dict[str, Any]]:
-        """返回所有工具信息"""
-        return [
-            {
-                "name": name,
-                "description": tool.description,
-                "required_params": tool.required_params,
-            }
-            for name, tool in self.tools.items()
+    def _register_tools(self):
+        """註冊所有可用工具"""
+        tool_classes = [
+            # Data Query
+            GetParameterListTool,
+            GetDataOverviewTool,
+            SearchParametersTool,
+            GetTimeSeriesDataTool,
+            # Statistics
+            AnalyzeDistributionTool,
+            DetectOutliersTool,
+            GetTopCorrelationsTool,
+            # Patterns
+            FindTemporalPatternsTool,
+            FindEventPatternsTool,
+            # Helpers
+            SuggestNextAnalysisTool,
+            ExplainResultTool,
         ]
 
-    def get_tool(self, tool_name: str) -> Optional[AnalysisTool]:
-        """獲取工具實例"""
-        return self.tools.get(tool_name)
+        for tool_cls in tool_classes:
+            tool_instance = tool_cls(self.analysis_service)
+            self.tools[tool_instance.name] = tool_instance
+
+    def get_tool(self, name: str) -> AnalysisTool:
+        """獲取指定工具"""
+        return self.tools.get(name)
+
+    def list_tools(self) -> List[Dict[str, str]]:
+        """列出所有可用工具描述"""
+        return [
+            {"name": t.name, "description": t.description, "params": t.required_params}
+            for t in self.tools.values()
+        ]
+
+    def execute_tool(
+        self, tool_name: str, params: Dict, session_id: str
+    ) -> Dict[str, Any]:
+        """統一執行入口"""
+        tool = self.get_tool(tool_name)
+        if not tool:
+            return {"error": f"Tool '{tool_name}' not found"}
+
+        try:
+            # 參數驗證
+            if not tool.validate_params(params):
+                missing = [p for p in tool.required_params if p not in params]
+                return {"error": f"Missing required parameters: {missing}"}
+
+            logger.info(f"Executing tool: {tool_name} for session: {session_id}")
+            result = tool.execute(params, session_id)
+            return result
+
+        except Exception as e:
+            logger.error(f"Tool execution failed: {tool_name}, Error: {e}")
+            return {"error": f"Internal execution error: {str(e)}"}
