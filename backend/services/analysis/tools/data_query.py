@@ -21,10 +21,28 @@ class GetParameterListTool(AnalysisTool):
         if not summary:
             return {"error": "File not found or not indexed"}
 
+        quality_stats = summary.get("quality_stats", {})
+
+        # Double Injection (雙重植入): 強制在工具輸出夾帶「品質警訊」
+        quality_alerts = {}
+        if quality_stats.get("null_column_count", 0) > 0:
+            quality_alerts["high_missing_rate_columns"] = quality_stats.get(
+                "null_columns_preview", []
+            )
+        if quality_stats.get("sparse_column_count", 0) > 0:
+            quality_alerts["sparse_columns"] = quality_stats.get(
+                "sparse_columns_preview", []
+            )
+        if quality_stats.get("constant_column_count", 0) > 0:
+            quality_alerts["constant_columns_sample"] = quality_stats.get(
+                "constant_columns_preview", []
+            )
+
         return {
             "parameters": summary.get("parameters", []),
             "total_count": summary.get("total_columns", 0),
             "mappings": summary.get("mappings", {}),
+            "quality_alerts (ATTENTION!)": quality_alerts,  # 強制 AI 注意這裡
         }
 
 
@@ -149,21 +167,42 @@ class GetTimeSeriesDataTool(AnalysisTool):
         csv_path = self.analysis_service.base_dir / session_id / "uploads" / filename
 
         try:
-            # 優化讀取：只讀取需要的欄位
-            df = pd.read_csv(
-                csv_path, usecols=lambda c: c in target_params or "TIME" in c.upper()
-            )
+            # 獲取 CSV 實際的所有欄位名
+            full_df_sample = pd.read_csv(csv_path, nrows=0)
+            all_csv_columns = full_df_sample.columns.tolist()
+
+            # 進行大小寫不敏感的欄位匹配
+            matched_columns = []
+            for target in target_params:
+                target_upper = target.upper()
+                for csv_col in all_csv_columns:
+                    if csv_col.upper() == target_upper:
+                        matched_columns.append(csv_col)
+                        break
+
+            # 強制包含時間欄位
+            time_cols = [c for c in all_csv_columns if "TIME" in c.upper()]
+            cols_to_read = list(set(matched_columns + time_cols))
+
+            if not matched_columns:
+                return {
+                    "error": f"找不到指定的參數: {', '.join(target_params)}。請確認參數名稱是否正確。",
+                    "available_columns_preview": all_csv_columns[:10],
+                }
+
+            # 只讀取匹配到的欄位
+            df = pd.read_csv(csv_path, usecols=cols_to_read)
 
             # 簡單降採樣邏輯
             if len(df) > limit:
                 step = len(df) // limit
                 df = df.iloc[::step]
 
-            # 轉換為前端友好的格式
-            result = df.to_dict(orient="records")
+            # 確保返回的是對齊後的數據
+            result = df.to_dict(orient="list")
             return {
                 "data": result,
-                "parameters": target_params,
+                "parameters": matched_columns,
                 "total_points": len(df),
             }
         except Exception as e:

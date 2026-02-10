@@ -4,6 +4,7 @@ class IntelligentAnalysis {
         this.currentFileId = null;
         this.currentFilename = null;
         this.conversationId = 'default';
+        this.analysisMode = 'fast'; // 'fast' or 'full'
         this.isLoading = false;
 
         // DOM Elements
@@ -37,7 +38,7 @@ class IntelligentAnalysis {
         this.init();
 
         if (window.marked) {
-            console.log("🛠️ [Init] Configuring marked v" + (window.marked.version || 'unknown'));
+            console.log("[Init] Configuring marked v" + (window.marked.version || 'unknown'));
             const renderer = new marked.Renderer();
 
             // Modern marked (v11+) might pass an object to renderer functions
@@ -59,7 +60,7 @@ class IntelligentAnalysis {
                 if (lang === 'json' || !lang) {
                     const trimmed = safeCode.trim();
                     if (trimmed.startsWith('{') && (trimmed.includes('"type": "chart"') || trimmed.includes('"type":"chart"'))) {
-                        console.log("🎨 [marked] Detected Chart JSON block!");
+                        console.log("[marked] Detected Chart JSON block!");
                         try {
                             // Ensure valid JSON before embedding
                             JSON.parse(safeCode);
@@ -67,7 +68,7 @@ class IntelligentAnalysis {
                                 <canvas data-chart="${encodeURIComponent(safeCode)}"></canvas>
                             </div>`;
                         } catch (e) {
-                            console.error("❌ [marked] Chart JSON parsing failed inside renderer:", e);
+                            console.error("[marked] Chart JSON parsing failed inside renderer:", e);
                         }
                     }
                 }
@@ -197,7 +198,8 @@ class IntelligentAnalysis {
                     session_id: this.sessionId,
                     file_id: this.currentFileId,
                     message: message,
-                    conversation_id: this.conversationId
+                    conversation_id: this.conversationId,
+                    mode: this.analysisMode
                 }),
                 signal: signal // Attach signal
             });
@@ -259,7 +261,7 @@ class IntelligentAnalysis {
                 }
             } catch (readError) {
                 if (readError.name === 'AbortError') {
-                    this.addMessage('system', '⏹️ 生成已手動停止');
+                    this.addMessage('system', '生成已手動停止');
                 } else {
                     throw readError;
                 }
@@ -267,7 +269,7 @@ class IntelligentAnalysis {
 
         } catch (error) {
             if (error.name !== 'AbortError') {
-                this.addMessage('assistant', `❌ 錯誤: ${error.message}`);
+                this.addMessage('assistant', `錯誤: ${error.message}`);
             }
         } finally {
             this.isLoading = false;
@@ -434,7 +436,7 @@ class IntelligentAnalysis {
             // Let's add it, but it will be hidden until welcome screen is dismissed.
             const totalRows = summary.total_rows || 0;
             const totalCols = summary.total_columns || 0;
-            this.addMessage('assistant', `✅ 已切換至文件 **${filename}**。\n我已經分析了數據結構，共 **${totalRows}** 行數據，包含 **${totalCols}** 個欄位。`);
+            this.addMessage('assistant', `已切換至文件 **${filename}**。\n我已經分析了數據結構，共 **${totalRows}** 行數據，包含 **${totalCols}** 個欄位。`);
 
         } catch (error) {
             alert(`文件準備失敗: ${error.message}`);
@@ -546,8 +548,8 @@ class IntelligentAnalysis {
 
     typeWriter(targetEl, cursorEl, text) {
         let i = 0;
-        const speed = 10; // 每個字符的間隔 (ms)
-        const chunk = 2;  // 每次追加的字符數 (提升速度感)
+        const speed = 1;  // 縮短間隔 (1ms)
+        const chunk = 5;  // 增加每次跳出的字數
 
         targetEl.textContent = '';
 
@@ -628,7 +630,7 @@ class IntelligentAnalysis {
         try {
             // 提供除錯資訊
             if (state.fullText && state.fullText.includes('[object Object]')) {
-                console.warn("🎨 [Markdown] fullText contains [object Object] during updateMarkdown.");
+                console.warn("[Markdown] fullText contains [object Object] during updateMarkdown.");
             }
 
             state.markdownBody.innerHTML = marked.parse(state.fullText || '');
@@ -642,7 +644,7 @@ class IntelligentAnalysis {
 
     handleStreamEvent(state, event) {
         // --- 核心除錯日誌 (由用戶要求加強) ---
-        console.log("📥 [SSE Event]", event);
+        console.log("[SSE Event]", event);
 
         // 移除思考中指示器 和 timer (僅在最終回應或出錯時)
         if (state.typingIndicator && !state.typingIndicator.classList.contains('hidden')) {
@@ -654,17 +656,19 @@ class IntelligentAnalysis {
 
         switch (event.type) {
             case 'thought':
-                // state.statusText = 'AI 思考中...'; // Managed by backend ProgressEvent
+                // 強制展開細節區域
+                if (state.detailsWrapper) state.detailsWrapper.open = true;
                 state.thoughtsContainer.classList.remove('hidden');
                 const tDiv = document.createElement('div');
                 tDiv.className = "mb-1.5 last:mb-0 line-clamp-3 hover:line-clamp-none cursor-default transition-all";
-                tDiv.textContent = `💭 ${event.content}`;
+                tDiv.textContent = `Thought: ${event.content}`;
                 state.thoughtsContent.appendChild(tDiv);
                 this.scrollToBottom();
                 break;
 
             case 'tool_call':
-                // state.statusText = `執行工具: ${event.tool}...`; // Managed by backend ProgressEvent
+                // 強制展開細節區域
+                if (state.detailsWrapper) state.detailsWrapper.open = true;
                 state.toolsContainer.classList.remove('hidden');
                 const toolIndex = state.toolsContainer.children.length + 1;
                 const toolDiv = document.createElement('div');
@@ -701,7 +705,7 @@ class IntelligentAnalysis {
                     }
                 }
                 if (chunk === '[object Object]') {
-                    console.error("⚠️ [Analysis] Caught literal [object Object] in text_chunk event!");
+                    console.error("[Analysis] Caught literal [object Object] in text_chunk event!");
                     return;
                 }
                 state.fullText += chunk;
@@ -738,7 +742,7 @@ class IntelligentAnalysis {
                         details.classList.remove('hidden');
                         let resStr = event.result;
                         if (resStr === '[object Object]') {
-                            console.warn("⚠️ [tool_result] Received literal [object Object] string from backend.");
+                            console.warn("[tool_result] Received literal [object Object] string from backend.");
                             resStr = '{"status": "error", "message": "工具回傳內容損毀 (Received [object Object] string)"}';
                         }
 
@@ -751,7 +755,7 @@ class IntelligentAnalysis {
                                 } catch (e) { /* ignore parse error for raw string */ }
                             }
                         } catch (e) {
-                            console.error("❌ [tool_result] Error processing tool result:", e);
+                            console.error("[tool_result] Error processing tool result:", e);
                             resStr = String(resStr);
                         }
 
@@ -766,61 +770,22 @@ class IntelligentAnalysis {
                 break;
 
             case 'content':
-                // 即時渲染 Markdown 並加上光標
-                if (state.markdownBody && state.contentOutput) {
-                    let content = event.content || '';
-                    if (typeof content !== 'string') {
-                        console.warn("Received non-string in content stream, stringifying:", content);
-                        try {
-                            content = JSON.stringify(content);
-                        } catch (e) {
-                            content = String(content);
-                        }
-                    }
-                    if (content === '[object Object]') {
-                        console.warn("Received literal [object Object] string, ignoring.");
-                        content = '';
-                    }
-
-                    state.fullText += content;
-
-                    // 將當前累積的文字渲染為 HTML
-                    state.markdownBody.innerHTML = marked.parse(state.fullText) + '<span class="typing-cursor">▍</span>';
-
-                    // 關鍵修正：內容更新後也要觸發圖表解析
-                    this.renderCharts(state.markdownBody);
-                    this.scrollToBottom();
-                }
+                // 已廢棄：回歸 text_chunk 命名
                 break;
 
             case 'response':
-                // 打字機輸出最終結果 (停止最後一次的串流更新)
+                // 串流結束後的最終校驗與渲染
                 if (state.markdownBody) {
-                    // 優先使用後端回傳的完整 content，但需先校驗
-                    let backendContent = event.content;
+                    let backendContent = event.content || event.summary;
                     let finalContent = state.fullText;
 
                     if (backendContent && typeof backendContent === 'string' && !backendContent.includes('[object Object]') && backendContent.length >= state.fullText.length) {
                         finalContent = backendContent;
-                    } else {
-                        console.log("Using accumulated fullText as final content (backend content was empty, corrupted, or shorter)");
                     }
 
-                    // Final safety check
-                    if (typeof finalContent !== 'string') {
-                        console.warn("Caught non-string final content, stringifying.");
-                        try {
-                            finalContent = JSON.stringify(finalContent);
-                        } catch (e) {
-                            finalContent = String(finalContent);
-                        }
-                    }
-                    if (finalContent.includes('[object Object]')) {
-                        console.warn("Caught [object Object] in final content, cleaning.");
-                        finalContent = finalContent.replace(/\[object Object\]/g, "(圖表數據異常)");
-                    }
-
+                    // 最終 Markdown 渲染 (包含圖表)
                     state.markdownBody.innerHTML = marked.parse(finalContent);
+                    this.renderCharts(state.markdownBody);
 
                     // 渲染 Mermaid 圖表 (如果有)
                     if (finalContent.includes('```mermaid')) {
@@ -1062,9 +1027,30 @@ class IntelligentAnalysis {
             this.elements.mappingUploadInput.value = ''; // Reset input
         }
     }
+    setMode(mode) {
+        this.analysisMode = mode;
+        console.log(`🚀 [Mode] Switched to ${mode}`);
+
+        // Update UI
+        const fastBtn = document.getElementById('mode-fast');
+        const fullBtn = document.getElementById('mode-full');
+
+        if (mode === 'fast') {
+            fastBtn.classList.add('active');
+            fullBtn.classList.remove('active');
+        } else {
+            fullBtn.classList.add('active');
+            fastBtn.classList.remove('active');
+        }
+    }
 }
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
     window.ia = new IntelligentAnalysis();
 });
+
+// Global accessor for HTML onclick
+window.setAnalysisMode = (mode) => {
+    if (window.ia) window.ia.setMode(mode);
+};

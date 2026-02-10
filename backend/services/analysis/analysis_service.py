@@ -51,6 +51,23 @@ class AnalysisService:
             analysis_dir.mkdir(parents=True, exist_ok=True)
         return analysis_dir
 
+    async def prepare_file(
+        self, session_id: str, filename: str
+    ) -> tuple[bool, str, dict]:
+        """預處理檔案的門面方法"""
+        csv_path = self.base_dir / session_id / "uploads" / filename
+        if not csv_path.exists():
+            return False, f"檔案不存在: {filename}", {}
+
+        try:
+            summary = await self.build_analysis_index(
+                str(csv_path), session_id, filename
+            )
+            return True, "檔案預處理成功", summary
+        except Exception as e:
+            logger.error(f"Prepare file failed: {e}")
+            return False, str(e), {}
+
     async def build_analysis_index(
         self, csv_path: str, session_id: str, filename: str
     ) -> Dict:
@@ -84,6 +101,33 @@ class AnalysisService:
             # 2. 統計信息
             statistics = StatisticsHelper.calculate_statistics(df)
             self._save_json(analysis_path / "statistics.json", statistics)
+
+            # --- 新增：數據品質指標摘要 ---
+            null_cols = [
+                c for c, s in statistics.items() if s.get("missing_count", 0) > 0
+            ]
+            const_cols = [col for col in df.columns if df[col].nunique() <= 1]
+
+            # 偵測「稀疏」欄位：真值比例低於 80% (排除全空或全定值)
+            sparse_cols = []
+            for col in df.columns:
+                if col in null_cols or col in const_cols:
+                    continue
+                if pd.api.types.is_numeric_dtype(df[col]):
+                    real_c = df[col].count() - (df[col] == 0).sum()
+                else:
+                    real_c = df[col].count()
+                if real_c < len(df) * 0.8:
+                    sparse_cols.append(col)
+
+            summary["quality_stats"] = {
+                "null_column_count": len(null_cols),
+                "constant_column_count": len(const_cols),
+                "sparse_column_count": len(sparse_cols),
+                "null_columns_preview": null_cols[:10],
+                "constant_columns_preview": const_cols[:10],
+                "sparse_columns_preview": sparse_cols[:10],
+            }
 
             # 3. 相關性矩陣
             correlations = StatisticsHelper.calculate_correlations(df)
@@ -154,7 +198,74 @@ class AnalysisService:
         return mapping
 
     def load_summary(self, session_id: str, file_id: str) -> Optional[Dict]:
-        return self._load_json(session_id, file_id, "summary.json")
+        summary = self._load_json(session_id, file_id, "summary.json")
+
+        # 關鍵修復：補算缺失的品質統計，並確保統計文件是全量掃描過的
+        if summary:
+            stats = self.load_statistics(session_id, file_id)
+            all_params = summary.get("parameters", [])
+            is_incomplete = stats and any(p not in stats for p in all_params)
+
+            # 如果 quality_stats 缺失，或者尚未計算過「稀疏欄位」
+            q_stats = summary.get("quality_stats", {})
+            if not q_stats or is_incomplete or "sparse_column_count" not in q_stats:
+                logger.info(
+                    f"Quality data missing or incomplete for {file_id}. Forcing refresh..."
+                )
+                try:
+                    csv_path = (
+                        self.base_dir / session_id / "uploads" / summary["filename"]
+                    )
+                    if csv_path.exists():
+                        df = pd.read_csv(csv_path, encoding="utf-8-sig")
+                        df.columns = [str(c).strip() for c in df.columns]
+
+                        # 重新計算支援全量欄位的統計資訊
+                        statistics = StatisticsHelper.calculate_statistics(df)
+                        self._save_json(
+                            self.get_analysis_path(session_id, file_id)
+                            / "statistics.json",
+                            statistics,
+                        )
+
+                        null_cols = [
+                            c
+                            for c, s in statistics.items()
+                            if s.get("missing_count", 0) > 0
+                        ]
+                        const_cols = [
+                            col for col in df.columns if df[col].nunique() <= 1
+                        ]
+
+                        # 偵測稀疏欄位
+                        sparse_cols = []
+                        for col in df.columns:
+                            if col in null_cols or col in const_cols:
+                                continue
+                            if pd.api.types.is_numeric_dtype(df[col]):
+                                real_c = df[col].count() - (df[col] == 0).sum()
+                            else:
+                                real_c = df[col].count()
+                            if real_c < len(df) * 0.8:
+                                sparse_cols.append(col)
+
+                        summary["quality_stats"] = {
+                            "null_column_count": len(null_cols),
+                            "constant_column_count": len(const_cols),
+                            "sparse_column_count": len(sparse_cols),
+                            "null_columns_preview": null_cols[:10],
+                            "constant_columns_preview": const_cols[:10],
+                            "sparse_columns_preview": sparse_cols[:10],
+                        }
+                        self._save_json(
+                            self.get_analysis_path(session_id, file_id)
+                            / "summary.json",
+                            summary,
+                        )
+                except Exception as e:
+                    logger.error(f"Failed to force refresh quality_stats: {e}")
+
+        return summary
 
     def load_statistics(self, session_id: str, file_id: str) -> Dict:
         return self._load_json(session_id, file_id, "statistics.json") or {}
