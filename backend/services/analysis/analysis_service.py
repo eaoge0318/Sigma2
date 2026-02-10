@@ -159,51 +159,67 @@ class AnalysisService:
     def _load_mapping_table(
         self, session_id: str, file_id: Optional[str] = None
     ) -> Dict[str, str]:
-        """加載術語對應表"""
+        """加載術語對應表 (優化版：支援三欄位格式與全局 fallback)"""
         mapping = {}
-        try:
-            mapping_file_path = None
-            if file_id:
-                bound_mapping = (
-                    self.base_dir / session_id / "analysis" / file_id / "mapping.csv"
-                )
-                if bound_mapping.exists():
-                    mapping_file_path = bound_mapping
 
-            if not mapping_file_path:
-                uploads_dir = self.base_dir / session_id / "uploads"
-                if uploads_dir.exists():
-                    mapping_files = list(uploads_dir.glob("*(參數對應表)*.csv"))
-                    if mapping_files:
-                        mapping_file_path = max(
-                            mapping_files, key=lambda p: p.stat().st_mtime
-                        )
+        def _parse_file(p):
+            try:
+                df = pd.read_csv(p)
+                cols = df.columns
+                if len(cols) >= 2:
+                    # 邏輯：
+                    # 如果有三欄以上，通常是 [短編號, 中文, 長編號]
+                    # 我們要把 短編號 -> 中文 AND 長編號 -> 中文 都存起來
+                    for _, row in df.iterrows():
+                        name = str(row[cols[1]]).strip()
+                        if not name or name == "nan":
+                            continue
 
-            if not mapping_file_path:
-                return {}
+                        # 第一欄
+                        code1 = str(row[cols[0]]).strip()
+                        if code1 and code1 != "nan":
+                            mapping[code1] = name
 
-            df = pd.read_csv(mapping_file_path)
-            cols = df.columns
-            if len(cols) >= 2:
-                # 簡單推斷 key/value columns
-                code_col = cols[0]
-                cn_col = cols[1]
-                for _, row in df.iterrows():
-                    code = str(row[code_col]).strip()
-                    name = str(row[cn_col]).strip()
-                    if code and name and code != "nan" and name != "nan":
-                        mapping[code] = name
-        except Exception as e:
-            logger.warning(f"Mapping table load failed: {e}")
+                        # 第三欄 (如果有)
+                        if len(cols) >= 3:
+                            code2 = str(row[cols[2]]).strip()
+                            if code2 and code2 != "nan":
+                                mapping[code2] = name
+            except Exception as e:
+                logger.warning(f"Failed to parse mapping file {p}: {e}")
+
+        # 1. 查找特定 Session 的映射
+        mapping_file_path = None
+        if file_id:
+            bound_mapping = (
+                self.base_dir / session_id / "analysis" / file_id / "mapping.csv"
+            )
+            if bound_mapping.exists():
+                mapping_file_path = bound_mapping
+
+        if not mapping_file_path:
+            uploads_dir = self.base_dir / session_id / "uploads"
+            if uploads_dir.exists():
+                mapping_files = list(uploads_dir.glob("*參數對應表*.csv"))
+                if mapping_files:
+                    mapping_file_path = max(
+                        mapping_files, key=lambda p: p.stat().st_mtime
+                    )
+
+        if mapping_file_path:
+            _parse_file(mapping_file_path)
+
         return mapping
 
     def load_summary(self, session_id: str, file_id: str) -> Optional[Dict]:
         summary = self._load_json(session_id, file_id, "summary.json")
 
-        # 關鍵修復：補算缺失的品質統計，並確保統計文件是全量掃描過的
+        # 關鍵修復：補算缺失的品質統計，或修復重名欄位衝突
         if summary:
-            stats = self.load_statistics(session_id, file_id)
+            # 檢查參數清單是否有重複 (即 strip() 後產生的碰撞)
             all_params = summary.get("parameters", [])
+
+            stats = self.load_statistics(session_id, file_id)
             is_incomplete = stats and any(p not in stats for p in all_params)
 
             # 如果 quality_stats 缺失，或者尚未計算過「稀疏欄位」
@@ -220,12 +236,26 @@ class AnalysisService:
                         df = pd.read_csv(csv_path, encoding="utf-8-sig")
                         df.columns = [str(c).strip() for c in df.columns]
 
-                        # 重新計算支援全量欄位的統計資訊
+                        # 更新摘要基礎資訊
+                        summary["parameters"] = list(df.columns)
+                        summary["total_columns"] = len(df.columns)
+                        summary["categories"] = StatisticsHelper.categorize_parameters(
+                            df.columns
+                        )
+
+                        # 重新計算支援全量欄位的統計資訊與相關性
                         statistics = StatisticsHelper.calculate_statistics(df)
                         self._save_json(
                             self.get_analysis_path(session_id, file_id)
                             / "statistics.json",
                             statistics,
+                        )
+
+                        correlations = StatisticsHelper.calculate_correlations(df)
+                        self._save_json(
+                            self.get_analysis_path(session_id, file_id)
+                            / "correlations.json",
+                            correlations,
                         )
 
                         null_cols = [
@@ -295,6 +325,25 @@ class AnalysisService:
         except Exception as e:
             logger.warning(f"Failed to get mapping file name: {e}")
             return None
+
+    async def manual_reindex(self, session_id: str, file_id: str) -> bool:
+        """強制重新建立特定檔案的索引"""
+        summary = self.load_summary(session_id, file_id)
+        if not summary or "filename" not in summary:
+            return False
+
+        filename = summary["filename"]
+        csv_path = self.base_dir / session_id / "uploads" / filename
+        if not csv_path.exists():
+            return False
+
+        # 刪除舊的摘要以強制觸發 build_analysis_index
+        summary_file = self.get_analysis_path(session_id, file_id) / "summary.json"
+        if summary_file.exists():
+            summary_file.unlink()
+
+        await self.build_analysis_index(str(csv_path), session_id, filename)
+        return True
 
     def _load_json(
         self, session_id: str, file_id: str, filename: str

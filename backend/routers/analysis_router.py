@@ -9,7 +9,7 @@ import asyncio
 # 使用新的 AnalysisService 與 Workflow
 from backend.services.analysis.analysis_service import AnalysisService
 from backend.services.analysis.agent import SigmaAnalysisWorkflow
-from backend.services.analysis.types import (
+from backend.services.analysis.analysis_types import (
     MonologueEvent,
     ProgressEvent,
     TextChunkEvent,
@@ -263,13 +263,18 @@ async def get_file_summary(
     return summary
 
 
-@router.get("/mapping_status", response_model=MappingStatusResponse)
+@router.get("/mapping-status", response_model=MappingStatusResponse)
 async def get_mapping_status(
     session_id: str = Query("default"),
     analysis_service: AnalysisService = Depends(get_intelligent_analysis_service),
 ):
-    mapping_name, status = analysis_service.get_active_mapping(session_id)
-    return MappingStatusResponse(active_mapping=mapping_name, status=status)
+    try:
+        mapping_name, status = analysis_service.get_active_mapping(session_id)
+        return MappingStatusResponse(active_mapping=mapping_name, status=status)
+    except Exception as e:
+        logger.error(f"Error getting mapping status: {e}", exc_info=True)
+        # return a safe failure response or raise detail
+        return MappingStatusResponse(active_mapping=None, status="error: " + str(e))
 
 
 # ========== 模型管理端點 (Restore) ==========

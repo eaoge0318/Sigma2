@@ -23,7 +23,7 @@ from llama_index.core.workflow import (
     Context,
 )
 import config
-from .types import (
+from .analysis_types import (
     IntentEvent,
     AnalysisEvent,
     TranslationEvent,
@@ -59,13 +59,18 @@ class CustomOllamaLLM(CustomLLM):
         )
 
     @llm_completion_callback()
-    async def acomplete(self, prompt: str, **kwargs: Any) -> CompletionResponse:
-        """核心非串流回傳，優化回應速度"""
+    async def acomplete(
+        self, prompt: str, json_mode: bool = False, **kwargs: Any
+    ) -> CompletionResponse:
+        """核心非串流回傳，支持 JSON 模式"""
         payload = {
             "model": self.model_name,
             "messages": [{"role": "user", "content": prompt}],
             "stream": False,
         }
+        if json_mode:
+            payload["format"] = "json"
+
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 response = await client.post(self.api_url, json=payload)
@@ -186,7 +191,7 @@ class SigmaAnalysisWorkflow(Workflow):
                     prompt = f"Categorize as 'analysis' or 'chat': {query}\nReply only 1 word."
                     response = await self.llm.acomplete(prompt)
                     intent = str(response.text).strip().lower()
-                except:
+                except Exception:
                     intent = "analysis"
 
         return IntentEvent(
@@ -290,7 +295,16 @@ class SigmaAnalysisWorkflow(Workflow):
 
                 if any(
                     kw in query_lower
-                    for kw in ["欄位", "參數", "清單", "哪些", "哪兩個", "哪幾個"]
+                    for kw in [
+                        "欄位",
+                        "參數",
+                        "清單",
+                        "哪些",
+                        "哪兩個",
+                        "哪幾個",
+                        "那兩個",
+                        "那幾個",
+                    ]
                 ):
                     content += (
                         f"\n\n全部欄位清單如下 (共 {len(params_list)} 個):\n"
@@ -314,6 +328,7 @@ class SigmaAnalysisWorkflow(Workflow):
                     mode=ev.mode,
                     row_count=total_rows,
                     col_count=len(params_list),
+                    mappings=summary.get("mappings", {}),
                 )
 
         if "analysis" in intent:
@@ -357,18 +372,47 @@ class SigmaAnalysisWorkflow(Workflow):
             ctx.write_event_to_stream(ProgressEvent(msg=f"─ 正在準備延伸分析邏輯..."))
         mappings = summary.get("mappings", {}) if summary else {}
 
-        # --- 安全閥：限制步數防止無窮迴圈 ---
-        MAX_STEPS = 3
+        # --- 安全閥：解鎖深度診斷分析 ---
+        MAX_STEPS = 30
         is_last_step = ev.step_count >= MAX_STEPS
 
         tool_specs = self.tool_executor.list_tools()
-        all_columns = ", ".join(params_list)
+
+        # --- 欄位清單智慧壓縮 ---
+        categories = summary.get("categories", {})
+        if total_cols > 50:
+            cat_summary = "; ".join(
+                [f"{k} ({len(v)}個)" for k, v in categories.items()]
+            )
+            all_columns_display = f"由於欄位眾多，僅依類別顯示摘要：{cat_summary}。請在需要時使用 search_parameters_by_concept 搜尋具體欄位。"
+        else:
+            all_columns_display = ", ".join(params_list)
 
         # 構建過去步驟的背景資訊
         history_context = ""
         if ev.prev_results:
-            history_context = "\n### 前序分析結果摘要 ###\n" + json.dumps(
-                ev.prev_results, ensure_ascii=False
+            # 僅保留關鍵結果，縮減 Token
+            simplified_history = []
+            for r in ev.prev_results:
+                # 截斷過長的結果以節省 Context (但保留關鍵數據)
+                raw_result = str(r.get("result", ""))
+                truncated_result = (
+                    raw_result[:500] + "...(略)"
+                    if len(raw_result) > 500
+                    else raw_result
+                )
+
+                simplified_history.append(
+                    {
+                        "step": r.get("step"),
+                        "tool": r.get("tool"),
+                        "params": r.get("params"),
+                        "result": truncated_result,  # [NEW] 讓 AI 看見過去的數據
+                        "monologue": r.get("monologue"),
+                    }
+                )
+            history_context = "\n### 前序分析結果摘要 (含數據記憶) ###\n" + json.dumps(
+                simplified_history, ensure_ascii=False
             )
 
         quality_stats = summary.get("quality_stats", {})
@@ -376,109 +420,203 @@ class SigmaAnalysisWorkflow(Workflow):
         const_count = quality_stats.get("constant_column_count", 0)
         sparse_count = quality_stats.get("sparse_column_count", 0)
 
-        null_preview = ", ".join(quality_stats.get("null_columns_preview", []))
-        const_preview = ", ".join(quality_stats.get("constant_columns_preview", []))
-        sparse_preview = ", ".join(quality_stats.get("sparse_columns_preview", []))
-
-        quality_info = (
-            f"偵測到 {null_count} 個空值欄位 (例: {null_preview})"
-            if null_count > 0
-            else "無明顯空值欄位"
-        )
-        quality_info += (
-            f"；{const_count} 個定值欄位 (例: {const_preview})"
-            if const_count > 0
-            else "；數據皆具備變化性"
-        )
+        # 將垃圾數據欄位標記為「黑名單」，不再提供具體名稱以免 AI 分心
+        quality_info = f"【黑名單警報】偵測到 {null_count} 個全空欄位與 {const_count} 個定值欄位。這些欄位已被系統自動剔除，**絕對禁止提及或分析它們**。"
         if sparse_count > 0:
             quality_info += (
-                f"；另有 {sparse_count} 個欄位的真值比例低於 80% (例: {sparse_preview})"
+                f" 另有 {sparse_count} 個欄位數據極度稀疏，請優先選擇數據完整的參數。"
             )
 
-        prompt = (
-            f"你是一個機靈且嚴謹的工業數據分析專家。目前是診斷的第 {ev.step_count} 步。\n"
-            f"基礎數據資訊: 當前檔案共有 {total_rows} 行數據，{total_cols} 個欄位。\n"
-            f"數據品質警訊 (絕對事實): {quality_info}\n"
-            f"所有可用欄位: {all_columns}\n"
-            "可用工具箱: " + json.dumps(tool_specs, ensure_ascii=False) + "\n"
-            f"用戶問題: {ev.query}\n"
-            f"{history_context}\n\n"
-            "## 決策準則 ##\n"
-            "1. **效率至上**: 如果目前的分析結果（如有）已經能完全回答用戶問題，請立即選擇 'finish' 動作，嚴禁執行不必要的工具。\n"
-            "2. **邏輯連貫**: 只有在需要更多證據（如發現異常後需要找原因）時才使用工具。\n"
-            "3. **內心獨白**: 請使用【繁體中文】在 monologue 中簡述你的診斷策略，不要列出所有工具。\n"
-            f"4. **步數限制**: 目前剩餘 {MAX_STEPS - ev.step_count} 次工具調用機會。\n"
-            f"{'！！！注意：這是最後一步，必須結論導向，選擇 finish 並彙整所有發現！！！' if is_last_step else ''}\n"
-            '輸出唯一 JSON: {"action": "call_tool"|"finish", "tool_name": "...", "params": {...}, "monologue": "..."}'
+        # 根據模式切換指令集
+        mode_instruction = ""
+        if ev.mode == "deep":
+            mode_instruction = (
+                "## 當前模式：深度診斷 (Deep Analysis) ##\n"
+                "你的目標是進行全方位的根因分析。除了基礎統計，請主動善用以下高階工具來增強說服力：\n"
+                "1. **分佈檢定 (`distribution_shift_test`)**: 這是你的核武器。當發現某參數異常時，用它來證明「分佈形狀變了」，而不只是數值變大。\n"
+                "2. **因果分析 (`causal_relationship_analysis`)**: 用它來找「領頭羊」。誰先變的？\n"
+                "3. **多維分析 (`hotelling_t2_analysis`)**: 用它來量化「整體偏移」。\n"
+                "\n"
+                "**【絕對禁止死循環與回頭草】**\n"
+                "1. **禁止重複**: 檢查 `history`！如果你已經用過某個工具且參數相同，**絕對禁止再用一次**。\n"
+                "2. **禁止倒退**: 在 Step 3 之後，**嚴禁**呼叫 `get_data_overview` 或 `get_column_info`。你手上的證據已經夠了，不要浪費步數。\n"
+                "3. **果斷結案**: 若已執行過 `compare_data_segments` 或 `hotelling_t2`，且步數 > 4，請直接進入 `humanizer` 結案。"
+            )
+        else:
+            mode_instruction = (
+                "## 當前模式：快速回應 (Quick Response) ##\n"
+                "你的目標是在 **2 步內** 給出精確結論：\n"
+                "1. 優先選擇最強力的單一診斷工具 (如 `hotelling_t2_analysis` 或 `compare_data_segments`)。\n"
+                "2. 獲得 Top 3 貢獻度後立即結案，解釋核心原因即可。\n"
+            )
+
+        tools_json = json.dumps(tool_specs, ensure_ascii=False)
+        prompt_parts = [
+            f"你是一個機靈且嚴謹的工業數據分析專家。目前是診斷的第 {ev.step_count} 步。",
+            f"基礎數據資訊: 當前檔案共有 {total_rows} 行數據，{total_cols} 個欄位。",
+            f"數據品質警訊 (絕對事實): {quality_info}",
+            f"所有可用欄位 (部分展示): {all_columns_display}",
+            f"可用工具箱: {tools_json}",
+            f"分析目標 (Query): {ev.query}",
+            f"{history_context}",
+            "",
+            f"{mode_instruction}",
+            "## 核心原則 (嚴格執行) ##",
+            "1. **參數名稱精確性**: 絕對禁止使用類別名稱 (如 'PRESSDRY', 'SHAP') 作為參數。你必須從可用欄位清單中選擇具體的感測器代碼 (如 'PRESSDRY-DCS_A423')。",
+            "2. **數據說話**: 任何結論都必須有數據支持 (Z-Score, p-value, T2)。",
+            "3. **對比分析**: 異常檢測的核心在於「異常 vs 正常」。請時刻保持對比意識。",
+            "4. **透明獨白**: 在 `monologue` 中用繁體中文解釋你的思考路徑。",
+            "5. **記憶運用**: 請參考 `前序分析結果摘要` 中的 `result` 數據，不要重複執行已知的分析。",
+            f"6. **狀態提醒**: 目前是第 {ev.step_count} 步。",
+            '輸出唯一個 JSON 物件，必須包含 "action", "tool_name", "params", "monologue" 欄位。',
+        ]
+        prompt = "\n".join(prompt_parts)
+
+        # 1. 告訴用戶 AI 正在根據上一步的結果進行推理
+        ctx.write_event_to_stream(
+            ProgressEvent(msg=f"(Step {ev.step_count}) 正在分析上下文並規劃下一步...")
         )
 
-        response = await self.llm.acomplete(prompt)
+        # 強制開啟 JSON 模式
+        response = await self.llm.acomplete(prompt, json_mode=True)
+
         try:
             text = response.text.strip()
+            # 優先處理 Markdown 代碼塊
             if "```" in text:
                 text = text.split("```")[1].replace("json", "").strip()
-            decision = json.loads(text)
+
+            # 優先使用 Regex 提取 JSON，防止 Ollama 輸出多餘文字或重複 JSON
+            json_match = re.search(r"\{.*\}", response.text, re.DOTALL)
+            if json_match:
+                decision = json.loads(json_match.group(0))
+            else:
+                decision = json.loads(response.text)
+
+            # --- 硬核防死循環邏輯 ---
+            tool_history = [
+                (
+                    r.get("tool"),
+                    str(
+                        r.get("params", {}).get("target")
+                        or r.get("params", {}).get("parameter")
+                    ),
+                )
+                for r in ev.prev_results
+            ]
+            current_tool = decision.get("tool_name")
+            current_target = str(
+                decision.get("params", {}).get("target")
+                or decision.get("params", {}).get("parameter")
+            )
+
+            # 如果同一個工具對同一個目標連續執行超過 2 次，強制修正為 finish
+            repeat_count = tool_history.count((current_tool, current_target))
+            if repeat_count >= 2:
+                logger.warning(
+                    f"Detected repeated tool call: {current_tool} on {current_target}. Forcing finish."
+                )
+                decision = {
+                    "action": "finish",
+                    "monologue": f"檢測到重複分析行為 (已執行 {repeat_count} 次)，系統強制進入最終彙整階段以打破死循環。",
+                }
 
             action = decision.get("action", "call_tool")
             monologue = decision.get("monologue", "診斷中...")
 
-            # 向前端發送 AI 的思考過程
-            ctx.write_event_to_stream(
-                ProgressEvent(msg=f"(Step {ev.step_count}) {monologue}")
-            )
+            # 2. 告訴用戶 AI 決定要做什麼 (內心獨白)
+            ctx.write_event_to_stream(ProgressEvent(msg=f"💡 策略: {monologue}"))
 
-            if action == "finish" or is_last_step:
-                # 結束前檢查是否有可繪圖數據 (get_time_series_data)
-                chart_data = None
-                for step_res in ev.prev_results:
-                    if step_res.get("tool") == "get_time_series_data":
-                        res_data = step_res.get("result", {})
-                        if (
-                            isinstance(res_data, dict)
-                            and "data" in res_data
-                            and res_data["data"]
-                        ):
-                            chart_data = res_data
-                            break
+            if action == "call_tool":
+                tool_name = decision.get("tool_name")
+                # 3. 告訴用戶正在執行什麼耗時操作
+                ctx.write_event_to_stream(
+                    ProgressEvent(msg=f"🛠️ 執行工具: {tool_name} (正在運算數據...)")
+                )
 
-                total_rows = summary.get("total_rows", 0) if summary else 0
-                total_cols = len(params_list) if params_list else 0
-
-                if chart_data:
-                    # 優先跳轉到視覺化步驟，這會確保 UI 渲染圖表
-                    return VisualizingEvent(
-                        data=chart_data,
-                        query=ev.query,
-                        file_id=ev.file_id,
-                        session_id=ev.session_id,
-                        history=ev.history,
-                        mode=ev.mode,
-                        row_count=chart_data.get("total_points", total_rows),
-                        col_count=len(chart_data.get("data", {}).keys()),
-                        mappings=mappings,
-                    )
-
-                # 否則進入總結報告階段
-                aggregated_data = {
-                    "final_decision": monologue,
-                    "all_steps_results": ev.prev_results,
+        except Exception as e:
+            # 發生解析錯誤時的強制修復邏輯
+            logger.error(f"Error parsing LLM decision: {e}. Raw: {response.text}")
+            # 如果是第一步就失敗，強制進行數據概覽分析，不准直接 finish
+            if ev.step_count == 1:
+                action = "call_tool"
+                tool_name = "get_data_overview"
+                params = {"file_id": ev.file_id}
+                monologue = "原定計畫解析失敗，強制啟動數據概覽以打破僵局。"
+                decision = {
+                    "action": action,
+                    "tool_name": tool_name,
+                    "params": params,
+                    "monologue": monologue,
                 }
-                return SummarizeEvent(
-                    data=aggregated_data,
+            else:
+                action = "finish"
+                monologue = "連續分析出現解析困難，準備進行最終彙整。"
+                decision = {"action": action, "monologue": monologue}
+
+        if action == "finish" or is_last_step:
+            # 結束前檢查是否有可繪圖數據 (get_time_series_data)
+            chart_data = None
+            for step_res in ev.prev_results:
+                if step_res.get("tool") == "get_time_series_data":
+                    res_data = step_res.get("result", {})
+                    if (
+                        isinstance(res_data, dict)
+                        and "data" in res_data
+                        and res_data["data"]
+                    ):
+                        chart_data = res_data
+                        break
+
+            total_rows = summary.get("total_rows", 0) if summary else 0
+            total_cols = len(params_list) if params_list else 0
+
+            if chart_data:
+                # 優先跳轉到視覺化步驟，這會確保 UI 渲染圖表
+                return VisualizingEvent(
+                    data=chart_data,
                     query=ev.query,
                     file_id=ev.file_id,
                     session_id=ev.session_id,
                     history=ev.history,
                     mode=ev.mode,
-                    row_count=total_rows,
-                    col_count=total_cols,
+                    row_count=chart_data.get("total_points", total_rows),
+                    col_count=len(chart_data.get("data", {}).keys()),
+                    mappings=mappings,
                 )
 
-            # 否則，執行工具並進入下一步循環
-            tool_name = decision.get("tool_name")
-            params = decision.get("params", {})
-            params["file_id"] = ev.file_id
+            # 建立顯示名稱映射
+            full_display_mappings = {p: mappings.get(p, p) for p in params_list}
 
+            # 優化：提取具體的分析結果摘要，避免 AI 混淆
+            aggregated_data = {
+                "monologue_history": monologue,
+                "latest_analysis_results": ev.prev_results[-1].get("results")
+                if ev.prev_results
+                else None,
+                "full_tool_history": ev.prev_results,
+            }
+
+            return SummarizeEvent(
+                data=aggregated_data,
+                query=ev.query,
+                file_id=ev.file_id,
+                session_id=ev.session_id,
+                history=ev.history,
+                mode=ev.mode,
+                row_count=total_rows,
+                col_count=total_cols,
+                mappings=full_display_mappings,
+            )
+
+        # 否則，執行工具並進入下一步循環
+        tool_name = decision.get("tool_name")
+        params = decision.get("params", {})
+        if not isinstance(params, dict):
+            params = {}
+        params["file_id"] = ev.file_id
+
+        try:
             # 根據工具名提供動態的進度提示
             tool_display_names = {
                 "get_time_series_data": "正在讀取數據趨勢...",
@@ -487,16 +625,32 @@ class SigmaAnalysisWorkflow(Workflow):
                 "analyze_distribution": "正在分析數據分佈...",
             }
             display_msg = tool_display_names.get(tool_name, f"執行工具 {tool_name}...")
-            ctx.write_event_to_stream(ProgressEvent(msg=f"(Executing) {display_msg}"))
 
-            ctx.write_event_to_stream(ToolCallEvent(tool=tool_name, params=params))
-            result = self.tool_executor.execute_tool(tool_name, params, ev.session_id)
-            ctx.write_event_to_stream(ToolResultEvent(tool=tool_name, result=result))
+            ctx.write_event_to_stream(
+                ProgressEvent(msg=f"(Step {ev.step_count}) {display_msg}")
+            )
 
-            # 將結果存入歷史，並遞增步數發送下一個 AnalysisEvent (Loop)
-            new_results = ev.prev_results + [
-                {"step": ev.step_count, "tool": tool_name, "result": result}
-            ]
+            # 4. 執行工具
+            tool_result = await self.tool_executor.execute_tool(
+                tool_name, params, ev.session_id
+            )
+
+            # 強制功能：將貢獻度前三名即時推送到聊天室思考視窗
+            if isinstance(tool_result, dict) and "top_3_summary" in tool_result:
+                ctx.write_event_to_stream(
+                    ProgressEvent(msg=f"{tool_result['top_3_summary']}")
+                )
+            # 5. 將結果存入歷史，並觸發下一步
+            new_step_result = {
+                "step": ev.step_count,
+                "tool": tool_name,
+                "params": params,
+                "result": tool_result,
+                "monologue": monologue,
+            }
+
+            next_history = list(ev.prev_results)
+            next_history.append(new_step_result)
 
             return AnalysisEvent(
                 query=ev.query,
@@ -505,26 +659,30 @@ class SigmaAnalysisWorkflow(Workflow):
                 history=ev.history,
                 mode=ev.mode,
                 step_count=ev.step_count + 1,
-                prev_results=new_results,
+                prev_results=next_history,
             )
 
         except Exception as e:
-            logger.error(f"Analysis loop failed at step {ev.step_count}: {e}")
-            summary = self.tool_executor.analysis_service.load_summary(
-                ev.session_id, ev.file_id
-            )
-            total_rows = summary.get("total_rows", 0) if summary else 0
-            total_cols = summary.get("total_columns", 0) if summary else 0
+            logger.error(f"Tool execution failed: {e}")
+            # 若工具執行失敗，不崩潰，而是將錯誤作為結果傳入下一步
+            error_result = {
+                "step": ev.step_count,
+                "tool": tool_name,
+                "params": params,
+                "result": {"error": str(e)},
+                "monologue": monologue,
+            }
+            next_history = list(ev.prev_results)
+            next_history.append(error_result)
 
-            return SummarizeEvent(
-                data=f"分析過程遇到挑戰: {str(e)}",
+            return AnalysisEvent(
                 query=ev.query,
                 file_id=ev.file_id,
                 session_id=ev.session_id,
                 history=ev.history,
                 mode=ev.mode,
-                row_count=total_rows,
-                col_count=total_cols,
+                step_count=ev.step_count + 1,
+                prev_results=next_history,
             )
 
     @step
@@ -541,6 +699,10 @@ class SigmaAnalysisWorkflow(Workflow):
         params_list = summary.get("parameters", []) if summary else []
         total_rows = summary.get("total_rows", 0) if summary else 0
         total_cols = summary.get("total_columns", 0) if summary else 0
+        mappings = summary.get("mappings", {}) if summary else {}
+
+        # 建立顯示名稱映射
+        full_display_mappings = {p: mappings.get(p, p) for p in params_list}
 
         # 將參數清單放入 data，讓 humanizer 裡的 AI 看得到
         context_data = {"available_parameters": params_list}
@@ -554,6 +716,7 @@ class SigmaAnalysisWorkflow(Workflow):
             mode=ev.mode,
             row_count=total_rows,
             col_count=total_cols,
+            mappings=full_display_mappings,
         )
 
     def _build_programmatic_chart(self, ev: VisualizingEvent) -> Optional[str]:
@@ -648,6 +811,7 @@ class SigmaAnalysisWorkflow(Workflow):
             row_count=ev.row_count,
             col_count=ev.col_count,
             mode=ev.mode,
+            mappings=ev.mappings,
         )
 
     @step
@@ -673,26 +837,41 @@ class SigmaAnalysisWorkflow(Workflow):
         except Exception:
             pass
 
-        if ev.mode == "fast":
-            system_instruction = (
-                "作為數據專家，請精簡回答。若數據中包含具體分析結果（如相關性數值、異常點），"
-                "請主動摘要最重要的發現，避免空洞的回覆。不必過度受限於 150 字，重點是『精簡且有料』。"
+        if ev.mode == "deep":
+            mode_instruction = (
+                "## 當前模式：深度診斷 (Deep Analysis) ##\n"
+                "你的目標是進行全方位的根因分析。除了基礎統計，請主動善用以下高階工具來增強說服力：\n"
+                "1. **分佈檢定 (`distribution_shift_test`)**: 這是你的核武器。當發現某參數異常時，用它來證明「分佈形狀變了」，而不只是數值變大。\n"
+                "2. **因果分析 (`causal_relationship_analysis`)**: 用它來找「領頭羊」。誰先變的？\n"
+                "3. **多維分析 (`hotelling_t2_analysis`)**: 用它來量化「整體偏移」。\n"
+                "\n"
+                "**【絕對禁止死循環】**\n"
+                "檢查 `history`！如果你已經用過某個工具 (如 `get_top_correlations`) 且參數相同，**絕對禁止再用一次**。\n"
+                "若基礎分析已完成，請直接進入 `distribution_shift_test` 或 `causal_relationship_analysis`。\n"
+                "若證據已充足，請直接 `humanizer` 結案。"
             )
         else:
-            system_instruction = (
-                "專注於深度技術分析報告。請結合提供的數據，進行多維度的結果解讀、"
-                "嘗試分析參數間可能的物理或邏輯因果關係，並給出具體的操作或改善建議。"
+            mode_instruction = (
+                "## 當前模式：快速回應 (Quick Response) ##\n"
+                "你的目標是在 **2 步內** 給出精確結論：\n"
+                "1. 優先選擇最強力的單一診斷工具 (如 `hotelling_t2_analysis` 或 `compare_data_segments`)。\n"
+                "2. 獲得 Top 3 貢獻度後立即結案，解釋核心原因即可。\n"
             )
 
+        # 增加數據內容曝光量，深度模式下不應過度截斷
+        data_json = json.dumps(ev.data, ensure_ascii=False)
+        data_limit = 20000 if ev.mode == "deep" else 5000
+
         prompt = (
-            f"系統指令: {system_instruction}\n"
+            f"系統狀態: {mode_instruction}\n"  # Changed from system_instruction to mode_instruction
             f"用戶提問: {ev.query}\n"
-            f"數據概況 (背景): 包含 {row_count} 行與 {col_count} 個欄位。欄位清單預覽: {', '.join(params_list[:100])}...\n"
-            f"分析數據 (具體內容): {json.dumps(ev.data, ensure_ascii=False)[:3500]}\n"
-            "重要規則:\n"
-            "1. 若數據中已有分析出的具體指標（如相關係數、異常點），必須在回覆中具體呈現，不要只給籠統描述。\n"
-            "2. 若用戶要求『更多資訊』，請檢查數據預覽中是否還有未提到的細節並釋出，而非反問用戶。\n"
-            "3. 請用繁體中文自然地回答。"
+            f"數據概況 (背景): 包含 {row_count} 行與 {col_count} 個欄位。\n"
+            f"參數顯示名稱對應 (Mapping): {json.dumps(ev.mappings, ensure_ascii=False)}\n"
+            f"分析數據 (全量歷史精華): {data_json[:data_limit]}\n"
+            "## 生成準則 (數值先行 + 解釋隨後) ##\n"
+            "1. **嚴禁空洞描述**: 必須先引用數據 (p-value, T2, Z-Score) 作為開頭。\n"
+            "2. **翻譯物理意義**: 解釋時要具體對應到設備狀態 (如：馬達耗損、配方切換、傳感器漂移)。\n"
+            "3. **專業口吻**: 繁體中文，專業工業診斷工程師口吻。"
         )
 
         full_text = ""
