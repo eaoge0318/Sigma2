@@ -1,7 +1,11 @@
 import asyncio
 from typing import Any
 from backend.services.analysis.agent import SigmaAnalysisWorkflow
-from backend.services.analysis.types import MonologueEvent, IntentEvent, AnalysisEvent
+from backend.services.analysis.analysis_types import (
+    MonologueEvent,
+    IntentEvent,
+    AnalysisEvent,
+)
 
 
 class MockToolExecutor:

@@ -180,8 +180,14 @@ class GetTimeSeriesDataTool(AnalysisTool):
                         matched_columns.append(csv_col)
                         break
 
-            # 強制包含時間欄位
-            time_cols = [c for c in all_csv_columns if "TIME" in c.upper()]
+            # 強制包含時間欄位 (僅限標準時間格式)
+            time_axis_keywords = ["TIME", "TIMESTAMP", "DATE"]
+            time_cols = [
+                c
+                for c in all_csv_columns
+                if any(kw in c.upper() for kw in time_axis_keywords)
+            ]
+
             cols_to_read = list(set(matched_columns + time_cols))
 
             if not matched_columns:
@@ -199,11 +205,20 @@ class GetTimeSeriesDataTool(AnalysisTool):
                 df = df.iloc[::step]
 
             # 確保返回的是對齊後的數據
+            if not time_cols:
+                # 注入行號作為 fallback 時間軸，確保 AI 敢畫圖
+                df["INDEX_AXIS"] = range(len(df))
+                time_cols = ["INDEX_AXIS"]
+
             result = df.to_dict(orient="list")
             return {
                 "data": result,
                 "parameters": matched_columns,
+                "time_column": time_cols[0],
                 "total_points": len(df),
+                "note": "使用 INDEX_AXIS 或 CONTEXTID 作為序列參考"
+                if "TIME" not in str(time_cols).upper()
+                else "",
             }
         except Exception as e:
             return {"error": f"Failed to load data: {str(e)}"}

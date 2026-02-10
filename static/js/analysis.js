@@ -107,12 +107,11 @@ class IntelligentAnalysis {
         this.elements.userInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
-                // Check if loading to decide action, or just trigger click which handles it
+                // Check if loading to decide action
                 if (this.isLoading) {
-                    this.stopGeneration();
-                } else {
-                    this.sendMessage();
+                    return; // Do nothing if loading
                 }
+                this.sendMessage();
             }
         });
 
@@ -721,6 +720,8 @@ class IntelligentAnalysis {
                     // Add a small timestamp? Optional.
                     // logItem.textContent = `[${new Date().toLocaleTimeString()}] ${event.content}`;
                     state.statusLog.appendChild(logItem);
+                    // 修正：狀態更新時也必須滾動，否則思考過程會被擋住
+                    this.scrollToBottom();
                 }
                 break;
 
@@ -767,6 +768,8 @@ class IntelligentAnalysis {
                         pre.textContent = resStr;
                     }
                 }
+                // 修正：工具結果回傳後通常內容很長，必須觸發滾動
+                this.scrollToBottom();
                 break;
 
             case 'content':
@@ -949,10 +952,17 @@ class IntelligentAnalysis {
     }
 
     scrollToBottom() {
-        this.elements.chatContainer.scrollTo({
-            top: this.elements.chatContainer.scrollHeight,
-            behavior: 'smooth'
-        });
+        const container = this.elements.chatContainer;
+        if (!container) return;
+
+        // 增加容錯門檻：如果用戶離底部在 250px 內，都視為「在底部」，應自動滾動
+        const threshold = 250;
+        const distanceToBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+
+        if (distanceToBottom < threshold) {
+            // 使用自動滾動，並在渲染大量 Markdown 時給予一點點延遲以確保高度計算正確
+            container.scrollTop = container.scrollHeight;
+        }
     }
 
     formatSize(bytes) {

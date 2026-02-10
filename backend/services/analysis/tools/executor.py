@@ -11,8 +11,22 @@ from .statistics import (
     AnalyzeDistributionTool,
     DetectOutliersTool,
     GetTopCorrelationsTool,
+    AnalyzeCategoryCorrelationTool,
+    GetCorrelationMatrixTool,
+    CompareSegmentsTool,
+)
+from .advanced_ai import (
+    MultivariateAnomalyTool,
+    FeatureImportanceWorkflowTool,
+    PrincipalComponentAnalysisTool,
+    HotellingT2AnalysisTool,
 )
 from .patterns import FindTemporalPatternsTool, FindEventPatternsTool
+from .deep_diagnostics import (
+    DistributionShiftTool,
+    LocalOutlierFactorTool,
+    CausalRelationshipTool,
+)
 from .helpers import SuggestNextAnalysisTool, ExplainResultTool
 
 logger = logging.getLogger(__name__)
@@ -41,9 +55,21 @@ class ToolExecutor:
             AnalyzeDistributionTool,
             DetectOutliersTool,
             GetTopCorrelationsTool,
+            AnalyzeCategoryCorrelationTool,
+            GetCorrelationMatrixTool,
+            CompareSegmentsTool,
+            # Advanced AI Workflows
+            MultivariateAnomalyTool,
+            FeatureImportanceWorkflowTool,
+            PrincipalComponentAnalysisTool,
+            HotellingT2AnalysisTool,
             # Patterns
             FindTemporalPatternsTool,
             FindEventPatternsTool,
+            # Deep Diagnostics
+            DistributionShiftTool,
+            LocalOutlierFactorTool,
+            CausalRelationshipTool,
             # Helpers
             SuggestNextAnalysisTool,
             ExplainResultTool,
@@ -64,7 +90,7 @@ class ToolExecutor:
             for t in self.tools.values()
         ]
 
-    def execute_tool(
+    async def execute_tool(
         self, tool_name: str, params: Dict, session_id: str
     ) -> Dict[str, Any]:
         """統一執行入口"""

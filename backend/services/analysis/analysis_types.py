@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 from llama_index.core.workflow import Event
 
 
@@ -116,6 +116,7 @@ class SummarizeEvent(Event):
     chart_json: Optional[str] = None
     row_count: int = 0
     col_count: int = 0
+    mappings: Dict = {}
 
 
 class ErrorEvent(Event):
