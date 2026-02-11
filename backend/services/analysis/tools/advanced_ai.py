@@ -60,7 +60,7 @@ class MultivariateAnomalyTool(AnalysisTool):
             )
         ):
             summary = self.analysis_service.load_summary(session_id, file_id)
-            param_list = summary.get("params", [])
+            param_list = summary.get("parameters", [])
 
         if isinstance(param_list, str):
             param_list = [p.strip() for p in param_list.split(",")]
@@ -272,7 +272,7 @@ class PrincipalComponentAnalysisTool(AnalysisTool):
             )
         ):
             summary = self.analysis_service.load_summary(session_id, file_id)
-            param_list = summary.get("params", [])
+            param_list = summary.get("parameters", [])
 
         if isinstance(param_list, str):
             param_list = [p.strip() for p in param_list.split(",")]
@@ -359,7 +359,7 @@ class HotellingT2AnalysisTool(AnalysisTool):
             )
         ):
             summary = self.analysis_service.load_summary(session_id, file_id)
-            param_list = summary.get("params", [])
+            param_list = summary.get("parameters", [])
 
         if isinstance(param_list, str):
             param_list = [p.strip() for p in param_list.split(",")]
