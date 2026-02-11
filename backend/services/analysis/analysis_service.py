@@ -75,11 +75,28 @@ class AnalysisService:
         file_id = self.get_file_id(filename)
         analysis_path = self.get_analysis_path(session_id, file_id, create=True)
 
+        import os
+
+        current_size = os.path.getsize(csv_path)
+        current_mtime = os.path.getmtime(csv_path)
+
         summary_file = analysis_path / "summary.json"
         if summary_file.exists():
-            logger.info(f"Index already exists for {filename}")
-            with open(summary_file, "r", encoding="utf-8") as f:
-                return json.load(f)
+            try:
+                with open(summary_file, "r", encoding="utf-8") as f:
+                    cached_summary = json.load(f)
+
+                # 校驗快取與原始檔案是否一致
+                if (
+                    cached_summary.get("file_size") == current_size
+                    and cached_summary.get("last_modified") == current_mtime
+                ):
+                    logger.info(f"Index already exists and is valid for {filename}")
+                    return cached_summary
+                else:
+                    logger.info(f"Index out of date for {filename}, rebuilding...")
+            except Exception as e:
+                logger.warning(f"Failed to read cached summary: {e}, will rebuild")
 
         logger.info(f"Building index for {filename}")
 
@@ -91,6 +108,8 @@ class AnalysisService:
             summary = {
                 "file_id": file_id,
                 "filename": filename,
+                "file_size": current_size,
+                "last_modified": current_mtime,
                 "total_rows": len(df),
                 "total_columns": len(df.columns),
                 "parameters": list(df.columns),

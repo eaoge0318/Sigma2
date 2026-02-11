@@ -657,9 +657,52 @@ export function handleDrop(ev, axis) {
     if (finalCol) {
         chartConfig[axis] = finalCol;
         updateDropzoneUI(axis, finalCol);
+
+        // ✨ 自動初始化：當 X 或 Y 只有其中一個有值時，另一個先預設為 'index'
+        if (axis === 'x') {
+            if (!chartConfig.y && !chartConfig.y2) {
+                chartConfig.y = 'index';
+                updateDropzoneUI('y', 'index');
+            }
+        } else if (axis === 'y' || axis === 'y2') {
+            if (!chartConfig.x) {
+                chartConfig.x = 'index';
+                updateDropzoneUI('x', 'index');
+            }
+        }
+
         tryUpdateChart();
         updateChartSourceInfo();
     }
+}
+
+export function handleMainChartDrop(ev) {
+    ev.preventDefault();
+    let colData = ev.dataTransfer.getData("text");
+    if (!colData) return;
+
+    let colName = "";
+    try {
+        const parsed = JSON.parse(colData);
+        colName = Array.isArray(parsed) ? parsed[0] : parsed;
+    } catch (e) {
+        colName = colData;
+    }
+
+    if (!colName) return;
+
+    // 1. Set Y Axis
+    chartConfig.y = colName;
+    updateDropzoneUI('y', colName);
+
+    // 2. Auto-set X Axis to 'index' if empty
+    if (!chartConfig.x) {
+        chartConfig.x = 'index';
+        updateDropzoneUI('x', 'index');
+    }
+
+    tryUpdateChart();
+    updateChartSourceInfo();
 }
 
 function updateDropzoneUI(axis, colName) {
@@ -701,6 +744,12 @@ export function cycleChartAxis(axis, offset) {
     const resDiv = DOM.get('correlation-result');
     if (resDiv) resDiv.innerHTML = '';
 
+    if (axis === 'x' && nextCol === 'index') {
+        // Skip index if waiting for real columns, OR allow it?
+        // Let's allow cycling into index? No, current logic cycles through headers.
+        // If x is 'index', nextCol will probably be headers[0].
+    }
+
     updateDropzoneUI(axis, nextCol);
 
     // Sync Highlight in Side List
@@ -733,14 +782,29 @@ export function cycleChartAxis(axis, offset) {
 
 
 export function resetAxis(axis) {
+    const colName = chartConfig[axis];
     chartConfig[axis] = null;
     const dropzone = DOM.get('drop-' + axis);
-    dropzone.classList.remove('filled');
-    dropzone.innerHTML = `<span class="placeholder">拖曳至此</span>`;
-    // if (analysisChart) {
-    //     analysisChart.destroy();
-    //     analysisChart = null;
-    // }
+    if (dropzone) {
+        dropzone.classList.remove('filled');
+        dropzone.innerHTML = `<span class="placeholder">拖曳至此</span>`;
+    }
+
+    // ✨ UI Sync: Clear highlight in side list if exists
+    if (colName) {
+        const container = DOM.get('chart-column-source');
+        if (container) {
+            const chips = container.querySelectorAll('.draggable-chip');
+            chips.forEach(chip => {
+                const h = chip.dataset.header || chip.innerText.trim();
+                if (h === colName) {
+                    chip.style.outline = 'none';
+                    chip.style.boxShadow = 'none';
+                }
+            });
+        }
+    }
+
     updateChartSourceInfo();
     tryUpdateChart(); // Re-render if partial config exists
 }
@@ -766,6 +830,13 @@ export function clearChartConfig() {
 export function tryUpdateChart() {
     if (chartConfig.x && (chartConfig.y || chartConfig.y2)) {
         renderAnalysisChart();
+    } else {
+        // ✨ FIX: If configuration is incomplete, clear the chart instead of keeping the old one
+        if (typeof analysisChart !== 'undefined' && analysisChart) {
+            analysisChart.destroy();
+            analysisChart = null;
+        }
+        updateChartSourceInfo();
     }
 }
 
@@ -778,7 +849,7 @@ export function renderAnalysisChart() {
     if (analysisChart) analysisChart.destroy();
 
     // Prepare Data Indices
-    const xIdx = tableHeaders.indexOf(chartConfig.x);
+    const xIdx = chartConfig.x === 'index' ? -2 : tableHeaders.indexOf(chartConfig.x);
     const yIdx = tableHeaders.indexOf(chartConfig.y);
     const y2Idx = tableHeaders.indexOf(chartConfig.y2);
 
@@ -802,8 +873,10 @@ export function renderAnalysisChart() {
         isNumericX = false;
         const groups = {};
 
-        sourceRows.forEach(row => {
-            let xVal = row[xIdx];
+        sourceRows.forEach((row, i) => {
+            let xVal;
+            if (chartConfig.x === 'index') xVal = i + 1; // Use 1-based index
+            else xVal = row[xIdx];
             let yVal1 = yIdx !== -1 ? row[yIdx] : null;
             let yVal2 = y2Idx !== -1 ? row[y2Idx] : null;
 
@@ -880,7 +953,9 @@ export function renderAnalysisChart() {
 
         for (let i = 0; i < sourceRows.length; i += step) {
             const row = sourceRows[i];
-            let xVal = row[xIdx];
+            let xVal;
+            if (chartConfig.x === 'index') xVal = i + 1;
+            else xVal = row[xIdx];
             let yVal1 = yIdx !== -1 ? row[yIdx] : null;
             let yVal2 = y2Idx !== -1 ? row[y2Idx] : null;
 
@@ -1012,6 +1087,16 @@ export function renderAnalysisChart() {
 
         // Send to backend
         window.updateChartAnalysisData(chartConfig);
+    }
+}
+
+export function clearChartColSearch() {
+    const input = document.getElementById('chart-col-search');
+    if (input) {
+        input.value = '';
+        filterChartColumns('');
+        // Optional: focus back to input?
+        // input.focus();
     }
 }
 

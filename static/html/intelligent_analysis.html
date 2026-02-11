@@ -115,6 +115,21 @@
             border-radius: 4px;
             font-size: 0.9em;
         }
+
+        /* Chart Canvas Styling */
+        canvas[data-chart] {
+            width: 100% !important;
+            min-height: 320px;
+            /* 提高高度使圖形更明顯 */
+            max-height: 450px;
+            background: #ffffff;
+            border-radius: 12px;
+            padding: 16px;
+            margin: 12px 0;
+            border: 1px solid #f1f5f9;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            cursor: default;
+        }
     </style>
 </head>
 
@@ -204,6 +219,28 @@
             </div>
         </div>
 
+        <!-- Suggested Actions Card (Moved here) -->
+        <div class="bg-gray-50 rounded-lg border border-slate-200 p-3 flex flex-col gap-2">
+            <div class="flex items-center gap-2 text-slate-400 font-bold text-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24"
+                    stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+                常用指令
+            </div>
+            <div class="flex flex-col gap-2">
+                <button
+                    class="suggested-query w-full text-left px-3 py-2 bg-white border border-gray-200 rounded-md hover:bg-blue-500 hover:text-white hover:border-blue-500 transition-all text-sm text-gray-600">檔案概況摘要</button>
+                <button
+                    class="suggested-query w-full text-left px-3 py-2 bg-white border border-gray-200 rounded-md hover:bg-blue-500 hover:text-white hover:border-blue-500 transition-all text-sm text-gray-600">繪製趨勢圖</button>
+                <button
+                    class="suggested-query w-full text-left px-3 py-2 bg-white border border-gray-200 rounded-md hover:bg-blue-500 hover:text-white hover:border-blue-500 transition-all text-sm text-gray-600">異常分析</button>
+                <button
+                    class="suggested-query w-full text-left px-3 py-2 bg-white border border-gray-200 rounded-md hover:bg-blue-500 hover:text-white hover:border-blue-500 transition-all text-sm text-gray-600">相關性分析</button>
+            </div>
+        </div>
+
         <!-- Recent Chat Card -->
         <div class="bg-gray-50 rounded-lg border border-slate-200 p-3 flex-1 flex flex-col min-h-0">
             <div class="flex items-center gap-2 text-slate-400 font-bold text-sm mb-3">
@@ -239,27 +276,6 @@
                     class="flex flex-col items-center justify-center text-slate-400 space-y-4 py-8">
                     <div class="text-xl font-bold text-slate-600">歡迎使用智能分析助手</div>
                     <p>請先選擇一個CSV檔案，然後開始提問。</p>
-                    <div
-                        class="bg-blue-50 text-blue-600 px-4 py-3 rounded-xl text-sm mt-4 border border-blue-100 shadow-sm">
-                        <div class="flex gap-2 items-center mb-2 font-semibold">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24"
-                                stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                            分析建議：
-                        </div>
-                        <div class="flex flex-wrap gap-2">
-                            <button
-                                class="suggested-query px-2 py-1 bg-white border border-blue-200 rounded-md hover:bg-blue-600 hover:text-white transition-all">檔案概況摘要</button>
-                            <button
-                                class="suggested-query px-2 py-1 bg-white border border-blue-200 rounded-md hover:bg-blue-600 hover:text-white transition-all">有哪些欄位？</button>
-                            <button
-                                class="suggested-query px-2 py-1 bg-white border border-blue-200 rounded-md hover:bg-blue-600 hover:text-white transition-all">數據分佈趨勢</button>
-                            <button
-                                class="suggested-query px-2 py-1 bg-white border border-blue-200 rounded-md hover:bg-blue-600 hover:text-white transition-all">分析參數相關性</button>
-                        </div>
-                    </div>
                 </div>
             </div>
 
@@ -318,225 +334,270 @@
         </div>
     </main>
 
-    <!-- Templates -->
-    <template id="tpl-history-item">
-        <div
-            class="p-3 bg-gray-50 rounded-lg cursor-pointer hover:bg-blue-50 hover:border-blue-200 border border-transparent transition-all group">
-            <div class="text-xs text-gray-700 font-medium line-clamp-2 group-hover:text-blue-700 item-text">問題內容...
+    <!-- Parameter Selection Menu (Popover style) -->
+    <div id="param-select-menu"
+        class="absolute hidden z-[100] bg-white rounded-xl shadow-2xl w-[280px] max-h-[450px] flex flex-col overflow-hidden border border-gray-100 animate-fadeIn"
+        style="box-sizing: border-box;">
+
+
+
+        <!-- Body: Fields -->
+        <div class="p-5 flex flex-col gap-4">
+            <!-- Keyword Search -->
+            <div>
+                <label class="block text-xs font-bold text-slate-400 mb-2">搜尋參數或過濾關鍵字</label>
+                <input type="text" id="trend-keyword-input" placeholder="輸入關鍵字以篩選可用參數..."
+                    class="w-full bg-white border border-gray-200 text-gray-700 py-2.5 px-4 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 shadow-sm transition-all">
             </div>
-            <div class="text-[10px] text-gray-400 mt-1 item-time">2分鐘前</div>
+
+            <!-- Column Select -->
+            <div>
+                <label class="block text-xs font-bold text-slate-400 mb-2">選擇欄位</label>
+                <div class="relative">
+                    <select id="trend-column-select"
+                        class="w-full appearance-none bg-white border border-gray-200 text-gray-700 py-2.5 px-4 pr-10 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 cursor-pointer shadow-sm transition-all">
+                        <option value="" disabled selected>-- 請選擇參數 --</option>
+                    </select>
+                    <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-slate-400">
+                        <svg class="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
+                            <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
+                        </svg>
+                    </div>
+                </div>
+            </div>
         </div>
-    </template>
 
-    <style>
-        /* Scoped styles */
-        .message-row {
-            display: flex;
-            width: 100%;
-            margin-bottom: 20px;
-            animation: fadeIn 0.3s ease-out;
-        }
+        <!-- Footer -->
+        <div class="px-5 py-4 border-t border-gray-100 flex justify-end items-center bg-gray-50/50">
+            <div class="flex gap-2">
+                <button onclick="closeParamSelectionModal()"
+                    class="px-4 py-2 text-slate-500 hover:bg-slate-100 rounded-lg text-xs font-bold transition-all">
+                    取消
+                </button>
+                <button onclick="confirmParamSelection()"
+                    class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-md shadow-blue-500/20 transition-all active:scale-95">
+                    確認送出
+                </button>
+            </div>
+        </div>
+        <template id="history-item-template">
+            <div
+                class="p-3 bg-gray-50 rounded-lg cursor-pointer hover:bg-blue-50 hover:border-blue-200 border border-transparent transition-all group">
+                <div class="text-xs text-gray-700 font-medium line-clamp-2 group-hover:text-blue-700 item-text">問題內容...
+                </div>
+                <div class="text-[10px] text-gray-400 mt-1 item-time">2分鐘前</div>
+            </div>
+        </template>
 
-        .message-row.user {
-            justify-content: flex-end;
-        }
-
-        .message-row.assistant {
-            justify-content: flex-start;
-        }
-
-        .message-bubble {
-            max-width: 85%;
-            padding: 10px 16px;
-            border-radius: 12px;
-            font-size: 14px;
-            line-height: 1.4;
-            position: relative;
-            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-        }
-
-        .message-row.user .message-bubble {
-            background: #3b82f6;
-            /* Blue-500 */
-            color: white;
-            border-bottom-right-radius: 2px;
-            padding-bottom: 9px;
-            /* 稍微縮減底部，視覺平衡 */
-        }
-
-        .message-row.assistant .message-bubble {
-            background: #ffffff;
-            border: 1px solid #e2e8f0;
-            color: #334155;
-            border-bottom-left-radius: 2px;
-        }
-
-        /* Markdown Styles for Assistant */
-        .prose p {
-            margin-bottom: 0.8em;
-        }
-
-        .prose strong {
-            font-weight: 600;
-        }
-
-        .prose ul {
-            list-style-type: disc;
-            padding-left: 1.25em;
-            margin-bottom: 0.8em;
-        }
-
-        .prose pre {
-            background: #1e293b;
-            color: #e2e8f0;
-            padding: 12px;
-            border-radius: 8px;
-            overflow-x: auto;
-            font-family: monospace;
-            margin: 0.8em 0;
-            font-size: 0.9em;
-        }
-
-        /* Workflow Details (DeepSeek Style) */
-        .workflow-details summary {
-            list-style: none;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            color: #64748b;
-            /* slate-500 */
-            font-size: 11.5px;
-            cursor: pointer;
-            user-select: none;
-            transition: color 0.2s;
-            padding: 4px 0;
-        }
-
-        .workflow-details summary:hover {
-            color: #334155;
-        }
-
-        .workflow-details summary::-webkit-details-marker {
-            display: none;
-        }
-
-        .ai-thoughts {
-            font-size: 11.5px;
-            line-height: 1.4;
-        }
-
-        .tool-execution-chain {
-            font-size: 11px;
-        }
-
-        .tool-step {
-            background: #f8fafc;
-            border: 1px solid #f1f5f9;
-            border-radius: 4px;
-            padding: 4px 8px;
-            margin-top: 4px;
-        }
-
-        .tool-box {
-            background: #f8fafc;
-            border: 1px solid #e2e8f0;
-            border-radius: 8px;
-            padding: 8px 12px;
-            margin-top: 8px;
-            font-size: 11.5px;
-            color: #475569;
-        }
-
-        /* Custom Scrollbar */
-        .custom-scrollbar::-webkit-scrollbar {
-            width: 4px;
-        }
-
-        .custom-scrollbar::-webkit-scrollbar-track {
-            background: transparent;
-        }
-
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-            background: #cbd5e1;
-            border-radius: 4px;
-        }
-
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-            background: #94a3b8;
-        }
-
-        @keyframes fadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(10px);
+        <style>
+            /* Scoped styles */
+            .message-row {
+                display: flex;
+                width: 100%;
+                margin-bottom: 20px;
+                animation: fadeIn 0.3s ease-out;
             }
 
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        /* Typing indicator */
-        .typing-dot {
-            width: 6px;
-            height: 6px;
-            background: #94a3b8;
-            border-radius: 50%;
-            display: inline-block;
-            animation: typing 1.4s infinite ease-in-out both;
-            margin: 0 2px;
-        }
-
-        .typing-dot:nth-child(1) {
-            animation-delay: -0.32s;
-        }
-
-        .typing-dot:nth-child(2) {
-            animation-delay: -0.16s;
-        }
-
-        @keyframes typing {
-
-            0%,
-            80%,
-            100% {
-                transform: scale(0);
+            .message-row.user {
+                justify-content: flex-end;
             }
 
-            40% {
-                transform: scale(1);
+            .message-row.assistant {
+                justify-content: flex-start;
             }
-        }
 
-        /* Mode Selector Styling */
-        .mode-pill {
-            padding: 6px 18px;
-            border-radius: 9999px;
-            font-size: 12px;
-            font-weight: 600;
-            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-            border: 1px solid #e2e8f0;
-            background: #f8fafc;
-            color: #64748b;
-            cursor: pointer;
-            outline: none;
-        }
+            .message-bubble {
+                max-width: 92%;
+                padding: 10px 16px;
+                border-radius: 12px;
+                font-size: 14px;
+                line-height: 1.4;
+                position: relative;
+                box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+            }
 
-        .mode-pill.active {
-            background: #3b82f6;
-            color: white;
-            border-color: #3b82f6;
-            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.25);
-        }
+            .message-row.user .message-bubble {
+                background: #3b82f6;
+                /* Blue-500 */
+                color: white;
+                border-bottom-right-radius: 2px;
+                padding-bottom: 9px;
+                /* 稍微縮減底部，視覺平衡 */
+            }
 
-        .mode-pill:hover:not(.active) {
-            background: #f1f5f9;
-            border-color: #cbd5e1;
-            transform: translateY(-1px);
-        }
-    </style>
-    <script src="/static/js/analysis.js"></script>
+            .message-row.assistant .message-bubble {
+                background: #ffffff;
+                border: 1px solid #e2e8f0;
+                color: #334155;
+                border-bottom-left-radius: 2px;
+            }
+
+            /* Markdown Styles for Assistant */
+            .prose p {
+                margin-bottom: 0.8em;
+            }
+
+            .prose strong {
+                font-weight: 600;
+            }
+
+            .prose ul {
+                list-style-type: disc;
+                padding-left: 1.25em;
+                margin-bottom: 0.8em;
+            }
+
+            .prose pre {
+                background: #1e293b;
+                color: #e2e8f0;
+                padding: 12px;
+                border-radius: 8px;
+                overflow-x: auto;
+                font-family: monospace;
+                margin: 0.8em 0;
+                font-size: 0.9em;
+            }
+
+            /* Workflow Details (DeepSeek Style) */
+            .workflow-details summary {
+                list-style: none;
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                color: #64748b;
+                /* slate-500 */
+                font-size: 11.5px;
+                cursor: pointer;
+                user-select: none;
+                transition: color 0.2s;
+                padding: 4px 0;
+            }
+
+            .workflow-details summary:hover {
+                color: #334155;
+            }
+
+            .workflow-details summary::-webkit-details-marker {
+                display: none;
+            }
+
+            .ai-thoughts {
+                font-size: 11.5px;
+                line-height: 1.4;
+            }
+
+            .tool-execution-chain {
+                font-size: 11px;
+            }
+
+            .tool-step {
+                background: #f8fafc;
+                border: 1px solid #f1f5f9;
+                border-radius: 4px;
+                padding: 4px 8px;
+                margin-top: 4px;
+            }
+
+            .tool-box {
+                background: #f8fafc;
+                border: 1px solid #e2e8f0;
+                border-radius: 8px;
+                padding: 8px 12px;
+                margin-top: 8px;
+                font-size: 11.5px;
+                color: #475569;
+            }
+
+            /* Custom Scrollbar */
+            .custom-scrollbar::-webkit-scrollbar {
+                width: 4px;
+            }
+
+            .custom-scrollbar::-webkit-scrollbar-track {
+                background: transparent;
+            }
+
+            .custom-scrollbar::-webkit-scrollbar-thumb {
+                background: #cbd5e1;
+                border-radius: 4px;
+            }
+
+            .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+                background: #94a3b8;
+            }
+
+            @keyframes fadeIn {
+                from {
+                    opacity: 0;
+                    transform: translateY(10px);
+                }
+
+                to {
+                    opacity: 1;
+                    transform: translateY(0);
+                }
+            }
+
+            /* Typing indicator */
+            .typing-dot {
+                width: 6px;
+                height: 6px;
+                background: #94a3b8;
+                border-radius: 50%;
+                display: inline-block;
+                animation: typing 1.4s infinite ease-in-out both;
+                margin: 0 2px;
+            }
+
+            .typing-dot:nth-child(1) {
+                animation-delay: -0.32s;
+            }
+
+            .typing-dot:nth-child(2) {
+                animation-delay: -0.16s;
+            }
+
+            @keyframes typing {
+
+                0%,
+                80%,
+                100% {
+                    transform: scale(0);
+                }
+
+                40% {
+                    transform: scale(1);
+                }
+            }
+
+            /* Mode Selector Styling */
+            .mode-pill {
+                padding: 6px 18px;
+                border-radius: 9999px;
+                font-size: 12px;
+                font-weight: 600;
+                transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+                border: 1px solid #e2e8f0;
+                background: #f8fafc;
+                color: #64748b;
+                cursor: pointer;
+                outline: none;
+            }
+
+            .mode-pill.active {
+                background: #3b82f6;
+                color: white;
+                border-color: #3b82f6;
+                box-shadow: 0 4px 12px rgba(59, 130, 246, 0.25);
+            }
+
+            .mode-pill:hover:not(.active) {
+                background: #f1f5f9;
+                border-color: #cbd5e1;
+                transform: translateY(-1px);
+            }
+        </style>
+        <script src="/static/js/analysis.js"></script>
 </body>
 
 </html>

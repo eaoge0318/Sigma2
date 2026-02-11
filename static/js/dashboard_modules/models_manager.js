@@ -144,7 +144,7 @@ export async function deleteModel(jobId, modelName) {
     if (!confirm(`確定要刪除模型「${modelName}」及其訓練日誌嗎？\n此動作無法還原。`)) return;
 
     try {
-        const result = await API.delete(`/api/analysis/delete_model/${jobId}`);
+        const result = await API.delete(`/api/analysis/models/${jobId}`);
         if (result.status === 'success') {
             loadModelRegistry();
             if (window.Swal) Swal.fire({ icon: 'success', title: '刪除成功', text: result.message, timer: 1500, showConfirmButton: false });
@@ -162,7 +162,7 @@ export async function stopModel(jobId, modelName) {
     if (!confirm(`確定要強制停止模型「${modelName}」的訓練進程嗎？`)) return;
 
     try {
-        const result = await API.post(`/api/analysis/stop_model/${jobId}`);
+        const result = await API.post(`/api/analysis/models/${jobId}/stop`);
         if (result.status === 'success') {
             loadModelRegistry();
             if (window.Swal) Swal.fire({ icon: 'success', title: '已停止', text: result.message, timer: 1500, showConfirmButton: false });
@@ -204,10 +204,9 @@ export async function viewTrainingLog(jobId, modelName) {
     let pre = DOM.get('log-viewer-pre');
 
     try {
-        // Use raw fetch for text content since API helper expects JSON primarily, 
         // though API helper can verify status. Let's use fetch manually for text.
         // Or improve API helper to handle text. For now manual fetch.
-        const res = await fetch(`/api/analysis/get_log/${jobId}?session_id=${window.SESSION_ID}`);
+        const res = await fetch(`/api/analysis/models/${jobId}/log?session_id=${window.SESSION_ID}`);
         const logContent = await res.text();
         const cleanLog = logContent.startsWith('"') && logContent.endsWith('"') ? logContent.slice(1, -1).replace(/\\n/g, '\n').replace(/\\r/g, '') : logContent;
 

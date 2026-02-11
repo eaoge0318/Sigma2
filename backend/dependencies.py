@@ -100,18 +100,16 @@ def get_intelligent_analysis_service() -> IntelligentAnalysisService:
 
 
 def get_llm_agent() -> SigmaAnalysisWorkflow:
-    """取得 LLM 智能分析工作流 (Workflow)"""
-    global _llm_agent
-    if _llm_agent is None:
-        # 依賴 IntelligentAnalysisService
-        service = get_intelligent_analysis_service()
-        # 初始化 Tools Executor
-        executor = ToolExecutor(service)
+    """取得 LLM 智能分析工作流 (Workflow) - 每次調用產生新實例以確保 Session 隔離"""
+    # 依賴 IntelligentAnalysisService (Service 本身是 Stateless 的可以共用)
+    service = get_intelligent_analysis_service()
 
-        # 初始化 Workflow (取代舊的 Agent)
-        _llm_agent = SigmaAnalysisWorkflow(
-            tool_executor=executor,
-            analysis_service=service,
-            timeout=600,  # 設定為 10 分鐘
-        )
-    return _llm_agent
+    # 初始化獨立的 Tools Executor
+    executor = ToolExecutor(service)
+
+    # 初始化全新的 Workflow (不再使用全域單例，防止多使用者上下文互竄)
+    return SigmaAnalysisWorkflow(
+        tool_executor=executor,
+        analysis_service=service,
+        timeout=600,  # 設定為 10 分鐘
+    )

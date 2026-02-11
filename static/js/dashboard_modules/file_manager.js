@@ -37,9 +37,9 @@ export async function uploadFile(file) {
         const data = await res.json();
 
         if (res.ok) {
-            statusDiv.innerText = `✅ ${data.message}`;
+            statusDiv.innerText = `✅ ${data.filename} 上傳成功`;
             statusDiv.style.color = '#22c55e';
-            loadFileList(); // Refresh list
+            await loadFileList(); // Refresh list
         } else {
             statusDiv.innerText = `❌ 上傳失敗: ${data.detail}`;
             statusDiv.style.color = '#ef4444';
