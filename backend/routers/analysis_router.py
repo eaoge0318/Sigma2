@@ -140,6 +140,22 @@ async def chat_with_ai(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class StopRequest(BaseModel):
+    session_id: str = "default"
+
+
+@router.post("/chat/stop")
+async def stop_chat_generation(
+    request: StopRequest,
+    analysis_service: AnalysisService = Depends(get_intelligent_analysis_service),
+):
+    """
+    強制停止當前的 AI 分析生成，並觸發立即總結
+    """
+    analysis_service.stop_generation(request.session_id)
+    return {"status": "stopping", "message": "Stop signal sent"}
+
+
 @router.post("/chat/stream")
 async def chat_stream(
     request: ChatRequest,
@@ -289,7 +305,7 @@ async def list_models_endpoint(
     獲取模型列表 (用於 Model Registry)
     """
     try:
-        models = analysis_service.list_models(session_id)
+        models = await analysis_service.list_models(session_id)
         return models
     except Exception as e:
         logger.error(f"Error listing models: {e}")
@@ -306,8 +322,8 @@ async def delete_model_endpoint(
     刪除模型
     """
     try:
-        success = analysis_service.delete_model(session_id, job_id)
-        return {"status": "success" if success else "failed"}
+        result = await analysis_service.delete_model(job_id, session_id)
+        return result
     except Exception as e:
         logger.error(f"Error deleting model: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -323,8 +339,8 @@ async def stop_model_endpoint(
     強制停止模型訓練
     """
     try:
-        success = analysis_service.stop_training(session_id, job_id)
-        return {"status": "success" if success else "failed"}
+        result = await analysis_service.stop_model(job_id, session_id)
+        return result
     except Exception as e:
         logger.error(f"Error stopping model: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -340,7 +356,7 @@ async def get_model_log(
     獲取模型訓練日誌
     """
     try:
-        log_content = analysis_service.get_training_log(session_id, job_id)
+        log_content = await analysis_service.get_training_log(job_id, session_id)
         return PlainTextResponse(log_content)
     except Exception as e:
         logger.error(f"Error getting log: {e}")
@@ -357,7 +373,7 @@ async def train_model(
     session_id: str = Query("default"),
     analysis_service=Depends(get_old_analysis_service),
 ):
-    return await analysis_service.start_training(session_id, request)
+    return await analysis_service.train_model(request, session_id)
 
 
 @router.post("/quick_analysis")
@@ -366,7 +382,7 @@ async def quick_analysis(
     session_id: str = Query("default"),
     analysis_service=Depends(get_old_analysis_service),
 ):
-    return await analysis_service.quick_analyze(session_id, request)
+    return await analysis_service.quick_analysis(request, session_id)
 
 
 @router.get("/column_data")
@@ -376,7 +392,7 @@ async def get_column_data(
     session_id: str = Query("default"),
     analysis_service=Depends(get_old_analysis_service),
 ):
-    return await analysis_service.get_column_values(session_id, filename, column)
+    return await analysis_service.get_column_data(filename, column, session_id)
 
 
 @router.post("/save_file")
@@ -385,7 +401,7 @@ async def save_file_endpoint(
     session_id: str = Query("default"),
     analysis_service=Depends(get_old_analysis_service),
 ):
-    return await analysis_service.save_temp_file(session_id, request)
+    return await analysis_service.save_filtered_file(request, session_id)
 
 
 @router.post("/advanced_analysis")
@@ -394,4 +410,4 @@ async def advanced_analysis_endpoint(
     session_id: str = Query("default"),
     analysis_service=Depends(get_old_analysis_service),
 ):
-    return await analysis_service.advanced_analyze(session_id, request)
+    return await analysis_service.advanced_analysis(request, session_id)

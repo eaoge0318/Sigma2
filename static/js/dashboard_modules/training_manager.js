@@ -1048,7 +1048,7 @@ export async function switchContextTab(tab) {
                     type: 'file'
                 }));
         } else if (tab === 'models') {
-            const models = await API.get('/api/analysis/list_models', { session_id: sid });
+            const models = await API.get('/api/analysis/models', { session_id: sid });
             items = models.map(m => ({
                 id: m.job_id,
                 title: m.modelName || m.model_name || '未命名模型',
@@ -1728,7 +1728,7 @@ export async function loadModelRegistry() {
     if (!tbody) return;
 
     try {
-        const models = await API.get('/api/analysis/list_models');
+        const models = await API.get('/api/analysis/models');
 
         if (countText) countText.innerText = models.length;
         tbody.innerHTML = '';

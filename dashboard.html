@@ -799,6 +799,23 @@
             transform: scale(0.95);
         }
 
+        /* FIX: Align input with select in filter menu */
+        .filter-menu select,
+        .filter-menu input[type="text"] {
+            box-sizing: border-box !important;
+            width: 100% !important;
+            border: 1px solid #e2e8f0 !important;
+            padding: 8px 12px !important;
+            border-radius: 8px !important;
+            outline: none !important;
+        }
+
+        .filter-menu input[type="text"]:focus {
+            border-color: #3b82f6 !important;
+        }
+
+
+
         .move-btn.disabled {
             background: #e5e7eb !important;
             color: #94a3b8 !important;
@@ -1503,9 +1520,16 @@
                                     <div
                                         style="font-weight: bold; color: #1e293b; margin-bottom: 10px; font-size: 14px;">
                                         可用欄位</div>
-                                    <input type="text" placeholder="搜尋欄位..."
-                                        style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; margin-bottom: 12px;"
-                                        onkeyup="filterChartColumns(this.value)">
+                                    <div style="position: relative; margin-bottom: 12px;">
+                                        <input type="text" id="chart-col-search" placeholder="搜尋欄位..."
+                                            style="width: 100%; padding: 8px 30px 8px 8px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; box-sizing: border-box;"
+                                            onkeyup="filterChartColumns(this.value)">
+                                        <span onclick="clearChartColSearch()"
+                                            style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); cursor: pointer; color: #94a3b8; font-size: 16px; font-weight: bold; padding: 2px;"
+                                            title="清除">
+                                            &times;
+                                        </span>
+                                    </div>
 
                                     <div id="adv-selection-container">
                                         <button onclick="openAdvancedModal()" class="btn-adv-selection">
@@ -1573,7 +1597,7 @@
                                     </div>
 
                                     <!-- Chart Canvas Area -->
-                                    <div
+                                    <div ondrop="handleMainChartDrop(event)" ondragover="allowDrop(event)"
                                         style="flex: 1; position: relative; border: 1px solid #f1f5f9; border-radius: 8px; padding: 10px; box-shadow: inset 0 0 10px #f8fafc; overflow: hidden;">
                                         <canvas id="analysis-chart-canvas"></canvas>
                                         <div id="selection-box"

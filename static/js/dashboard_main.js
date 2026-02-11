@@ -63,6 +63,7 @@ window.switchAnalysisMode = Analysis.switchAnalysisMode;
 window.allowDrop = Analysis.allowDrop;
 window.handleDragLeave = Analysis.handleDragLeave;
 window.handleDrop = Analysis.handleDrop;
+window.handleMainChartDrop = Analysis.handleMainChartDrop;
 window.resetAxis = Analysis.resetAxis;
 window.clearChartConfig = Analysis.clearChartConfig;
 window.resetAdvancedResults = Analysis.resetAdvancedResults;
@@ -78,6 +79,7 @@ window.cycleChartAxis = Analysis.cycleChartAxis;
 window.setChartType = Analysis.setChartType;
 window.toggleSelectionMode = Analysis.toggleSelectionMode;
 window.filterChartColumns = Analysis.filterChartColumns;
+window.clearChartColSearch = Analysis.clearChartColSearch;
 
 // Chat / AI
 window.generateAIReport = Chat.generateAIReport;

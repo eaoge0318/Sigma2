@@ -9,23 +9,48 @@ from backend.services.analysis.analysis_types import (
 
 
 class MockToolExecutor:
+    def __init__(self, analysis_service):
+        self.analysis_service = analysis_service
+
     def list_tools(self):
-        return [{"name": "mock_tool", "description": "A mock tool"}]
+        return [
+            {
+                "name": "mock_tool",
+                "description": "A mock tool",
+                "required_params": ["p1"],
+            }
+        ]
 
     def execute_tool(self, name, params, session_id):
-        return {"mock_result": "success", "params": params}
+        return {
+            "mock_result": "success",
+            "params": params,
+            "top_3_summary": "Mock Top 3: p1(0.5)",
+        }
 
 
 class MockAnalysisService:
-    pass
+    def load_summary(self, session_id, file_id):
+        return {
+            "filename": "test.csv",
+            "total_rows": 500,
+            "parameters": ["p1", "p2", "ID", "TIME"],
+            "mappings": {"p1": "壓力感測器", "p2": "流量感測器"},
+            "categories": {"SENSOR": ["p1", "p2"]},
+            "quality_stats": {
+                "null_column_count": 0,
+                "constant_column_count": 0,
+                "sparse_column_count": 0,
+            },
+        }
 
 
 async def main():
     print("--- Starting SigmaAnalysisWorkflow Test ---")
 
     # 1. Mock Dependencies
-    tool_executor = MockToolExecutor()
     analysis_service = MockAnalysisService()
+    tool_executor = MockToolExecutor(analysis_service)
 
     # 2. Define Event Handler
     async def event_handler(ev):

@@ -12,6 +12,7 @@ class StartEvent(Event):
     session_id: str
     history: str = ""
     mode: str = "fast"
+    suspect_pool: List[str] = []
 
 
 class IntentEvent(Event):
@@ -25,6 +26,7 @@ class IntentEvent(Event):
     session_id: str
     history: str
     mode: str = "fast"
+    suspect_pool: List[str] = []
 
 
 class AnalysisEvent(Event):
@@ -39,6 +41,7 @@ class AnalysisEvent(Event):
     mode: str = "fast"
     step_count: int = 1  # 記錄當前是第幾步分析 (防止無窮迴圈)
     prev_results: List[Dict] = []  # 存儲前幾步的工具執行結果，用於整合
+    suspect_pool: List[str] = []
 
 
 class TranslationEvent(Event):
@@ -100,6 +103,7 @@ class VisualizingEvent(Event):
     row_count: int = 0
     col_count: int = 0
     mappings: Dict = {}
+    suspect_pool: List[str] = []
 
 
 class SummarizeEvent(Event):
@@ -117,6 +121,7 @@ class SummarizeEvent(Event):
     row_count: int = 0
     col_count: int = 0
     mappings: Dict = {}
+    suspect_pool: List[str] = []
 
 
 class ErrorEvent(Event):

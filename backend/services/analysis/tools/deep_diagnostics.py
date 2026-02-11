@@ -40,33 +40,9 @@ class DistributionShiftTool(AnalysisTool):
         )
         df = pd.read_csv(csv_path)
 
-        # 簡單解析邏輯
-        def parse(data):
-            idx = set()
-            if isinstance(data, list):
-                for i in data:
-                    idx.add(int(i))
-            elif isinstance(data, str):
-                for p in data.split(","):
-                    p = p.strip()
-                    if not p:
-                        continue
-                    if "-" in p:
-                        try:
-                            s, e = map(int, p.split("-"))
-                            idx.update(range(s, e + 1))
-                        except:
-                            pass
-                    else:
-                        try:
-                            idx.add(int(p))
-                        except:
-                            pass
-            return list(idx)
-
-        t_idx = parse(target_input)
+        t_idx = self.parse_indices(target_input, max_len=len(df))
         if baseline_input:
-            b_idx = parse(baseline_input)
+            b_idx = self.parse_indices(baseline_input, max_len=len(df))
         else:
             b_idx = [i for i in range(len(df)) if i not in t_idx]
 
@@ -113,7 +89,7 @@ class DistributionShiftTool(AnalysisTool):
                             "severity": 1 - min(ks_p, f_p),
                         }
                     )
-            except:
+            except Exception:
                 continue
 
         results = sorted(results, key=lambda x: x["severity"], reverse=True)
@@ -208,7 +184,11 @@ class CausalRelationshipTool(AnalysisTool):
             / "uploads"
             / summary["filename"]
         )
-        df = pd.read_csv(csv_path, usecols=[target] + refs).dropna()
+        df = (
+            pd.read_csv(csv_path, usecols=[target] + refs)
+            .select_dtypes(include=[np.number])
+            .dropna()
+        )
 
         try:
             from statsmodels.tsa.stattools import grangercausalitytests
@@ -237,7 +217,7 @@ class CausalRelationshipTool(AnalysisTool):
                         "is_causal": min_p < 0.05,
                     }
                 )
-            except:
+            except Exception:
                 continue
 
         causal_results = sorted(causal_results, key=lambda x: x["p_value"])

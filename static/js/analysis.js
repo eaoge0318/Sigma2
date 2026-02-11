@@ -1,11 +1,15 @@
 class IntelligentAnalysis {
     constructor() {
-        this.sessionId = localStorage.getItem('sigma2_session_id') || 'default';
+        // Generate a unique session ID, or inherit from parent if in an iframe
+        const parentSessionId = window.parent && window.parent.SESSION_ID;
+        this.sessionId = parentSessionId || ((window.crypto && window.crypto.randomUUID) ? window.crypto.randomUUID() : `temp_${Date.now()}`);
+        console.log(`Initialized Analysis with SessionID: ${this.sessionId}`);
         this.currentFileId = null;
         this.currentFilename = null;
         this.conversationId = 'default';
         this.analysisMode = 'fast'; // 'fast' or 'full'
         this.isLoading = false;
+        this.currentFileParams = []; // Store current file parameters
 
         // DOM Elements
         this.elements = {
@@ -153,10 +157,20 @@ class IntelligentAnalysis {
         });
 
         // Suggested Queries Click
-        this.elements.chatContainer.addEventListener('click', (e) => {
+        // Suggested Queries Click (Modified to listen on body for Sidebar buttons)
+        document.body.addEventListener('click', (e) => {
             const btn = e.target.closest('.suggested-query');
             if (btn) {
                 const query = btn.textContent.trim();
+
+                // Intercept "Draw Trend Chart"
+                if (query === '繪製趨勢圖') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    this.openParamSelectionModal(btn);
+                    return;
+                }
+
                 this.elements.userInput.value = query;
                 this.elements.userInput.style.height = 'auto'; // Reset height
                 this.elements.userInput.style.height = this.elements.userInput.scrollHeight + 'px';
@@ -164,11 +178,34 @@ class IntelligentAnalysis {
                 this.sendMessage();
             }
         });
+
+        // Trend Param Keyword Search (Filter the dropdown)
+        document.addEventListener('input', (e) => {
+            if (e.target.id === 'trend-keyword-input') {
+                this.populateParamDropdown(e.target.value);
+            }
+        });
+
+        // Add Enter Key Shortcut for Trend Search
+        document.addEventListener('keydown', (e) => {
+            if (e.target.id === 'trend-keyword-input' && e.key === 'Enter') {
+                const select = document.getElementById('trend-column-select');
+                if (select && select.value) {
+                    this.confirmParamSelection();
+                } else if (select && select.options.length > 1) {
+                    // Auto-select first matching option if none selected
+                    select.selectedIndex = 1;
+                    this.confirmParamSelection();
+                }
+            }
+        });
     }
 
     async sendMessage() {
         const message = this.elements.userInput.value.trim();
         if (!message || this.isLoading) return;
+
+        this.stopRequested = false; // Reset stop state
 
         if (!this.currentFileId) {
             alert('請先選擇一個要分析的文件！');
@@ -275,12 +312,66 @@ class IntelligentAnalysis {
             this.stopTimer();
             this.updateSendButtonState('send');
             this.abortController = null;
+            this.stopRequested = false; // Ensure reset on finish
         }
     }
 
-    stopGeneration() {
-        if (this.abortController) {
-            this.abortController.abort();
+    async stopGeneration() {
+        // [MODIFIED] Two-stage stop:
+        // 1. First click: "Immediate Answer" -> triggers backend summary
+        // 2. Second click: "Hard Stop" -> aborts frontend connection
+
+        if (this.stopRequested) {
+            // Stage 2: Hard Stop
+            if (this.abortController) {
+                this.abortController.abort();
+                // Visual feedback is handled by AbortError in sendMessage catch block
+            }
+            return;
+        }
+
+        // Stage 1: Request Summary
+        this.stopRequested = true;
+
+        // Change button to Hard Stop state immediately
+        const btn = this.elements.btnSend;
+        btn.innerHTML = `
+            <span>停止輸出</span>
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+        `;
+        btn.classList.remove('bg-gray-500', 'hover:bg-gray-600');
+        btn.classList.add('bg-gray-700', 'hover:bg-gray-800');
+        btn.title = "強制停止所有輸出";
+
+        if (this.sessionId) {
+            try {
+                if (this.isLoading) {
+                    const lastMsg = this.elements.chatContainer.lastElementChild;
+                    if (lastMsg) {
+                        const statusLog = lastMsg.querySelector('.status-log');
+                        if (statusLog) {
+                            const logItem = document.createElement('div');
+                            logItem.textContent = "正在請求立即結論... (若太久可再次點擊停止)";
+                            logItem.className = "text-orange-600 font-bold";
+                            statusLog.appendChild(logItem);
+                        }
+                    }
+                }
+
+                await fetch('/api/analysis/chat/stop', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ session_id: this.sessionId })
+                });
+            } catch (e) {
+                console.error("Failed to send stop signal", e);
+                // Fallback: abort if API fails
+                if (this.abortController) this.abortController.abort();
+            }
+        } else {
+            if (this.abortController) this.abortController.abort();
         }
     }
 
@@ -312,7 +403,7 @@ class IntelligentAnalysis {
         const btn = this.elements.btnSend;
         if (state === 'stop') {
             btn.innerHTML = `
-                <span>停止</span>
+                <span>立即回答</span>
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
                     <rect x="6" y="6" width="12" height="12" rx="2" />
                 </svg>
@@ -415,6 +506,8 @@ class IntelligentAnalysis {
             this.currentFilename = filename;
 
             const summary = result.summary || {};
+            this.currentFileParams = summary.parameters || []; // Store parameters
+            this.currentFileCategories = summary.categories || {}; // Store categories for grouping
 
             // Update Info Panel
             this.elements.infoRows.textContent = summary.total_rows ? summary.total_rows.toLocaleString() : '-';
@@ -779,15 +872,44 @@ class IntelligentAnalysis {
             case 'response':
                 // 串流結束後的最終校驗與渲染
                 if (state.markdownBody) {
-                    let backendContent = event.content || event.summary;
-                    let finalContent = state.fullText;
+                    let rawData = event;
+                    let backendContent = null;
 
-                    if (backendContent && typeof backendContent === 'string' && !backendContent.includes('[object Object]') && backendContent.length >= state.fullText.length) {
-                        finalContent = backendContent;
+                    // 1. 優先從事件物件中提取內容 (SSE 結構)
+                    if (typeof rawData === 'object' && rawData !== null) {
+                        backendContent = rawData.content || rawData.response || rawData.summary || rawData.message;
+                    }
+
+                    // 2. 如果沒抓到或是字串，嘗試解析它 (可能是 JSON 字串)
+                    if (!backendContent && typeof rawData === 'string' && (rawData.trim().startsWith('{') || rawData.trim().startsWith('['))) {
+                        try {
+                            const parsed = JSON.parse(rawData);
+                            backendContent = parsed.response || parsed.summary || parsed.content || parsed.message;
+                        } catch (e) {
+                            console.error("[Analysis] Failed to parse backend rawData JSON:", e);
+                        }
+                    }
+
+                    // 3. 備援：如果累積的 fullText 本身就是 JSON (AI 誤輸出的情況)
+                    let finalContent = backendContent || state.fullText;
+                    if (typeof finalContent === 'string' && (finalContent.trim().startsWith('{') || finalContent.trim().startsWith('['))) {
+                        try {
+                            const parsed = JSON.parse(finalContent);
+                            if (parsed.response || parsed.content || parsed.summary) {
+                                finalContent = parsed.response || parsed.content || parsed.summary;
+                                console.log("[Analysis] Extracted content from accidentally JSON-wrapped fullText");
+                            }
+                        } catch (e) { /* Not a valid JSON, keep as is */ }
+                    }
+
+                    // 徹底清除物件雜訊
+                    if (typeof finalContent === 'string' && finalContent.includes('[object Object]')) {
+                        finalContent = finalContent.replace(/\[object Object\]/g, '');
+                        if (backendContent) finalContent = backendContent;
                     }
 
                     // 最終 Markdown 渲染 (包含圖表)
-                    state.markdownBody.innerHTML = marked.parse(finalContent);
+                    state.markdownBody.innerHTML = marked.parse(finalContent || '');
                     this.renderCharts(state.markdownBody);
 
                     // 渲染 Mermaid 圖表 (如果有)
@@ -909,7 +1031,7 @@ class IntelligentAnalysis {
                             maintainAspectRatio: false,
                             scales: {
                                 y: {
-                                    beginAtZero: true,
+                                    beginAtZero: false,
                                     grid: { color: 'rgba(0,0,0,0.05)' }
                                 },
                                 x: {
@@ -1037,6 +1159,124 @@ class IntelligentAnalysis {
             this.elements.mappingUploadInput.value = ''; // Reset input
         }
     }
+
+
+    // --- Param Selection Modal Logic ---
+    openParamSelectionModal(btn) {
+        if (!this.currentFileParams || this.currentFileParams.length === 0) {
+            alert('無法獲取參數列表，請確認檔案已正確加載。');
+            return;
+        }
+        const menu = document.getElementById('param-select-menu');
+        if (menu) {
+            menu.classList.remove('hidden');
+
+            // ✨ Position Beside Button
+            if (btn) {
+                const rect = btn.getBoundingClientRect();
+                const menuWidth = 280;
+
+                // Position to the right of button
+                let top = rect.top + window.scrollY;
+                let left = rect.right + 12;
+
+                // Adjust if overflowing vertically
+                const windowHeight = window.innerHeight;
+                const menuHeight = 450; // Max height
+                if (top + menuHeight > windowHeight + window.scrollY) {
+                    top = Math.max(10, windowHeight + window.scrollY - menuHeight - 10);
+                }
+
+                menu.style.top = `${top}px`;
+                menu.style.left = `${left}px`;
+                menu.style.position = 'absolute';
+            }
+
+            this.populateParamDropdown();
+            // Reset keyword input & Focus
+            const kwInput = document.getElementById('trend-keyword-input');
+            if (kwInput) {
+                kwInput.value = '';
+                setTimeout(() => kwInput.focus(), 100);
+            }
+        }
+    }
+
+    closeParamSelectionModal() {
+        const menu = document.getElementById('param-select-menu');
+        if (menu) menu.classList.add('hidden');
+    }
+
+    populateParamDropdown(filter = '') {
+        const select = document.getElementById('trend-column-select');
+        if (!select) return;
+
+        const lowerFilter = (filter || '').toLowerCase();
+
+        // Keep the placeholder
+        select.innerHTML = '<option value="" disabled selected>-- 請選擇參數 --</option>';
+
+        if (!this.currentFileParams || this.currentFileParams.length === 0) return;
+
+        // Use categories if available for better grouping
+        if (this.currentFileCategories && Object.keys(this.currentFileCategories).length > 0) {
+            Object.entries(this.currentFileCategories).forEach(([catName, params]) => {
+                const filteredParams = params.filter(p => p.toLowerCase().includes(lowerFilter));
+                if (filteredParams.length > 0) {
+                    const group = document.createElement('optgroup');
+                    group.label = catName;
+                    filteredParams.forEach(param => {
+                        const opt = document.createElement('option');
+                        opt.value = param;
+                        opt.text = param;
+                        group.appendChild(opt);
+                    });
+                    select.appendChild(group);
+                }
+            });
+        } else {
+            // Fallback to flat list
+            this.currentFileParams.forEach(param => {
+                if (param.toLowerCase().includes(lowerFilter)) {
+                    const opt = document.createElement('option');
+                    opt.value = param;
+                    opt.text = param;
+                    select.appendChild(opt);
+                }
+            });
+        }
+
+        // If filtering and only one result, or results exist, select the first valid one
+        // User UX improvement: if there's exactly one match, pre-select it? 
+        // No, stay with placeholder to avoid accidents unless explicitly requested.
+    }
+
+    confirmParamSelection() {
+        const select = document.getElementById('trend-column-select');
+        const kwInput = document.getElementById('trend-keyword-input');
+
+        const col = select ? select.value : '';
+        const keyword = kwInput ? kwInput.value.trim() : '';
+
+        if (!col) {
+            alert('請選擇一個參數欄位！');
+            return;
+        }
+
+        let query = `請幫我繪製 ${col} 的趨勢圖`;
+        if (keyword) {
+            query += `，並篩選包含關鍵字 "${keyword}" 的數據`;
+        }
+
+        this.elements.userInput.value = query;
+        this.elements.userInput.style.height = 'auto';
+        this.elements.userInput.style.height = this.elements.userInput.scrollHeight + 'px';
+        this.elements.btnSend.disabled = false;
+
+        this.closeParamSelectionModal();
+        this.sendMessage();
+    }
+
     setMode(mode) {
         this.analysisMode = mode;
         console.log(`🚀 [Mode] Switched to ${mode}`);
@@ -1061,6 +1301,16 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // Global accessor for HTML onclick
+// Global accessor for HTML onclick
 window.setAnalysisMode = (mode) => {
     if (window.ia) window.ia.setMode(mode);
+};
+
+window.openParamSelectionModal = () => window.ia?.openParamSelectionModal();
+window.closeParamSelectionModal = () => window.ia?.closeParamSelectionModal();
+window.confirmParamSelection = () => window.ia?.confirmParamSelection();
+window.updateParamCount = () => {
+    const checkboxes = document.querySelectorAll('input[name="trend-param"]:checked');
+    const countEl = document.getElementById('param-selected-count');
+    if (countEl) countEl.textContent = checkboxes.length;
 };

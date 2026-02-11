@@ -24,31 +24,81 @@ class AnalyzeDistributionTool(AnalysisTool):
 
     def execute(self, params: Dict, session_id: str) -> Dict[str, Any]:
         file_id = params.get("file_id")
-        col = params.get("parameter")
+        param_input = params.get("parameter")
+        target_segments_str = params.get("target_segments")
+
+        # 支援多個參數輸入 (列表或逗號分隔字串)
+        if isinstance(param_input, list):
+            columns = param_input
+        elif isinstance(param_input, str):
+            columns = [p.strip() for p in param_input.split(",")]
+        else:
+            return {"error": "無效的參數類型 (預期為字串或列表)"}
 
         stats_data = self.analysis_service.load_statistics(session_id, file_id)
-        col_stats = stats_data.get(col, {})
-
-        if not col_stats or col_stats.get("count", 0) == 0:
-            return {"error": "No data available for this parameter"}
-
-        # 讀取原始數據以計算 bins
         summary = self.analysis_service.load_summary(session_id, file_id)
         filename = summary["filename"]
         csv_path = self.analysis_service.base_dir / session_id / "uploads" / filename
-        df = pd.read_csv(csv_path, usecols=[col])
 
-        # 計算 Histogram
-        data = df[col].dropna().values
-        hist, bin_edges = np.histogram(data, bins=20)
+        results_map = {}
+        for col in columns:
+            if not col:
+                continue
 
-        return {
-            "parameter": col,
-            "basic_stats": col_stats,
-            "histogram": {"counts": hist.tolist(), "bins": bin_edges.tolist()},
-            "skewness": float(stats.skew(data)),
-            "kurtosis": float(stats.kurtosis(data)),
-        }
+            try:
+                # 讀取單一欄位數據
+                df_full = pd.read_csv(csv_path, usecols=[col])
+
+                # 區間過濾處理
+                if target_segments_str:
+                    target_indices = self.parse_indices(
+                        target_segments_str, max_len=len(df_full)
+                    )
+                    if target_indices:
+                        data_series = df_full.iloc[target_indices][col].dropna()
+                    else:
+                        data_series = df_full[col].dropna()
+                else:
+                    data_series = df_full[col].dropna()
+
+                data = data_series.values
+                if len(data) == 0:
+                    results_map[col] = {"error": "無有效數值數據"}
+                    continue
+
+                hist, bin_edges = np.histogram(data, bins=20)
+
+                # 獲取基礎統計量 (如果是全量則用緩存，否則動態計算)
+                if not target_segments_str:
+                    col_stats = stats_data.get(str(col), {})
+                else:
+                    col_stats = {
+                        "count": len(data),
+                        "mean": float(np.mean(data)),
+                        "min": float(np.min(data)),
+                        "max": float(np.max(data)),
+                        "std": float(np.std(data)),
+                    }
+
+                results_map[col] = {
+                    "basic_stats": col_stats,
+                    "histogram": {"counts": hist.tolist(), "bins": bin_edges.tolist()},
+                    "skewness": float(stats.skew(data)),
+                    "kurtosis": float(stats.kurtosis(data)),
+                    "target_range": target_segments_str or "full",
+                }
+            except Exception as e:
+                results_map[col] = {"error": str(e)}
+
+        # 向下相容單一參數模式
+        if len(columns) == 1:
+            col = columns[0]
+            res = results_map.get(col)
+            if res and "error" in res:
+                return res
+            return {"parameter": col, **(res or {})}
+
+        return {"parameters": columns, "multi_results": results_map}
 
 
 class CompareSegmentsTool(AnalysisTool):
@@ -68,8 +118,11 @@ class CompareSegmentsTool(AnalysisTool):
 
     def execute(self, params: Dict, session_id: str) -> Dict[str, Any]:
         file_id = params.get("file_id")
-        target_input = params.get("target_segments")
-        baseline_input = params.get("baseline_segments")
+
+        # 參數兼容性修正：支援 target_segments 或 target
+        target_input = params.get("target_segments") or params.get("target")
+        # 參數兼容性修正：支援 baseline_segments 或 baseline
+        baseline_input = params.get("baseline_segments") or params.get("baseline")
 
         summary = self.analysis_service.load_summary(session_id, file_id)
         csv_path = (
@@ -81,49 +134,12 @@ class CompareSegmentsTool(AnalysisTool):
         df = pd.read_csv(csv_path)
         numeric_cols = df.select_dtypes(include=[np.number]).columns
 
-        def parse_segments(input_data):
-            indices = set()
-            if not input_data:
-                return indices
-
-            # 兼容列表輸入
-            if isinstance(input_data, list):
-                for item in input_data:
-                    if isinstance(item, int):
-                        if 0 <= item < len(df):
-                            indices.add(item)
-                    else:
-                        indices.update(parse_segments(str(item)))
-                return list(indices)
-
-            # 兼容字串輸入，移除括號並依逗號切割
-            input_str = str(input_data).replace("[", "").replace("]", "").strip()
-            parts = [p.strip() for p in input_str.split(",")]
-            for p in parts:
-                if not p:
-                    continue
-                if "-" in p:
-                    try:
-                        start_str, end_str = p.split("-")
-                        start, end = int(start_str), int(end_str)
-                        indices.update(range(max(0, start), min(len(df), end + 1)))
-                    except Exception:
-                        pass
-                else:
-                    try:
-                        idx = int(p)
-                        if 0 <= idx < len(df):
-                            indices.add(idx)
-                    except Exception:
-                        pass
-            return list(indices)
-
-        target_indices = parse_segments(target_input)
+        target_indices = self.parse_indices(target_input, max_len=len(df))
         if not target_indices:
             return {"error": f"無法解析目標區間: {target_input}"}
 
         if baseline_input:
-            baseline_indices = parse_segments(baseline_input)
+            baseline_indices = self.parse_indices(baseline_input, max_len=len(df))
         else:
             baseline_indices = [i for i in range(len(df)) if i not in target_indices]
 
@@ -198,49 +214,79 @@ class DetectOutliersTool(AnalysisTool):
 
     def execute(self, params: Dict, session_id: str) -> Dict[str, Any]:
         file_id = params.get("file_id")
-        col = params.get("parameter")
+        param_input = params.get("parameter")
+
+        # 支援多個參數輸入
+        if isinstance(param_input, list):
+            columns = param_input
+        elif isinstance(param_input, str):
+            columns = [p.strip() for p in param_input.split(",")]
+        else:
+            return {"error": "無效的參數類型 (預期為字串或列表)"}
 
         summary = self.analysis_service.load_summary(session_id, file_id)
         filename = summary["filename"]
         csv_path = self.analysis_service.base_dir / session_id / "uploads" / filename
 
-        # 讀取數據
-        df = pd.read_csv(csv_path, usecols=[col])
-        series = df[col].dropna()
+        results_map = {}
+        for col in columns:
+            if not col:
+                continue
+            try:
+                # 讀取數據
+                df = pd.read_csv(csv_path, usecols=[col])
+                series = df[col].dropna()
 
-        if series.empty:
-            return {"error": "No valid data for outlier detection"}
+                if series.empty:
+                    results_map[col] = {"error": "無有效數據"}
+                    continue
 
-        q1 = series.quantile(0.25)
-        q3 = series.quantile(0.75)
-        iqr = q3 - q1
-        lower_bound = q1 - 1.5 * iqr
-        upper_bound = q3 + 1.5 * iqr
+                q1 = series.quantile(0.25)
+                q3 = series.quantile(0.75)
+                iqr = q3 - q1
+                lower_bound = q1 - 1.5 * iqr
+                upper_bound = q3 + 1.5 * iqr
 
-        outliers = series[(series < lower_bound) | (series > upper_bound)]
-        outlier_count = len(outliers)
-        total_count = len(series)
-        percentage = (outlier_count / total_count) * 100 if total_count > 0 else 0
+                outliers = series[(series < lower_bound) | (series > upper_bound)]
+                outlier_count = len(outliers)
+                total_count = len(series)
+                percentage = (
+                    (outlier_count / total_count) * 100 if total_count > 0 else 0
+                )
 
-        return {
-            "parameter": col,
-            "method": "IQR (1.5x)",
-            "bounds": {"lower": float(lower_bound), "upper": float(upper_bound)},
-            "stats": {
-                "q1": float(q1),
-                "q3": float(q3),
-                "iqr": float(iqr),
-                "mean": float(series.mean()),
-                "std": float(series.std()),
-            },
-            "outlier_info": {
-                "count": outlier_count,
-                "percentage": f"{percentage:.2f}%",
-                "is_abnormal": outlier_count > 0,
-                "recent_outliers_preview": outliers.tail(5).tolist(),
-            },
-            "interpretation": f"在 {total_count} 筆樣本中發現 {outlier_count} 個異常點 ({percentage:.2f}%)。",
-        }
+                results_map[col] = {
+                    "method": "IQR (1.5x)",
+                    "bounds": {
+                        "lower": float(lower_bound),
+                        "upper": float(upper_bound),
+                    },
+                    "stats": {
+                        "q1": float(q1),
+                        "q3": float(q3),
+                        "iqr": float(iqr),
+                        "mean": float(series.mean()),
+                        "std": float(series.std()),
+                    },
+                    "outlier_info": {
+                        "count": outlier_count,
+                        "percentage": f"{percentage:.2f}%",
+                        "is_abnormal": outlier_count > 0,
+                        "recent_outliers_preview": outliers.tail(5).tolist(),
+                    },
+                    "interpretation": f"在 {total_count} 筆樣本中發現 {outlier_count} 個異常點 ({percentage:.2f}%)。",
+                }
+            except Exception as e:
+                results_map[col] = {"error": str(e)}
+
+        # 向下相容
+        if len(columns) == 1:
+            col = columns[0]
+            res = results_map.get(col)
+            if res and "error" in res:
+                return res
+            return {"parameter": col, **(res or {})}
+
+        return {"parameters": columns, "multi_results": results_map}
 
 
 class GetTopCorrelationsTool(AnalysisTool):

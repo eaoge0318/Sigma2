@@ -154,6 +154,7 @@ class GetTimeSeriesDataTool(AnalysisTool):
     def execute(self, params: Dict, session_id: str) -> Dict[str, Any]:
         file_id = params.get("file_id")
         target_params = params.get("parameters", [])
+        target_segments_str = params.get("target_segments")
         limit = params.get("limit", 2000)  # 預設限制 2000 點以防前端卡死
 
         if isinstance(target_params, str):
@@ -196,10 +197,19 @@ class GetTimeSeriesDataTool(AnalysisTool):
                     "available_columns_preview": all_csv_columns[:10],
                 }
 
-            # 只讀取匹配到的欄位
+            # 讀取匹配到的欄位 (先讀全量以便後續按索引過濾)
             df = pd.read_csv(csv_path, usecols=cols_to_read)
 
+            # 區間篩選
+            if target_segments_str:
+                target_indices = self.parse_indices(
+                    target_segments_str, max_len=len(df)
+                )
+                if target_indices:
+                    df = df.iloc[target_indices]
+
             # 簡單降採樣邏輯
+            total_points_after_filter = len(df)
             if len(df) > limit:
                 step = len(df) // limit
                 df = df.iloc[::step]
@@ -207,7 +217,8 @@ class GetTimeSeriesDataTool(AnalysisTool):
             # 確保返回的是對齊後的數據
             if not time_cols:
                 # 注入行號作為 fallback 時間軸，確保 AI 敢畫圖
-                df["INDEX_AXIS"] = range(len(df))
+                # 注意：如果經過過濾，INDEX_AXIS 應保持原始行號
+                df["INDEX_AXIS"] = df.index.tolist()
                 time_cols = ["INDEX_AXIS"]
 
             result = df.to_dict(orient="list")
@@ -215,7 +226,9 @@ class GetTimeSeriesDataTool(AnalysisTool):
                 "data": result,
                 "parameters": matched_columns,
                 "time_column": time_cols[0],
-                "total_points": len(df),
+                "total_points": total_points_after_filter,
+                "sampled_points": len(df),
+                "target_range": target_segments_str or "full",
                 "note": "使用 INDEX_AXIS 或 CONTEXTID 作為序列參考"
                 if "TIME" not in str(time_cols).upper()
                 else "",

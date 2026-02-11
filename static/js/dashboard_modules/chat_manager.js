@@ -222,6 +222,34 @@ export async function sendChatMessage() {
     thinkingBubble.id = thinkingId;
     thinkingBubble.className = "ai-bubble chat-bubble";
     thinkingBubble.innerHTML = `<i>AI 專家正在思考中...</i>`;
+
+    // [NEW] 立即回答按鈕
+    const stopBtn = document.createElement('button');
+    stopBtn.innerText = "⚡ 立即回答";
+    stopBtn.style.marginLeft = "10px";
+    stopBtn.style.fontSize = "11px";
+    stopBtn.style.padding = "2px 6px";
+    stopBtn.style.cursor = "pointer";
+    stopBtn.style.background = "#fefffe";
+    stopBtn.style.border = "1px solid #e2e8f0";
+    stopBtn.style.borderRadius = "4px";
+    stopBtn.style.color = "#475569";
+
+    stopBtn.onclick = async () => {
+        stopBtn.innerText = "🛑 正在總結...";
+        stopBtn.disabled = true;
+        try {
+            await fetch('/api/analysis/chat/stop', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ session_id: SESSION_ID })
+            });
+        } catch (e) {
+            console.error("Stop failed", e);
+        }
+    };
+    thinkingBubble.appendChild(stopBtn);
+
     content.appendChild(thinkingBubble);
     syncDashboardToPopup(null, false);
     content.scrollTop = content.scrollHeight;

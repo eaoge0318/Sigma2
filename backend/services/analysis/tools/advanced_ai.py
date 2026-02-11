@@ -44,7 +44,7 @@ class MultivariateAnomalyTool(AnalysisTool):
 
     @property
     def required_params(self) -> List[str]:
-        return ["file_id", "parameters"]
+        return ["file_id"]
 
     def execute(self, params: Dict, session_id: str) -> Dict[str, Any]:
         file_id = params.get("file_id")
@@ -74,7 +74,12 @@ class MultivariateAnomalyTool(AnalysisTool):
         )
 
         try:
-            df = _safe_read_csv(csv_path, param_list).dropna()
+            # 確保只讀取數值型欄位進行運算，排除時間戳或字串 ID
+            df = (
+                _safe_read_csv(csv_path, param_list)
+                .select_dtypes(include=[np.number])
+                .dropna()
+            )
         except ValueError as e:
             return {"error": str(e)}
         if len(df) < 20:
@@ -126,7 +131,11 @@ class FeatureImportanceWorkflowTool(AnalysisTool):
 
         correlations = self.analysis_service.load_correlations(session_id, file_id)
         if target not in correlations:
-            return {"error": f"Target {target} not indexed."}
+            return {
+                "error": f"Target 欄位 '{target}' 未被索引或非數值型態。",
+                "tip": "機器學習建模 (Feature Importance) 僅能針對「數值型特徵」進行分析。請避免選擇 CONTEXTID 或其他 ID/時間戳欄位作為分析目標。",
+                "can_fallback": True,
+            }
 
         if (
             not feature_list
@@ -154,10 +163,12 @@ class FeatureImportanceWorkflowTool(AnalysisTool):
             / summary["filename"]
         )
 
-        # 逐步讀取與清理數據，防止分析完全崩潰
+        # 逐步讀取與清理數據，只保留數值型特徵進行機器學習
         try:
             cols_to_read = feature_list + [target]
-            df_raw = _safe_read_csv(csv_path, cols_to_read)
+            df_raw = _safe_read_csv(csv_path, cols_to_read).select_dtypes(
+                include=[np.number]
+            )
             if target not in df_raw.columns:
                 return {"error": f"Target {target} not found in file."}
 
@@ -252,7 +263,7 @@ class PrincipalComponentAnalysisTool(AnalysisTool):
 
     @property
     def description(self) -> str:
-        return "【深度診斷】執行主成分分析 (PCA)。建議將 parameters 設為 'all'，系統會自動處理多重共線性並識別設備的『系統性狀態與群聚效應』。"
+        return "【深度診斷】執行主成分分析 (PCA)。支持 target_segments (例如 '30-50') 以分析特定區間。系統會自動處理多重共線性並識別設備的『系統性狀態與群聚效應』。"
 
     @property
     def required_params(self) -> List[str]:
@@ -261,6 +272,7 @@ class PrincipalComponentAnalysisTool(AnalysisTool):
     def execute(self, params: Dict, session_id: str) -> Dict[str, Any]:
         file_id = params.get("file_id")
         param_list = params.get("parameters")
+        target_segments_str = params.get("target_segments")
 
         if (
             not param_list
@@ -286,27 +298,49 @@ class PrincipalComponentAnalysisTool(AnalysisTool):
         )
 
         try:
-            df = _safe_read_csv(csv_path, param_list).dropna()
+            # 系統診斷需自動排除非數值型欄位
+            df_full = _safe_read_csv(csv_path, param_list).select_dtypes(
+                include=[np.number]
+            )
+
+            # 區間過濾處理
+            if target_segments_str:
+                target_indices = self.parse_indices(
+                    target_segments_str, max_len=len(df_full)
+                )
+                if target_indices:
+                    df = df_full.iloc[target_indices].dropna()
+                else:
+                    df = df_full.dropna()
+            else:
+                df = df_full.dropna()
+
         except ValueError as e:
             return {"error": str(e)}
-        if len(df) < 20:
-            return {"error": "數據量不足以進行 PCA 分析。"}
+        if len(df) < 5:  # 調低最低筆數要求，因為區間可能較小
+            return {"error": f"數據量不足以進行 PCA 分析 (目前有效筆數: {len(df)})。"}
 
         # 標準化
         scaler = StandardScaler()
         x_scaled = scaler.fit_transform(df)
 
-        pca = PCA(n_components=min(5, len(param_list)))
+        pca = PCA(n_components=min(5, len(df.columns)))
         pca.fit(x_scaled)
 
         exp_var = pca.explained_variance_ratio_
         components = []
 
+        # 使用過濾後的 column 名稱
+        active_cols = df.columns.tolist()
+
         for i, ratio in enumerate(exp_var):
             # 找出對該主成分貢獻最大的前 3 個參數
             top_factors_idx = np.argsort(np.abs(pca.components_[i]))[::-1][:3]
             top_factors = [
-                {"parameter": param_list[idx], "weight": float(pca.components_[i][idx])}
+                {
+                    "parameter": active_cols[idx],
+                    "weight": float(pca.components_[i][idx]),
+                }
                 for idx in top_factors_idx
             ]
 
@@ -319,11 +353,16 @@ class PrincipalComponentAnalysisTool(AnalysisTool):
             )
 
         total_explained = sum(exp_var)
+        range_suffix = (
+            f" (在區間 {target_segments_str} 內)" if target_segments_str else ""
+        )
 
         return {
             "total_explained_variance": f"{total_explained * 100:.2f}%",
             "components": components,
-            "conclusion": f"前 {len(components)} 個主成分解釋了數據中 {total_explained * 100:.2f}% 的變異。主成分 1 (PC1) 主要由 {components[0]['top_contributing_parameters'][0]['parameter']} 驅動。",
+            "target_range": target_segments_str or "Full data",
+            "sample_count": len(df),
+            "conclusion": f"前 {len(components)} 個主成分解釋了數據中 {total_explained * 100:.2f}% 的變異{range_suffix}。主成分 1 (PC1) 主要由 {components[0]['top_contributing_parameters'][0]['parameter']} 驅動。",
         }
 
 
@@ -336,11 +375,11 @@ class HotellingT2AnalysisTool(AnalysisTool):
 
     @property
     def description(self) -> str:
-        return "【核心診斷】PCA-Hotelling's T2 診斷組合異常。建議 parameters 設為 'all' 以啟動自動化全場掃描與貢獻度拆解。嚴禁手動挑選 3 個以下參數以避免診斷偏見。"
+        return "【核心診斷】PCA-Hotelling's T2 診斷組合異常。支援 target_segments (例如 '30-50') 鎖定異常區間。建議 parameters 設為 'all' 以啟動自動化全場掃描。"
 
     @property
     def required_params(self) -> List[str]:
-        return ["file_id", "parameters"]
+        return ["file_id"]
 
     def execute(self, params: Dict, session_id: str) -> Dict[str, Any]:
         file_id = params.get("file_id")
@@ -372,43 +411,21 @@ class HotellingT2AnalysisTool(AnalysisTool):
             / summary["filename"]
         )
 
-        # 1. 讀取數據並初步清理
+        # 1. 讀取數據並初步清理 (只保留數值型)
         try:
-            df_full = _safe_read_csv(csv_path, param_list)
+            df_full = _safe_read_csv(csv_path, param_list).select_dtypes(
+                include=[np.number]
+            )
         except ValueError as e:
             return {"error": str(e)}
 
-        # Target Segments Parsing
-        target_indices = []
-        if target_segments_str:
-            try:
-                # Handle list of ints or strings
-                if isinstance(target_segments_str, list):
-                    for x in target_segments_str:
-                        target_indices.append(int(x))
-                elif isinstance(target_segments_str, str):
-                    # Handle string "30-50, 60"
-                    for part in target_segments_str.split(","):
-                        part = part.strip()
-                        if not part:
-                            continue
-                        if "-" in part:
-                            start, end = map(int, part.split("-"))
-                            target_indices.extend(range(start, end + 1))
-                        else:
-                            target_indices.append(int(part))
-            except Exception:
-                pass  # Ignore parsing errors
-
-        # 過濾超出範圍的索引
-        target_indices = [i for i in target_indices if 0 <= i < len(df_full)]
-
-        # 如果使用者指定了 row_index，優先使用
+        # Target Segments Parsing (優先度：row_index > target_segments)
         if target_idx_val is not None:
-            try:
-                target_indices = [int(target_idx_val)]
-            except:
-                pass
+            target_indices = self.parse_indices(target_idx_val, max_len=len(df_full))
+        else:
+            target_indices = self.parse_indices(
+                target_segments_str, max_len=len(df_full)
+            )
 
         # 智慧過濾：如果欄位空值比例過高 (例如 > 50%)，直接剔除，不進入計算
         null_ratios = df_full.isnull().mean()
@@ -422,8 +439,29 @@ class HotellingT2AnalysisTool(AnalysisTool):
         df_imputed = df_imputed.loc[:, (df_imputed.std() > 0)]
         active_params = df_imputed.columns.tolist()
 
-        if len(df_imputed) < 10 or len(active_params) < 2:
-            return {"error": "有效樣本數或參數數量不足，無法建立統計模型。"}
+        # --- 健壯性增強：如果 AI 傳入參數太少，自動補齊數據中前 5 個有變異的數值欄位作為背景 ---
+        if len(active_params) < 2:
+            all_numeric = df_full.select_dtypes(include=[np.number]).columns.tolist()
+            variants = df_full[all_numeric].std()
+            top_variants = (
+                variants[variants > 0].sort_values(ascending=False).index.tolist()
+            )
+            for p in top_variants[:5]:
+                if p not in active_params:
+                    active_params.append(p)
+            # 重新構建數據表
+            df_imputed = df_full[active_params].fillna(
+                df_full[active_params].median(numeric_only=True)
+            )
+
+        if len(df_imputed) < 3:
+            return {
+                "error": f"數據筆數過少 (僅 {len(df_imputed)} 筆)，無法建立統計模型。"
+            }
+        if len(active_params) < 1:
+            return {
+                "error": "找不到任何具備數值變異的有效參數。請檢查數據是否全為定值或空值。"
+            }
 
         data = df_imputed.values
 
@@ -444,47 +482,50 @@ class HotellingT2AnalysisTool(AnalysisTool):
         t2_values = np.sum((scores**2) / eigenvalues, axis=1)
 
         # 5. 貢獻度分析 (Decomposition to original variables)
-        # 決定要診斷哪一筆數據 (Diag Index)
-        # 如果有指定 Target Segments，則在該範圍內找 MAX T2
-        if target_indices:
-            # 只在 target_indices 範圍內找最大值
-            # 注意: target_indices 是原始 DataFrame 的 index
-            # 我們需要過濾出有效的 indices (因為前面可能 dropna 了?? 不，前面是 fillna，所以 index 應該是對應的)
-            valid_target_indices = [i for i in target_indices if i < len(t2_values)]
-
-            if valid_target_indices:
-                # 在這些候選者中找 T2 最大的
-                sub_t2 = t2_values[valid_target_indices]
-                max_sub_idx = np.argmax(sub_t2)  # 這是 sub array 的 index
-                diag_idx = valid_target_indices[max_sub_idx]  # 這是 full array 的 index
-            else:
-                # 如果指定的區間都無效，回退到全域最大
-                diag_idx = np.argmax(t2_values)
+        # 決定要診斷的範圍或數據
+        is_range_mode = False
+        if target_indices and len(target_indices) > 1:
+            is_range_mode = True
+            selected_indices = target_indices
+            # 找出區間內最顯著的一點作為參考索引
+            sub_t2 = t2_values[target_indices]
+            diag_idx = target_indices[np.argmax(sub_t2)]
+            summary_range_text = f"第 {min(target_indices)}-{max(target_indices)} 筆區間 (共 {len(target_indices)} 筆)"
         else:
-            # 預設：全域最大異常點
-            diag_idx = np.argmax(t2_values)
+            # 單點模式
+            if target_indices:
+                diag_idx = target_indices[0]
+            else:
+                diag_idx = np.argmax(t2_values)
+            selected_indices = [diag_idx]
+            summary_range_text = f"第 {diag_idx} 筆數據"
 
         if diag_idx >= len(t2_values):
             diag_idx = np.argmax(t2_values)
 
-        sample_scores = scores[diag_idx]
-        sample_scaled = data_scaled[diag_idx]
+        # 計算貢獻度 (向量化處理以應對區間分析)
+        # scores: (N, n_comp), eigenvalues: (n_comp,), loadings: (n_comp, n_features), data_scaled: (N, n_features)
+        target_scores = scores[selected_indices]
+        target_scaled = data_scaled[selected_indices]
 
-        # 貢獻度公式改進版：將 PC 貢獻映射回原始特徵
-        # cont_j = sum_k ( score_k / eigenvalue_k * loading_kj * sample_scaled_j )
+        # 樣本在主成分上的權重: score / eigenvalue
+        weights = target_scores / eigenvalues  # (K, n_comp)
+
+        # 映射回原始空間並加權原始偏差: (weights @ loadings) * samples_scaled
+        # 此矩陣大小為 (K, n_features)，代表每一筆樣本在各欄位上的貢獻
+        cont_matrix = np.matmul(weights, loadings) * target_scaled
+
+        # 方案 C：取區間內所有樣本貢獻度的平均值
+        avg_cont = np.mean(cont_matrix, axis=0)
+
         contributions = []
         for j in range(len(active_params)):
-            c_j = 0
-            for k in range(n_comp):
-                # 這裡考量了該參數在各個 PC 上的投影強度
-                c_j += (
-                    (sample_scores[k] / eigenvalues[k])
-                    * loadings[k, j]
-                    * sample_scaled[j]
-                )
-
             contributions.append(
-                {"parameter": active_params[j], "contribution": float(c_j), "rank": 0}
+                {
+                    "parameter": active_params[j],
+                    "contribution": float(avg_cont[j]),
+                    "rank": 0,
+                }
             )
 
         contributions = sorted(
@@ -498,13 +539,23 @@ class HotellingT2AnalysisTool(AnalysisTool):
             for c in contributions[:3]
         ]
 
+        # 構建結論
+        if is_range_mode:
+            conclusion = f"經 PCA-T2 區間診斷，系統分析了 {summary_range_text}。綜合貢獻顯示，主導該區域偏差的核心參數為 {contributions[0]['parameter']}。"
+            display_title = f"【PCA-T2 區間平均貢獻度 Top 3】"
+        else:
+            conclusion = f"經 PCA-T2 診斷識別出異常。在第 {diag_idx} 筆數據中，主導偏移的核心參數為 {contributions[0]['parameter']}。"
+            display_title = f"【PCA-T2 單點貢獻度 Top 3 (Index: {diag_idx})】"
+
         return {
             "method": "PCA-Hotelling T2",
             "n_components_used": n_comp,
             "variance_explained": f"{np.sum(pca.explained_variance_ratio_) * 100:.2f}%",
+            "type": "Hotelling-T2",
+            "is_range_analysis": is_range_mode,
             "diagnosed_index": int(diag_idx),
             "max_t2_value": float(t2_values[diag_idx]),
             "top_contributions": contributions[:15],
-            "top_3_summary": "【PCA-T2 貢獻度 Top 3】" + " | ".join(top_3),
-            "conclusion": f"經 PCA 降維處理後，系統成功識別出異常。在第 {diag_idx} 筆數據中，主導偏移的核心參數為 {contributions[0]['parameter']}。",
+            "top_3_summary": display_title + " | ".join(top_3),
+            "conclusion": conclusion,
         }
