@@ -326,6 +326,13 @@ class AnalysisService:
             logger.warning(f"Failed to get mapping file name: {e}")
             return None
 
+    def get_active_mapping(self, session_id: str) -> tuple[Optional[str], str]:
+        """Expose mapping status to router."""
+        mapping_file = self._get_mapping_file_name(session_id)
+        if mapping_file:
+            return mapping_file, "active"
+        return None, "inactive"
+
     async def manual_reindex(self, session_id: str, file_id: str) -> bool:
         """強制重新建立特定檔案的索引"""
         summary = self.load_summary(session_id, file_id)

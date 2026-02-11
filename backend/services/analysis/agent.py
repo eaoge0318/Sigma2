@@ -161,38 +161,62 @@ class SigmaAnalysisWorkflow(Workflow):
             return ErrorEvent(error="未提供問題", session_id=session_id)
 
         # --- 極速硬體決策 (Heuristic Logic) ---
-        # 1. 如果有 File_ID 且字數不多，絕大多數都是分析需求，直接通關
-        if file_id and len(query) < 20:
+        # 1. 如果有 File_ID 且問題明確包含"分析"、"診斷"等強烈意圖，才歸類為 analysis
+        strong_analysis_keywords = [
+            "分析",
+            "診斷",
+            "異常",
+            "原因",
+            "為什麼",
+            "影響",
+            "關聯",
+            "趨勢",
+            "預測",
+            "圖",
+            "畫",
+            "分佈",
+            "hotelling",
+            "pca",
+        ]
+
+        query_lower = query.lower()
+        if file_id and any(kw in query_lower for kw in strong_analysis_keywords):
+            intent = "analysis"
+        # 2. 如果是問參數名稱、欄位等，也歸類為 analysis 但後續會走快車道 (Metadata Fast-Track)
+        elif file_id and any(
+            kw in query_lower
+            for kw in ["欄位", "參數", "column", "parameter", "幾筆", "行數", "摘要"]
+        ):
             intent = "analysis"
         else:
-            # 2. 關鍵字擴展過濾
-            analysis_keywords = [
-                "分析",
-                "相關性",
-                "異常",
-                "趨勢",
-                "欄位",
-                "數據",
-                "找出",
-                "離群",
-                "分佈",
-                "幾筆",
-                "多少",
-                "行數",
-                "畫",
-                "圖",
-            ]
-            query_lower = query.lower()
-            if any(kw in query_lower for kw in analysis_keywords):
-                intent = "analysis"
-            else:
-                # 3. 只有長難句且不明確時，才動用 LLM (且使用極簡指令)
-                try:
-                    prompt = f"Categorize as 'analysis' or 'chat': {query}\nReply only 1 word."
-                    response = await self.llm.acomplete(prompt)
-                    intent = str(response.text).strip().lower()
-                except Exception:
+            # 3. 其他情況 (例如聊天、閒聊、或不明確指令)，動用 LLM 判斷
+            # 這裡我們稍微保守一點，如果 LLM 判斷是 chat 就走 chat
+            try:
+                # 簡單的分類 Prompt
+                prompt = (
+                    f"Classify user query into 'analysis' (needs data tools) or 'chat' (general QA/coding).\n"
+                    f"Query: {query}\n"
+                    f"Answer (analysis/chat):"
+                )
+                response = await self.llm.acomplete(prompt)
+                intent = str(response.text).strip().lower()
+                # 防呆
+                if "analysis" in intent:
                     intent = "analysis"
+                else:
+                    intent = "chat"
+            except Exception:
+                # 默認 fallback
+                intent = "chat"
+
+        return IntentEvent(
+            query=query,
+            intent=intent,
+            file_id=file_id,
+            session_id=session_id,
+            history=history,
+            mode=ev.mode,
+        )
 
         return IntentEvent(
             query=query,
@@ -368,8 +392,7 @@ class SigmaAnalysisWorkflow(Workflow):
                     msg=f"─ 正在初始化分析環境，鎖定 {total_cols} 個原始欄位..."
                 )
             )
-        else:
-            ctx.write_event_to_stream(ProgressEvent(msg=f"─ 正在準備延伸分析邏輯..."))
+        # [REMOVED] 移除冗餘的延伸分析邏輯日誌
         mappings = summary.get("mappings", {}) if summary else {}
 
         # --- 安全閥：解鎖深度診斷分析 ---
@@ -378,15 +401,50 @@ class SigmaAnalysisWorkflow(Workflow):
 
         tool_specs = self.tool_executor.list_tools()
 
-        # --- 欄位清單智慧壓縮 ---
+        # --- 硬核限制：Step 1 只能觀察，不能跳演算法 ---
+        if ev.mode == "deep" and ev.step_count == 1:
+            forbidden_step1 = [
+                "hotelling_t2_analysis",
+                "systemic_pca_analysis",
+                "causal_relationship_analysis",
+                "multivariate_anomaly_detection",
+                "analyze_feature_importance",
+            ]
+            tool_specs = [t for t in tool_specs if t["name"] not in forbidden_step1]
+            ctx.write_event_to_stream(
+                ProgressEvent(
+                    msg="─ 5-Why 診斷啟動：第一步已強制鎖定為「數據觀察與驗證」階段。"
+                )
+            )
+
+        # --- 欄位清單智慧壓縮與物理名稱轉譯 (Physical Name Integration) ---
         categories = summary.get("categories", {})
-        if total_cols > 50:
+        mappings = summary.get("mappings", {})
+
+        # [Optimized] 僅針對前 15 個參數進行轉譯範例，避免 Token 爆炸
+        sample_params = params_list[:15]
+        mapped_samples = []
+        for p in sample_params:
+            display_name = mappings.get(p, p)
+            if display_name != p:
+                mapped_samples.append(f"{p} ({display_name})")
+            else:
+                mapped_samples.append(p)
+
+        if total_cols > 30:
             cat_summary = "; ".join(
                 [f"{k} ({len(v)}個)" for k, v in categories.items()]
             )
-            all_columns_display = f"由於欄位眾多，僅依類別顯示摘要：{cat_summary}。請在需要時使用 search_parameters_by_concept 搜尋具體欄位。"
+            all_columns_display = (
+                f"由於總欄位數高達 {total_cols}，已採分類摘要顯示：{cat_summary}。\n"
+                f"關鍵欄位範例：{', '.join(mapped_samples)}...\n"
+                "AI 提示：當前模式下請優先使用 'all' 執行全場掃描，系統會自動處理剩餘欄位。"
+            )
         else:
-            all_columns_display = ", ".join(params_list)
+            # 少量欄位才全面顯示
+            all_columns_display = ", ".join(
+                [f"{p} ({mappings.get(p, p)})" for p in params_list]
+            )
 
         # 構建過去步驟的背景資訊
         history_context = ""
@@ -431,16 +489,20 @@ class SigmaAnalysisWorkflow(Workflow):
         mode_instruction = ""
         if ev.mode == "deep":
             mode_instruction = (
-                "## 當前模式：深度診斷 (Deep Analysis) ##\n"
-                "你的目標是進行全方位的根因分析。除了基礎統計，請主動善用以下高階工具來增強說服力：\n"
-                "1. **分佈檢定 (`distribution_shift_test`)**: 這是你的核武器。當發現某參數異常時，用它來證明「分佈形狀變了」，而不只是數值變大。\n"
-                "2. **因果分析 (`causal_relationship_analysis`)**: 用它來找「領頭羊」。誰先變的？\n"
-                "3. **多維分析 (`hotelling_t2_analysis`)**: 用它來量化「整體偏移」。\n"
+                "## 當前模式：深度診斷 (5-Why Methodology - Global Sweep) ##\n"
+                "你必須嚴格遵循「由淺入深、追根究底」的科學診斷邏輯：\n"
+                "1. **【全場掃描強制令】**: 為了確保診斷的最高穩定度與避免偏見，執行 `hotelling_t2_analysis`, `compare_data_segments` 或 `systemic_pca_analysis` 時，**必須**將 `parameters` 設為 `'all'`。禁止自行挑選 3-5 個參數。\n"
+                "2. **【診斷節奏】先全體檢、再鎖定病灶**: \n"
+                "   - 第一步：使用 `compare_data_segments(parameters='all')` 觀察全場單點位移。\n"
+                "   - 第二步：使用 `hotelling_t2_analysis(parameters='all')` 偵測系統性組合異常。\n"
+                "   - 兩者證據齊全後，才能在 monologue 總結當前的 Why，並進入下一個追問層級。\n"
+                "3. **【領域知識交流 (Domain Exchange)】**: \n"
+                "   - 如果使用者的問題偏向「製程原理」、「物理意義交流」或「維修經驗探討」而非數據讀取，你應優先切換為專業顧問角色。\n"
+                "   - 在此情況下，使用 `action: 'finish'` 並在回覆中結合物理譯名與你的內建知識庫進行深度說明。\n"
                 "\n"
-                "**【絕對禁止死循環與回頭草】**\n"
-                "1. **禁止重複**: 檢查 `history`！如果你已經用過某個工具且參數相同，**絕對禁止再用一次**。\n"
-                "2. **禁止倒退**: 在 Step 3 之後，**嚴禁**呼叫 `get_data_overview` 或 `get_column_info`。你手上的證據已經夠了，不要浪費步數。\n"
-                "3. **果斷結案**: 若已執行過 `compare_data_segments` 或 `hotelling_t2`，且步數 > 4，請直接進入 `humanizer` 結案。"
+                "**【物理意義優先規範】**\n"
+                "- 你現在看到的欄位清單已含「物理名稱」(如：Oven Pressure)。請在思考時以此對應領域知識。\n"
+                "- 在每一輪的 `monologue` 欄位中，你必須具體回答：根據上一步的數據與物理量（如：壓力、流量），『為什麼』你現在要選擇這個工具？你想驗證什麼假設？"
             )
         else:
             mode_instruction = (
@@ -468,17 +530,32 @@ class SigmaAnalysisWorkflow(Workflow):
             "4. **透明獨白**: 在 `monologue` 中用繁體中文解釋你的思考路徑。",
             "5. **記憶運用**: 請參考 `前序分析結果摘要` 中的 `result` 數據，不要重複執行已知的分析。",
             f"6. **狀態提醒**: 目前是第 {ev.step_count} 步。",
-            '輸出唯一個 JSON 物件，必須包含 "action", "tool_name", "params", "monologue" 欄位。',
+            "## 輸出規範 ##",
+            '1. 輸出唯一個完整的 JSON 物件，包含 "action", "tool_name", "params", "monologue" 欄位。',
+            '2. "monologue" 必須是人類可讀的繁體中文繁體分析思路，嚴禁包含 JSON 代碼塊或重複歷史數據。',
         ]
         prompt = "\n".join(prompt_parts)
 
-        # 1. 告訴用戶 AI 正在根據上一步的結果進行推理
+        # 1. 只有第一步顯示底層對齊資訊，減少重複
+        if ev.step_count == 1:
+            ctx.write_event_to_stream(
+                ProgressEvent(msg="─ 正在對應物理感測器譯名與特徵...")
+            )
+            ctx.write_event_to_stream(
+                ProgressEvent(msg="─ 正在對齊歷史診斷邏輯與 5-Why 假設...")
+            )
+
         ctx.write_event_to_stream(
-            ProgressEvent(msg=f"(Step {ev.step_count}) 正在分析上下文並規劃下一步...")
+            ProgressEvent(
+                msg=f"**[Step {ev.step_count}]** 正在分析上下文並規劃下一步行動..."
+            )
         )
 
         # 強制開啟 JSON 模式
         response = await self.llm.acomplete(prompt, json_mode=True)
+        ctx.write_event_to_stream(
+            ProgressEvent(msg="─ 決策已生成，準備執行診斷工具...")
+        )
 
         try:
             text = response.text.strip()
@@ -523,6 +600,17 @@ class SigmaAnalysisWorkflow(Workflow):
 
             action = decision.get("action", "call_tool")
             monologue = decision.get("monologue", "診斷中...")
+
+            # --- UI 優化：清理獨白中的 JSON 或代碼塊，防止黑色底框污染聊天室 ---
+            if isinstance(monologue, str):
+                # 移除 ```json ... ``` 或 ``` ... ``` 代碼塊
+                monologue = re.sub(r"```(?:json)?.*?\n", "", monologue)
+                monologue = monologue.replace("```", "")
+                # 如果 AI 輸出了純 JSON 字串在 monologue，給予預設文字
+                if monologue.strip().startswith("{") and monologue.strip().endswith(
+                    "}"
+                ):
+                    monologue = "正在根據數據特徵執行進階關聯性診斷..."
 
             # 2. 告訴用戶 AI 決定要做什麼 (內心獨白)
             ctx.write_event_to_stream(ProgressEvent(msg=f"💡 策略: {monologue}"))
@@ -616,6 +704,41 @@ class SigmaAnalysisWorkflow(Workflow):
             params = {}
         params["file_id"] = ev.file_id
 
+        # --- [Smart Override] 5-Why 參數選取平衡邏輯 ---
+        # 1. 在診斷初期 (Step 1-2)，機制性強制 'all' 以確保全場掃描的廣度。
+        # 2. 在診斷後期 (Step 3+)，允許「有目的」的針對性挑選 (Cherry-picking)。
+        force_global_tools = [
+            "hotelling_t2_analysis",
+            "systemic_pca_analysis",
+            "compare_data_segments",
+        ]
+        if ev.mode == "deep" and tool_name in force_global_tools:
+            param_val = params.get("parameters")
+            is_few_params = False
+            if isinstance(param_val, list) and 0 < len(param_val) < 5:
+                is_few_params = True
+            elif (
+                isinstance(param_val, str)
+                and 0 < len(param_val.split(",")) < 5
+                and param_val.lower() != "all"
+            ):
+                is_few_params = True
+
+            # 僅在初期強制，後期若 AI 挑選則視為有目的的操作
+            if is_few_params and ev.step_count <= 2:
+                params["parameters"] = "all"
+                ctx.write_event_to_stream(
+                    ProgressEvent(
+                        msg="─ [系統優化] 診斷初期強制執行全場掃描，以建立全局基準數據..."
+                    )
+                )
+            elif is_few_params and ev.step_count > 2:
+                ctx.write_event_to_stream(
+                    ProgressEvent(
+                        msg=f"─ [針對性分析] 偵測到特定參數選取，正在根據前序證據進行深度下鑽..."
+                    )
+                )
+
         try:
             # 根據工具名提供動態的進度提示
             tool_display_names = {
@@ -623,23 +746,67 @@ class SigmaAnalysisWorkflow(Workflow):
                 "detect_outliers": "正在偵測異常點...",
                 "get_top_correlations": "正在分析因素相關性...",
                 "analyze_distribution": "正在分析數據分佈...",
+                "hotelling_t2_analysis": "正在執行 Hotelling's T2 系統性診斷...",
+                "causal_relationship_analysis": "正在推導因果關聯鏈路...",
             }
-            display_msg = tool_display_names.get(tool_name, f"執行工具 {tool_name}...")
+            msg = tool_display_names.get(tool_name, f"正在執行 {tool_name}...")
 
-            ctx.write_event_to_stream(
-                ProgressEvent(msg=f"(Step {ev.step_count}) {display_msg}")
-            )
+            # --- 額外提示：如果參數是 'all' 或很多，提示正在處理大量數據 ---
+            if params.get("parameters") == "all" or (
+                isinstance(params.get("parameters"), list)
+                and len(params.get("parameters")) > 30
+            ):
+                ctx.write_event_to_stream(
+                    ProgressEvent(
+                        msg="─ 偵測到大規模參數掃描，正在載入並對齊各感測器數據時間戳..."
+                    )
+                )
 
-            # 4. 執行工具
+            ctx.write_event_to_stream(ProgressEvent(msg=f"🛠️ {msg}"))
+
             tool_result = await self.tool_executor.execute_tool(
                 tool_name, params, ev.session_id
             )
 
-            # 強制功能：將貢獻度前三名即時推送到聊天室思考視窗
-            if isinstance(tool_result, dict) and "top_3_summary" in tool_result:
-                ctx.write_event_to_stream(
-                    ProgressEvent(msg=f"{tool_result['top_3_summary']}")
-                )
+            # 檢查結果是否包含錯誤，若 Hotelling 失敗但在深層分析模式，可以在此處注入提示
+            if ev.mode == "deep" and tool_name == "hotelling_t2_analysis":
+                # Check for error key or NaN T2_value
+                if (isinstance(tool_result, dict) and "error" in tool_result) or (
+                    isinstance(tool_result, dict)
+                    and "T2_value" in tool_result
+                    and str(tool_result["T2_value"]).lower() == "nan"
+                ):
+                    # If T2 fails, we add a "hint" to the result sent to the next step, guiding the AI to fallback
+                    tool_result["fallback_hint"] = (
+                        "Hotelling 分析失敗。原因可能是參數間共線性太高或樣本不足。請改用單變量分析 (analyze_distribution) 或重新挑選不相關的參數。"
+                    )
+
+            # 強制功能：將分析結果摘要即時推送到聊天室思考視窗
+            if isinstance(tool_result, dict):
+                if "top_3_summary" in tool_result:
+                    ctx.write_event_to_stream(
+                        ProgressEvent(msg=f"✅ {tool_result['top_3_summary']}")
+                    )
+                elif "interpretation" in tool_result:
+                    ctx.write_event_to_stream(
+                        ProgressEvent(msg=f"✅ {tool_result['interpretation']}")
+                    )
+                elif "conclusion" in tool_result:
+                    # 避免太長的結論，只取前 100 字
+                    conclusion = tool_result["conclusion"]
+                    if len(conclusion) > 100:
+                        conclusion = conclusion[:100] + "..."
+                    ctx.write_event_to_stream(
+                        ProgressEvent(msg=f"✅ 分析摘要: {conclusion}")
+                    )
+                elif "error" in tool_result:
+                    ctx.write_event_to_stream(
+                        ProgressEvent(msg=f"❌ 工具執行中斷: {tool_result['error']}")
+                    )
+                else:
+                    ctx.write_event_to_stream(
+                        ProgressEvent(msg=f"─ {tool_name} 分析完成，準備下一階段。")
+                    )
             # 5. 將結果存入歷史，並觸發下一步
             new_step_result = {
                 "step": ev.step_count,

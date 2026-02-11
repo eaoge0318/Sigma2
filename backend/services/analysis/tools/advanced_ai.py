@@ -11,6 +11,26 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def _safe_read_csv(csv_path: str, usecols: List[str]) -> pd.DataFrame:
+    """Robustly reads specific columns from CSV, ignoring missing ones."""
+    try:
+        # Read only header
+        header = pd.read_csv(csv_path, nrows=0).columns.tolist()
+        valid_cols = [c for c in usecols if c in header]
+
+        if not valid_cols:
+            # If no valid columns found, return empty DataFrame with valid types to fail gracefully downstream
+            # or raise specific error
+            missing = list(set(usecols))[:5]
+            raise ValueError(
+                f"None of the requested columns found. Missing example: {missing}"
+            )
+
+        return pd.read_csv(csv_path, usecols=valid_cols)
+    except Exception as e:
+        raise e
+
+
 class MultivariateAnomalyTool(AnalysisTool):
     """多維度異常偵測 (Isolation Forest)"""
 
@@ -30,6 +50,18 @@ class MultivariateAnomalyTool(AnalysisTool):
         file_id = params.get("file_id")
         param_list = params.get("parameters")
 
+        if (
+            not param_list
+            or param_list == "all"
+            or (
+                isinstance(param_list, list)
+                and len(param_list) == 1
+                and param_list[0] == "all"
+            )
+        ):
+            summary = self.analysis_service.load_summary(session_id, file_id)
+            param_list = summary.get("params", [])
+
         if isinstance(param_list, str):
             param_list = [p.strip() for p in param_list.split(",")]
 
@@ -41,7 +73,10 @@ class MultivariateAnomalyTool(AnalysisTool):
             / summary["filename"]
         )
 
-        df = pd.read_csv(csv_path, usecols=param_list).dropna()
+        try:
+            df = _safe_read_csv(csv_path, param_list).dropna()
+        except ValueError as e:
+            return {"error": str(e)}
         if len(df) < 20:
             return {"error": "Insufficient data for multivariate analysis."}
 
@@ -93,7 +128,15 @@ class FeatureImportanceWorkflowTool(AnalysisTool):
         if target not in correlations:
             return {"error": f"Target {target} not indexed."}
 
-        if not feature_list:
+        if (
+            not feature_list
+            or feature_list == "all"
+            or (
+                isinstance(feature_list, list)
+                and len(feature_list) == 1
+                and feature_list[0] == "all"
+            )
+        ):
             sorted_corrs = sorted(
                 correlations[target].items(),
                 key=lambda x: abs(x[1]) if x[1] is not None else 0,
@@ -114,7 +157,9 @@ class FeatureImportanceWorkflowTool(AnalysisTool):
         # 逐步讀取與清理數據，防止分析完全崩潰
         try:
             cols_to_read = feature_list + [target]
-            df_raw = pd.read_csv(csv_path, usecols=cols_to_read)
+            df_raw = _safe_read_csv(csv_path, cols_to_read)
+            if target not in df_raw.columns:
+                return {"error": f"Target {target} not found in file."}
 
             # 1. 智慧過濾：排除空值比例 > 50% 的垃圾特徵
             null_ratios = df_raw.isnull().mean()
@@ -207,7 +252,7 @@ class PrincipalComponentAnalysisTool(AnalysisTool):
 
     @property
     def description(self) -> str:
-        return "執行主成分分析 (PCA)，將大量參數壓縮為幾個核心特徵。用於識別設備的『系統性狀態』與參數群聚效應。"
+        return "【深度診斷】執行主成分分析 (PCA)。建議將 parameters 設為 'all'，系統會自動處理多重共線性並識別設備的『系統性狀態與群聚效應』。"
 
     @property
     def required_params(self) -> List[str]:
@@ -216,6 +261,18 @@ class PrincipalComponentAnalysisTool(AnalysisTool):
     def execute(self, params: Dict, session_id: str) -> Dict[str, Any]:
         file_id = params.get("file_id")
         param_list = params.get("parameters")
+
+        if (
+            not param_list
+            or param_list == "all"
+            or (
+                isinstance(param_list, list)
+                and len(param_list) == 1
+                and param_list[0] == "all"
+            )
+        ):
+            summary = self.analysis_service.load_summary(session_id, file_id)
+            param_list = summary.get("params", [])
 
         if isinstance(param_list, str):
             param_list = [p.strip() for p in param_list.split(",")]
@@ -228,7 +285,10 @@ class PrincipalComponentAnalysisTool(AnalysisTool):
             / summary["filename"]
         )
 
-        df = pd.read_csv(csv_path, usecols=param_list).dropna()
+        try:
+            df = _safe_read_csv(csv_path, param_list).dropna()
+        except ValueError as e:
+            return {"error": str(e)}
         if len(df) < 20:
             return {"error": "數據量不足以進行 PCA 分析。"}
 
@@ -276,7 +336,7 @@ class HotellingT2AnalysisTool(AnalysisTool):
 
     @property
     def description(self) -> str:
-        return "進階工業統計：先利用 PCA 降維解決多重共線性與維度災難，再計算 Hotelling's T2 診斷組合異常，並拆解原始參數的貢獻度。支援 'target_segments' 參數 (如 '30-50') 以鎖定特定區間進行分析。"
+        return "【核心診斷】PCA-Hotelling's T2 診斷組合異常。建議 parameters 設為 'all' 以啟動自動化全場掃描與貢獻度拆解。嚴禁手動挑選 3 個以下參數以避免診斷偏見。"
 
     @property
     def required_params(self) -> List[str]:
@@ -287,6 +347,19 @@ class HotellingT2AnalysisTool(AnalysisTool):
         param_list = params.get("parameters")
         target_segments_str = params.get("target_segments")
         target_idx_val = params.get("row_index")
+
+        # --- 全自動參數偵測 (Global Sweep) ---
+        if (
+            not param_list
+            or param_list == "all"
+            or (
+                isinstance(param_list, list)
+                and len(param_list) == 1
+                and param_list[0] == "all"
+            )
+        ):
+            summary = self.analysis_service.load_summary(session_id, file_id)
+            param_list = summary.get("params", [])
 
         if isinstance(param_list, str):
             param_list = [p.strip() for p in param_list.split(",")]
@@ -300,7 +373,10 @@ class HotellingT2AnalysisTool(AnalysisTool):
         )
 
         # 1. 讀取數據並初步清理
-        df_full = pd.read_csv(csv_path, usecols=param_list)
+        try:
+            df_full = _safe_read_csv(csv_path, param_list)
+        except ValueError as e:
+            return {"error": str(e)}
 
         # Target Segments Parsing
         target_indices = []

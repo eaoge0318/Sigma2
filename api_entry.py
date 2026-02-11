@@ -53,30 +53,16 @@ from backend.routers import (
 )
 
 
-# --- 初始化 FastAPI App ---
-app = FastAPI(
-    title="Sigma2 Agentic Reasoning API",
-    description="模組化架構的 AI 輔助系統",
-    version="2.0.0",
-)
-
-# --- CORS 設定 ---
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+from contextlib import asynccontextmanager
 
 # --- Log Filter (過濾輪詢請求日誌) ---
 from backend.utils.log_filters import add_log_filter
 
 
-# 在 API 啟動時應用過濾器和顯示啟動訊息
-@app.on_event("startup")
-async def startup_event():
-    """應用啟動時的初始化"""
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """應用生命週期管理 (Startup & Shutdown)"""
+    # --- Startup ---
     # 過濾 uvicorn.access 中的特定路徑
     add_log_filter("uvicorn.access", "/api/history")
     add_log_filter("uvicorn.access", "/api/dashboard/history")
@@ -95,6 +81,22 @@ async def startup_event():
     print(f"API 文件：http://localhost:{config.API_PORT}/docs")
     print(f"Dashboard：http://localhost:{config.API_PORT}/dashboard")
     print("=" * 60)
+
+    yield
+
+    # --- Shutdown ---
+    print("正在關閉 Sigma2 API Server...")
+    # 在此處可以添加釋放資源的邏輯 (例如關閉 DB 連線、停止背景任務)
+    print("Sigma2 API Server 已關閉。")
+
+
+# --- 初始化 FastAPI App ---
+app = FastAPI(
+    title="Sigma2 Agentic Reasoning API",
+    description="模組化架構的 AI 輔助系統",
+    version="2.0.0",
+    lifespan=lifespan,
+)
 
 
 # --- 靜態檔案服務（No Cache）---
