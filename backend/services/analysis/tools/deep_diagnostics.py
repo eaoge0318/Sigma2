@@ -168,14 +168,12 @@ class CausalRelationshipTool(AnalysisTool):
 
     @property
     def required_params(self) -> List[str]:
-        return ["file_id", "target_parameter", "reference_parameters"]
+        return ["file_id", "target_parameter"]
 
     def execute(self, params: Dict, session_id: str) -> Dict[str, Any]:
         file_id = params.get("file_id")
         target = params.get("target_parameter")
         refs = params.get("reference_parameters")
-        if isinstance(refs, str):
-            refs = [r.strip() for r in refs.split(",")]
 
         summary = self.analysis_service.load_summary(session_id, file_id)
         csv_path = (
@@ -184,11 +182,26 @@ class CausalRelationshipTool(AnalysisTool):
             / "uploads"
             / summary["filename"]
         )
-        df = (
-            pd.read_csv(csv_path, usecols=[target] + refs)
-            .select_dtypes(include=[np.number])
-            .dropna()
-        )
+
+        # --- Auto-detect references if not provided ---
+        if not refs:
+            full_df = pd.read_csv(csv_path).select_dtypes(include=[np.number])
+            if target in full_df.columns:
+                corr = full_df.corr()[target].drop(target, errors="ignore").abs()
+                refs = corr.nlargest(5).index.tolist()
+            else:
+                return {"error": f"Target '{target}' not found in data columns."}
+        elif isinstance(refs, str):
+            refs = [r.strip() for r in refs.split(",")]
+
+        try:
+            df = (
+                pd.read_csv(csv_path, usecols=[target] + refs)
+                .select_dtypes(include=[np.number])
+                .dropna()
+            )
+        except Exception as e:
+            return {"error": f"Failed to load columns: {e}"}
 
         try:
             from statsmodels.tsa.stattools import grangercausalitytests
@@ -225,7 +238,8 @@ class CausalRelationshipTool(AnalysisTool):
         if not causal_results:
             return {
                 "method": "Granger Causality",
-                "conclusion": "未偵測到顯著的先行因果關係。",
+                "findings": [],
+                "conclusion": f"未發現對 {target} 有顯著因果影響的參數。",
             }
 
         return {
@@ -233,3 +247,175 @@ class CausalRelationshipTool(AnalysisTool):
             "findings": causal_results[:5],
             "conclusion": f"因果分析顯示，{causal_results[0]['cause']} 對 {target} 具有顯著影響 (p={causal_results[0]['p_value']:.4f})。",
         }
+
+
+class AnalyzeResidualsTool(AnalysisTool):
+    """殘差分析 (Residual Analysis) - 用於偵測隱性異常"""
+
+    @property
+    def name(self) -> str:
+        return "analyze_residuals"
+
+    @property
+    def description(self) -> str:
+        return "深度診斷：建立回歸模型並分析殘差，找出『物理模型失效』的隱性異常點 (例如：參數數值正常，但違反了與其他參數的連動關係)。"
+
+    @property
+    def required_params(self) -> List[str]:
+        return ["file_id", "target"]
+
+    def execute(self, params: Dict, session_id: str) -> Dict[str, Any]:
+        file_id = params.get("file_id")
+        target = params.get("target")
+        features = params.get("features")  # Optional
+
+        # Parse inputs
+        if isinstance(features, str) and "," in features:
+            features = [f.strip() for f in features.split(",") if f.strip()]
+
+        summary = self.analysis_service.load_summary(session_id, file_id)
+        csv_path = (
+            self.analysis_service.base_dir
+            / session_id
+            / "uploads"
+            / summary["filename"]
+        )
+
+        # Load correlations to auto-select features if missing
+        if not features:
+            correlations = self.analysis_service.load_correlations(session_id, file_id)
+            if target in correlations:
+                sorted_corrs = sorted(
+                    correlations[target].items(),
+                    key=lambda x: abs(x[1]) if x[1] is not None else 0,
+                    reverse=True,
+                )
+                features = [
+                    k for k, v in sorted_corrs if k != target and v is not None
+                ][:5]
+
+        if not features:
+            return {"error": "無法自動選擇特徵，請指定 features 参数。"}
+
+        try:
+            # Load the full dataframe to enable residual-external correlation
+            df_full = pd.read_csv(csv_path)
+            df_full = df_full.select_dtypes(include=[np.number])
+
+            # Ensure target and features exist
+            required_cols = [target] + features
+            missing = [c for c in required_cols if c not in df_full.columns]
+            if missing:
+                return {"error": f"欄位不存在: {missing}"}
+
+            df = df_full[required_cols].dropna()
+
+            if len(df) < 50:
+                return {"error": "數據量不足以建立回歸模型 (需 > 50 筆)。"}
+
+            X = df[features]
+            y = df[target]
+
+            # Simple Linear Regression
+            from sklearn.linear_model import LinearRegression
+
+            model = LinearRegression()
+            model.fit(X, y)
+            y_pred = model.predict(X)
+            residuals = y - y_pred
+            std_resid = np.std(residuals, ddof=1)  # [FIX] 統一 ddof=1
+
+            # Detect Anomalies (> 3 std)
+            threshold = 3 * std_resid
+            anomalies = df[np.abs(residuals) > threshold].copy()
+            anomalies["residual"] = residuals[anomalies.index]
+            anomalies["abs_residual"] = np.abs(residuals[anomalies.index])
+
+            top_anomalies = anomalies.sort_values("abs_residual", ascending=False).head(
+                10
+            )
+
+            result_list = []
+            for idx, row in top_anomalies.iterrows():
+                result_list.append(
+                    {
+                        "row_index": int(idx),
+                        "actual_value": float(row[target]),
+                        "predicted_value": float(y_pred[df.index.get_loc(idx)]),
+                        "residual": float(row["residual"]),
+                        "severity": float(row["abs_residual"] / std_resid),
+                    }
+                )
+
+            r2_score = model.score(X, y)
+
+            # === 殘差外部因子關聯分析 ===
+            # 找出所有「未被模型使用」的數值欄位,計算殘差與它們的相關性
+            residual_correlations = []
+            used_cols = set(features + [target])
+            other_cols = [c for c in df_full.columns if c not in used_cols]
+
+            if other_cols:
+                # Align residuals with full dataframe indices
+                resid_series = pd.Series(
+                    residuals.values, index=df.index, name="residual"
+                )
+                for col in other_cols:
+                    col_data = df_full[col].iloc[df.index]
+                    valid_mask = col_data.notna() & resid_series.notna()
+                    if valid_mask.sum() < 20:
+                        continue
+                    try:
+                        corr_val = float(
+                            np.corrcoef(
+                                resid_series[valid_mask].values,
+                                col_data[valid_mask].values,
+                            )[0, 1]
+                        )
+                        if np.isnan(corr_val):
+                            continue
+                        residual_correlations.append(
+                            {
+                                "parameter": col,
+                                "correlation": round(corr_val, 4),
+                                "abs_correlation": round(abs(corr_val), 4),
+                            }
+                        )
+                    except Exception:
+                        continue
+
+            # Sort by absolute correlation
+            residual_correlations.sort(key=lambda x: x["abs_correlation"], reverse=True)
+            top_5_corr = residual_correlations[:5]
+
+            # Build external factor interpretation
+            external_factor_msg = ""
+            if top_5_corr and top_5_corr[0]["abs_correlation"] > 0.3:
+                best = top_5_corr[0]
+                direction = "正相關" if best["correlation"] > 0 else "負相關"
+                external_factor_msg = (
+                    f" 殘差與 {best['parameter']} 有顯著{direction} "
+                    f"(r={best['correlation']:.3f}), 此參數可能是模型未捕捉到的外部影響因子。"
+                )
+
+            conclusion = f"模型 R2={r2_score:.2f}。共發現 {len(anomalies)} 個隱性異常點 (殘差 > 3 sigma)。"
+            if result_list:
+                conclusion += f"最嚴重發生在第 {result_list[0]['row_index']} 筆。"
+            else:
+                conclusion = "未發現顯著的殘差異常。"
+            if external_factor_msg:
+                conclusion += external_factor_msg
+
+            return {
+                "method": "Residual Analysis (Linear Regression)",
+                "target": target,
+                "features_used": features,
+                "model_r2": float(r2_score),
+                "anomaly_count": len(anomalies),
+                "top_anomalies": result_list,
+                "residual_external_correlations": top_5_corr,
+                "conclusion": conclusion,
+            }
+
+        except Exception as e:
+            return {"error": f"殘差分析失敗: {str(e)}"}

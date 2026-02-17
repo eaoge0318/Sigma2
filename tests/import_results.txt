@@ -1,0 +1,5 @@
+PASS: performance_segmentation (2 tools)
+PASS: interaction_analysis (1 tool)
+PASS: partial_dependence (1 tool)
+PASS: executor (all tools registered)
+DONE

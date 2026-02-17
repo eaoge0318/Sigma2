@@ -3,6 +3,7 @@ Dashboard Router - 即時看板相關 API
 """
 
 import time
+import asyncio
 import os
 import pandas as pd
 from fastapi import APIRouter, HTTPException, Depends, Body
@@ -275,9 +276,11 @@ async def load_simulation_file(
         print(f"[DEBUG] File path: {file_path}")
         print(f"[DEBUG] File exists: {os.path.exists(file_path)}")
 
-        # 2. 讀取數據
+        # 2. 讀取數據 (non-blocking)
         print(f"[DEBUG] Loading data...")
-        df, _ = DataPreprocess.get_processed_data_and_cols(file_path)
+        df, _ = await asyncio.to_thread(
+            DataPreprocess.get_processed_data_and_cols, file_path
+        )
         print(f"[DEBUG] Data loaded: {len(df)} rows, {len(df.columns)} columns")
 
         # 3. 存入 Session
@@ -331,15 +334,17 @@ async def load_specific_model(
     file_service: FileService = Depends(get_file_service),
 ):
     """指定載入特定版本的模型"""
-    try:
+
+    def _load_model_sync():
+        import json
+
         # 載入模型
         agent = prediction_service.get_agent(session_id)
         agent.reload_model(target_bundle_name=model_path)
 
+        job_config = None
         # 如果是 job_xxx.json 配置檔,讀取並儲存到 session
         if model_path.endswith(".json") and model_path.startswith("job_"):
-            import json
-
             configs_dir = file_service.get_user_path(session_id, "configs")
             config_path = os.path.join(configs_dir, model_path)
 
@@ -361,8 +366,11 @@ async def load_specific_model(
         return {
             "status": "success",
             "message": f"Model {model_path} loaded",
-            "config": job_config if 'job_config' in locals() else None
+            "config": job_config,
         }
+
+    try:
+        return await asyncio.to_thread(_load_model_sync)
     except Exception as e:
         logger.error(f"模型載入失敗: {e}", exc_info=True)
         raise HTTPException(500, f"Model load failed: {str(e)}")
@@ -374,74 +382,74 @@ async def list_available_models(
     file_service: FileService = Depends(get_file_service),
 ):
     """列出該使用者可用的模型 (Config Jobs) - 返回詳細資訊"""
-    try:
-        models = []
-        import json
+    import json
 
-        # 1. 取得 configs 路徑
-        configs_dir = file_service.get_user_path(session_id, "configs")
-        if os.path.exists(configs_dir):
-            for f in os.listdir(configs_dir):
-                if f.startswith("job_") and f.endswith(".json"):
-                    full_path = os.path.join(configs_dir, f)
-                    try:
-                        with open(full_path, "r", encoding="utf-8") as jf:
-                            data = json.load(jf)
+    def _list_models_sync():
+        try:
+            models = []
 
-                            # 檢查訓練狀態 (Fool-proofing)
-                            status = data.get("status", "unknown")
-                            if status != "completed":
-                                continue
+            # 1. 取得 configs 路徑
+            configs_dir = file_service.get_user_path(session_id, "configs")
+            if os.path.exists(configs_dir):
+                for f in os.listdir(configs_dir):
+                    if f.startswith("job_") and f.endswith(".json"):
+                        full_path = os.path.join(configs_dir, f)
+                        try:
+                            with open(full_path, "r", encoding="utf-8") as jf:
+                                data = json.load(jf)
 
-                            # 優先使用 model_name，若無則使用 modelName 或檔名
-                            model_name = (
-                                data.get("model_name") or data.get("modelName") or f
-                            )
+                                status = data.get("status", "unknown")
+                                if status != "completed":
+                                    continue
 
-                            # 取得 R2 分數（若存在）
-                            r2 = data.get("r2")
-                            r2_text = f"R2: {r2:.4f}" if r2 is not None else "N/A"
+                                model_name = (
+                                    data.get("model_name") or data.get("modelName") or f
+                                )
 
-                            # 取得建立時間
-                            created = data.get("created_at", "")
+                                r2 = data.get("r2")
+                                r2_text = f"R2: {r2:.4f}" if r2 is not None else "N/A"
 
-                            # 組合顯示名稱：Model_XXX | R2: 0.xxxx | 2026/02/03 23:37:36
-                            if created:
-                                display_name = f"{model_name} | {r2_text} | {created}"
-                            else:
-                                display_name = f"{model_name} | {r2_text}"
+                                created = data.get("created_at", "")
 
+                                if created:
+                                    display_name = (
+                                        f"{model_name} | {r2_text} | {created}"
+                                    )
+                                else:
+                                    display_name = f"{model_name} | {r2_text}"
+
+                                models.append(
+                                    {
+                                        "id": f,
+                                        "name": display_name,
+                                        "timestamp": os.path.getmtime(full_path),
+                                        "data": data,
+                                    }
+                                )
+                        except Exception as e:
+                            logger.warning(f"Failed to parse config {f}: {e}")
+                            continue
+
+            # 2. 備援：Bundles 路徑
+            models_dir = file_service.get_user_path(session_id, "bundles")
+            if os.path.exists(models_dir):
+                with os.scandir(models_dir) as entries:
+                    for entry in entries:
+                        if entry.is_file() and (
+                            entry.name.endswith(".zip") or entry.name.endswith(".pt")
+                        ):
                             models.append(
                                 {
-                                    "id": f,
-                                    "name": display_name,
-                                    "timestamp": os.path.getmtime(full_path),
-                                    "data": data,  # 關鍵修正：回傳完整配置數據
+                                    "id": entry.name,
+                                    "name": entry.name,
+                                    "timestamp": entry.stat().st_mtime,
                                 }
                             )
-                    except Exception as e:
-                        logger.warning(f"Failed to parse config {f}: {e}")
-                        # Skip corrupted or invalid config files
-                        continue
 
-        # 2. 備援：Bundles 路徑
-        models_dir = file_service.get_user_path(session_id, "bundles")
-        if os.path.exists(models_dir):
-            with os.scandir(models_dir) as entries:
-                for entry in entries:
-                    if entry.is_file() and (
-                        entry.name.endswith(".zip") or entry.name.endswith(".pt")
-                    ):
-                        models.append(
-                            {
-                                "id": entry.name,
-                                "name": entry.name,
-                                "timestamp": entry.stat().st_mtime,
-                            }
-                        )
+            models.sort(key=lambda x: x["timestamp"], reverse=True)
+            return models
+        except Exception as e:
+            logger.error(f"列出模型失敗: {e}")
+            return []
 
-        models.sort(key=lambda x: x["timestamp"], reverse=True)
-        return models
-    except Exception as e:
-        logger.error(f"列出模型失敗: {e}")
-        return []
+    return await asyncio.to_thread(_list_models_sync)

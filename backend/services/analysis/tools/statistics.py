@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 from scipy import stats
 from .base import AnalysisTool
+import warnings
 
 
 class AnalyzeDistributionTool(AnalysisTool):
@@ -20,20 +21,29 @@ class AnalyzeDistributionTool(AnalysisTool):
 
     @property
     def required_params(self) -> List[str]:
-        return ["file_id", "parameter"]
+        return ["file_id"]
 
     def execute(self, params: Dict, session_id: str) -> Dict[str, Any]:
         file_id = params.get("file_id")
         param_input = params.get("parameter")
         target_segments_str = params.get("target_segments")
 
-        # 支援多個參數輸入 (列表或逗號分隔字串)
-        if isinstance(param_input, list):
+        # 支援全域掃描：如果 parameter 為空，則自動掃描所有數值欄位
+        if not param_input:
+            summary = self.analysis_service.load_summary(session_id, file_id)
+            columns = summary.get("numerical_columns", [])
+            # 限制掃描數量以免超時，或全掃描如果是必要的
+            if not columns:
+                return {"error": "未指定參數且無可用數值欄位。"}
+            is_global_scan = True
+        elif isinstance(param_input, list):
             columns = param_input
+            is_global_scan = False
         elif isinstance(param_input, str):
             columns = [p.strip() for p in param_input.split(",")]
+            is_global_scan = False
         else:
-            return {"error": "無效的參數類型 (預期為字串或列表)"}
+            return {"error": "無效的參數類型"}
 
         stats_data = self.analysis_service.load_statistics(session_id, file_id)
         summary = self.analysis_service.load_summary(session_id, file_id)
@@ -70,21 +80,55 @@ class AnalyzeDistributionTool(AnalysisTool):
 
                 # 獲取基礎統計量 (如果是全量則用緩存，否則動態計算)
                 if not target_segments_str:
+                    # 全域分析: 使用快取的統計資料
                     col_stats = stats_data.get(str(col), {})
                 else:
+                    # 區間分析: 動態重新計算所有統計資料,包括 Z-Score
+                    mean_val = float(np.mean(data))
+                    std_val = float(
+                        np.std(data, ddof=1)
+                    )  # [FIX] 統一使用 ddof=1,與 pandas/detect_outliers 一致
+                    min_val = float(np.min(data))
+                    max_val = float(np.max(data))
+
+                    # 重新計算 Z-Score (使用區間的 mean 和 std)
+                    max_sigma = 0.0
+                    min_sigma = 0.0
+                    has_extreme_outlier = False
+
+                    if std_val > 0:
+                        max_sigma = (max_val - mean_val) / std_val
+                        min_sigma = (min_val - mean_val) / std_val
+
+                        if abs(max_sigma) > 6 or abs(min_sigma) > 6:
+                            has_extreme_outlier = True
+
                     col_stats = {
                         "count": len(data),
-                        "mean": float(np.mean(data)),
-                        "min": float(np.min(data)),
-                        "max": float(np.max(data)),
-                        "std": float(np.std(data)),
+                        "mean": mean_val,
+                        "min": min_val,
+                        "max": max_val,
+                        "std": std_val,
+                        "max_sigma": round(max_sigma, 2),
+                        "min_sigma": round(min_sigma, 2),
+                        "has_extreme_outlier": has_extreme_outlier,
                     }
+
+                # Suppress Precision Loss warnings for nearly-constant data
+                with warnings.catch_warnings():
+                    warnings.filterwarnings(
+                        "ignore",
+                        category=RuntimeWarning,
+                        message=".*Precision loss occurred.*",
+                    )
+                    skewness = float(stats.skew(data)) if len(data) > 0 else 0.0
+                    kurtosis = float(stats.kurtosis(data)) if len(data) > 0 else 0.0
 
                 results_map[col] = {
                     "basic_stats": col_stats,
                     "histogram": {"counts": hist.tolist(), "bins": bin_edges.tolist()},
-                    "skewness": float(stats.skew(data)),
-                    "kurtosis": float(stats.kurtosis(data)),
+                    "skewness": skewness,
+                    "kurtosis": kurtosis,
                     "target_range": target_segments_str or "full",
                 }
             except Exception as e:
@@ -97,6 +141,56 @@ class AnalyzeDistributionTool(AnalysisTool):
             if res and "error" in res:
                 return res
             return {"parameter": col, **(res or {})}
+
+        # 如果是全域掃描，只回傳最有意義的 Top 5 (例如根據變異數或偏度)
+        if hasattr(self, "name") and is_global_scan:
+            # [NEW] Priority 1: Extreme Outliers (Sigma > 6)
+            extreme_outliers = []
+            for col, res in results_map.items():
+                # Fix: Retrieve stats correctly from the result dictionary
+                col_stats = res.get("basic_stats", {})
+                if col_stats.get("has_extreme_outlier"):
+                    extreme_outliers.append(
+                        {
+                            "parameter": col,
+                            "max_sigma": col_stats.get("max_sigma"),
+                            "min_sigma": col_stats.get("min_sigma"),
+                        }
+                    )
+
+            # Sort outliers by severity (max abs sigma)
+            extreme_outliers.sort(
+                key=lambda x: max(abs(x["max_sigma"] or 0), abs(x["min_sigma"] or 0)),
+                reverse=True,
+            )
+
+            # [NEW] Priority 2: High Skewness/Kurtosis (Interesting distributions)
+            # 排序邏輯：這裡使用 偏度絕對值 + 峰度絕對值 作為 "是否有趣" 的指標
+            sorted_cols = sorted(
+                results_map.items(),
+                key=lambda x: abs(x[1].get("skewness", 0)) if "skewness" in x[1] else 0,
+                reverse=True,
+            )
+            top_5 = dict(sorted_cols[:5])
+
+            summary_note = "系統自動掃描並選取了分佈特徵最顯著的前 5 個欄位。"
+            if extreme_outliers:
+                outlier_names = ", ".join(
+                    [
+                        f"{o['parameter']} ({max(o['max_sigma'], abs(o['min_sigma']))}σ)"
+                        for o in extreme_outliers[:3]
+                    ]
+                )
+                summary_note = f"⚠️ [CRITICAL] 發現 {len(extreme_outliers)} 個參數出現極端異常 (>6σ)：{outlier_names}..."
+
+            return {
+                "scan_mode": "global_auto_detection",
+                "scanned_columns_count": len(columns),
+                "extreme_outliers_count": len(extreme_outliers),
+                "extreme_outliers_list": extreme_outliers,  # Explicit list for LLM
+                "top_interesting_distributions": top_5,
+                "note": summary_note,
+            }
 
         return {"parameters": columns, "multi_results": results_map}
 
@@ -210,19 +304,29 @@ class DetectOutliersTool(AnalysisTool):
 
     @property
     def required_params(self) -> List[str]:
-        return ["file_id", "parameter"]
+        return ["file_id"]
 
     def execute(self, params: Dict, session_id: str) -> Dict[str, Any]:
         file_id = params.get("file_id")
         param_input = params.get("parameter")
 
-        # 支援多個參數輸入
-        if isinstance(param_input, list):
+        summary = self.analysis_service.load_summary(session_id, file_id)
+
+        # 支援全域掃描
+        if not param_input or param_input == "all" or param_input == ["all"]:
+            summary = self.analysis_service.load_summary(session_id, file_id)
+            columns = summary.get("numerical_columns", [])
+            if not columns:
+                return {"error": "未指定參數且無可用數值欄位。"}
+            is_global_scan = True
+        elif isinstance(param_input, list):
             columns = param_input
+            is_global_scan = False
         elif isinstance(param_input, str):
             columns = [p.strip() for p in param_input.split(",")]
+            is_global_scan = False
         else:
-            return {"error": "無效的參數類型 (預期為字串或列表)"}
+            return {"error": "無效的參數類型"}
 
         summary = self.analysis_service.load_summary(session_id, file_id)
         filename = summary["filename"]
@@ -233,21 +337,77 @@ class DetectOutliersTool(AnalysisTool):
             if not col:
                 continue
             try:
+                method = params.get("method", "zscore")  # Default to zscore
+
                 # 讀取數據
                 df = pd.read_csv(csv_path, usecols=[col])
                 series = df[col].dropna()
 
                 if series.empty:
-                    results_map[col] = {"error": "無有效數據"}
+                    results_map[col] = {"error": "Skipped (Empty)"}
                     continue
 
-                q1 = series.quantile(0.25)
-                q3 = series.quantile(0.75)
-                iqr = q3 - q1
-                lower_bound = q1 - 1.5 * iqr
-                upper_bound = q3 + 1.5 * iqr
+                # [Robustness] Skip non-numeric columns
+                if not pd.api.types.is_numeric_dtype(series):
+                    results_map[col] = {"error": "Skipped (Non-Numeric)"}
+                    continue
 
-                outliers = series[(series < lower_bound) | (series > upper_bound)]
+                if method == "iqr":
+                    q1 = series.quantile(0.25)
+                    q3 = series.quantile(0.75)
+                    iqr = q3 - q1
+                    lower_bound = q1 - 1.5 * iqr
+                    upper_bound = q3 + 1.5 * iqr
+                    outliers = series[(series < lower_bound) | (series > upper_bound)]
+                    interpretation = f"使用 IQR 方法，在 {len(series)} 筆樣本中發現 {len(outliers)} 個異常點。"
+                    stats_data = {
+                        "q1": float(q1),
+                        "q3": float(q3),
+                        "iqr": float(iqr),
+                        "mean": float(series.mean()),
+                        "std": float(series.std()),
+                    }
+                else:
+                    # Default: Z-Score (支援用戶要求的 |Z|>3 與 |Z|>6)
+                    mean = series.mean()
+                    std = series.std()  # ddof=1 (pandas default)
+                    if std == 0:
+                        z_scores = series * 0
+                    else:
+                        z_scores = (series - mean) / std
+
+                    abs_z = z_scores.abs()
+                    outliers = series[abs_z > 3]
+                    extreme_outliers = series[abs_z > 6]
+                    max_z = float(abs_z.max()) if not abs_z.empty else 0
+
+                    # [FIX] 計算 max_sigma / min_sigma,與 analyze_distribution 格式一致
+                    min_val = float(series.min())
+                    max_val = float(series.max())
+                    max_sigma = (
+                        round((max_val - float(mean)) / float(std), 2)
+                        if std > 0
+                        else 0.0
+                    )
+                    min_sigma = (
+                        round((min_val - float(mean)) / float(std), 2)
+                        if std > 0
+                        else 0.0
+                    )
+                    has_extreme_outlier = abs(max_sigma) > 6 or abs(min_sigma) > 6
+
+                    interpretation = f"使用 Z-Score 方法，偵測到 {len(outliers)} 筆顯著異常 (|Z|>3) 與 {len(extreme_outliers)} 筆極端異常 (|Z|>6)。最大 Z 值為 {max_z:.2f}。"
+                    stats_data = {
+                        "mean": float(mean),
+                        "std": float(std),
+                        "max_z": max_z,
+                        "max_sigma": max_sigma,
+                        "min_sigma": min_sigma,
+                        "has_extreme_outlier": has_extreme_outlier,
+                        "significant_count": len(outliers),
+                        "extreme_count": len(extreme_outliers),
+                    }
+
                 outlier_count = len(outliers)
                 total_count = len(series)
                 percentage = (
@@ -255,25 +415,17 @@ class DetectOutliersTool(AnalysisTool):
                 )
 
                 results_map[col] = {
-                    "method": "IQR (1.5x)",
-                    "bounds": {
-                        "lower": float(lower_bound),
-                        "upper": float(upper_bound),
-                    },
-                    "stats": {
-                        "q1": float(q1),
-                        "q3": float(q3),
-                        "iqr": float(iqr),
-                        "mean": float(series.mean()),
-                        "std": float(series.std()),
-                    },
+                    "method": method,
+                    "stats": stats_data,
                     "outlier_info": {
                         "count": outlier_count,
                         "percentage": f"{percentage:.2f}%",
                         "is_abnormal": outlier_count > 0,
-                        "recent_outliers_preview": outliers.tail(5).tolist(),
+                        "recent_outliers_preview": outliers.tail(5).tolist()
+                        if not outliers.empty
+                        else [],
                     },
-                    "interpretation": f"在 {total_count} 筆樣本中發現 {outlier_count} 個異常點 ({percentage:.2f}%)。",
+                    "interpretation": interpretation,
                 }
             except Exception as e:
                 results_map[col] = {"error": str(e)}
@@ -285,6 +437,35 @@ class DetectOutliersTool(AnalysisTool):
             if res and "error" in res:
                 return res
             return {"parameter": col, **(res or {})}
+
+        # 如果是全域掃描，回傳異常程度最嚴重的 Top 5 (Severity > Count)
+        if hasattr(self, "name") and is_global_scan:
+            sorted_cols = sorted(
+                results_map.items(),
+                # Sort Key: Max Abs Z-Score (Severity) -> Count -> Parameters with Error (last)
+                key=lambda x: (
+                    x[1].get("stats", {}).get("max_z", 0)
+                    if isinstance(x[1].get("stats"), dict)
+                    else 0
+                ),
+                reverse=True,
+            )
+            top_5 = dict(sorted_cols[:5])
+
+            # [Debug Info] Print top 1 to log to confirm Z > 6 exists
+            if top_5:
+                first_key = list(top_5.keys())[0]
+                first_max_z = top_5[first_key].get("stats", {}).get("max_z", 0)
+                print(
+                    f"[DetectOutliers] Top 1 Anomaly: {first_key} with Max Z={first_max_z}"
+                )
+
+            return {
+                "scan_mode": "global_outlier_detection",
+                "scanned_columns_count": len(columns),
+                "top_abnormal_parameters": top_5,
+                "note": "系統自動掃描並選取了 Z-Score (異常程度) 最高的前 5 個欄位。",
+            }
 
         return {"parameters": columns, "multi_results": results_map}
 
@@ -312,6 +493,33 @@ class GetTopCorrelationsTool(AnalysisTool):
         # 支援多個參數輸入 (逗號分隔)
         if "," in target_input:
             targets = [t.strip() for t in target_input.split(",")]
+        elif target_input.lower().strip() == "all":
+            # [Fix] target="all" → 自動選取最高方差的前 3 個欄位
+            correlations = self.analysis_service.load_correlations(session_id, file_id)
+            if correlations:
+                # 用平均絕對相關性排序,選出最「有趣」的欄位
+                col_scores = {}
+                for col, corr_dict in correlations.items():
+                    if isinstance(corr_dict, dict):
+                        vals = [
+                            abs(v)
+                            for v in corr_dict.values()
+                            if v is not None and isinstance(v, (int, float))
+                        ]
+                        if vals:
+                            col_scores[col] = sum(vals) / len(vals)
+                sorted_cols = sorted(
+                    col_scores.items(), key=lambda x: x[1], reverse=True
+                )
+                targets = [col for col, _ in sorted_cols[:3]]
+                if not targets:
+                    return {
+                        "error": "No valid columns found in correlation matrix for global analysis"
+                    }
+            else:
+                return {
+                    "error": "Correlation data not available. Please build index first."
+                }
         else:
             targets = [target_input]
 
@@ -350,15 +558,56 @@ class GetTopCorrelationsTool(AnalysisTool):
 
             multi_results[target] = results
 
+        # --- Collinearity Detection ---
+        # Scan top correlated parameters for high inter-correlation (|r| > 0.9)
+        collinearity_warnings = []
+        try:
+            # Collect all unique parameters across all targets
+            all_top_params = set()
+            for res_list in multi_results.values():
+                if isinstance(res_list, list):
+                    for item in res_list:
+                        all_top_params.add(item["parameter"])
+
+            # Check pairwise correlations among top params
+            param_list = list(all_top_params)
+            for i in range(len(param_list)):
+                for j in range(i + 1, len(param_list)):
+                    p_a, p_b = param_list[i], param_list[j]
+                    # Look up correlation between p_a and p_b
+                    corr_val = None
+                    if p_a in correlations and p_b in correlations.get(p_a, {}):
+                        corr_val = correlations[p_a].get(p_b)
+                    elif p_b in correlations and p_a in correlations.get(p_b, {}):
+                        corr_val = correlations[p_b].get(p_a)
+
+                    if corr_val is not None and abs(corr_val) > 0.9:
+                        collinearity_warnings.append(
+                            {
+                                "param_a": p_a,
+                                "param_b": p_b,
+                                "correlation": round(corr_val, 4),
+                                "warning": "高度共線 (|r|>0.9)，可能是同一物理量，調整其一即可",
+                            }
+                        )
+        except Exception:
+            pass  # Collinearity detection is best-effort
+
         # 向下兼容單一目標的輸出格式
         if len(targets) == 1:
             target = targets[0]
             res = multi_results[target]
             if isinstance(res, dict) and "error" in res:
                 return res  # Return error dict directly
-            return {"target": target, "top_correlations": res}
+            result = {"target": target, "top_correlations": res}
+            if collinearity_warnings:
+                result["collinearity_warnings"] = collinearity_warnings
+            return result
 
-        return {"targets": targets, "multi_target_correlations": multi_results}
+        result = {"targets": targets, "multi_target_correlations": multi_results}
+        if collinearity_warnings:
+            result["collinearity_warnings"] = collinearity_warnings
+        return result
 
 
 class AnalyzeCategoryCorrelationTool(AnalysisTool):

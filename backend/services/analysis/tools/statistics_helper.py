@@ -48,14 +48,33 @@ class StatisticsHelper:
                     series = df[col].replace([np.inf, -np.inf], np.nan)
 
                     if series.count() > 0:
+                        # [NEW] Calculate Z-Scores for explicit outlier detection
+                        mean_val = (
+                            float(series.mean()) if not pd.isna(series.mean()) else None
+                        )
+                        std_val = (
+                            float(series.std()) if not pd.isna(series.std()) else None
+                        )
+
+                        max_sigma = 0.0
+                        min_sigma = 0.0
+                        has_extreme_outlier = False
+
+                        if mean_val is not None and std_val is not None and std_val > 0:
+                            # Avoid re-calculating everything if series is large, just use min/max for bounds
+                            min_val = float(series.min())
+                            max_val = float(series.max())
+
+                            max_sigma = (max_val - mean_val) / std_val
+                            min_sigma = (min_val - mean_val) / std_val
+
+                            if abs(max_sigma) > 6 or abs(min_sigma) > 6:
+                                has_extreme_outlier = True
+
                         statistics[col] = {
                             "count": total_count,
-                            "mean": float(series.mean())
-                            if not pd.isna(series.mean())
-                            else None,
-                            "std": float(series.std())
-                            if not pd.isna(series.std())
-                            else None,
+                            "mean": mean_val,
+                            "std": std_val,
                             "min": float(series.min())
                             if not pd.isna(series.min())
                             else None,
@@ -65,6 +84,11 @@ class StatisticsHelper:
                             "median": float(series.median())
                             if not pd.isna(series.median())
                             else None,
+                            "max_sigma": round(
+                                max_sigma, 2
+                            ),  # Direct rounding, no string conversion
+                            "min_sigma": round(min_sigma, 2),
+                            "has_extreme_outlier": has_extreme_outlier,
                             "missing_count": missing_count,
                             "is_numeric": True,
                         }

@@ -1,9 +1,11 @@
 class IntelligentAnalysis {
     constructor() {
-        // Generate a unique session ID, or inherit from parent if in an iframe
+        // 帳號 ID: 從父視窗繼承 (Dashboard 的 SESSION_ID)，用於隔離不同帳號
         const parentSessionId = window.parent && window.parent.SESSION_ID;
-        this.sessionId = parentSessionId || ((window.crypto && window.crypto.randomUUID) ? window.crypto.randomUUID() : `temp_${Date.now()}`);
-        console.log(`Initialized Analysis with SessionID: ${this.sessionId}`);
+        this.accountId = parentSessionId || localStorage.getItem('sigma2_session_id') || 'default';
+        // 聊天室 Session ID: 預設為帳號 ID (主聊天室)
+        this.sessionId = this.accountId;
+        console.log(`Initialized Analysis: account=${this.accountId}, session=${this.sessionId}`);
         this.currentFileId = null;
         this.currentFilename = null;
         this.conversationId = 'default';
@@ -30,9 +32,9 @@ class IntelligentAnalysis {
             infoCols: document.getElementById('info-cols'),
             infoStatus: document.getElementById('info-status'),
 
-            // Sidebar - History
-            historyList: document.getElementById('history-list'),
-            btnClearHistory: document.getElementById('btn-clear'),
+            // Sidebar - Session Management
+            sessionList: document.getElementById('session-list'),
+            btnNewChat: document.getElementById('btn-new-chat'),
 
             // Sidebar - Mapping Table
             mappingUploadInput: document.getElementById('mapping-upload-input'),
@@ -149,24 +151,72 @@ class IntelligentAnalysis {
             }
         });
 
-        // Clear History (Sidebar)
-        this.elements.btnClearHistory.addEventListener('click', () => {
-            if (confirm('確定要清除所有歷史記錄嗎？')) {
-                this.elements.historyList.innerHTML = '<div class="text-xs text-gray-300 text-center py-4">暫無歷史記錄</div>';
-            }
-        });
+        // New Chat Button
+        if (this.elements.btnNewChat) {
+            this.elements.btnNewChat.addEventListener('click', () => {
+                this.createNewSession();
+            });
+        }
+
+        // Load existing sessions on startup
+        this.loadSessionList();
+
+        // Session click event delegation (一次性綁定，避免重複)
+        if (this.elements.sessionList) {
+            console.log('[Sessions] Event delegation bound on #session-list');
+            this.elements.sessionList.addEventListener('click', (e) => {
+                console.log('[Sessions] Click detected on:', e.target.tagName, e.target.className);
+                // Delete button
+                const deleteBtn = e.target.closest('[data-delete-session]');
+                if (deleteBtn) {
+                    e.stopPropagation();
+                    const sid = deleteBtn.dataset.deleteSession;
+                    if (confirm('確定要刪除這個聊天室嗎？')) {
+                        this.deleteSession(sid);
+                    }
+                    return;
+                }
+                // Session card click
+                const item = e.target.closest('.session-item');
+                if (item && item.dataset.sessionId) {
+                    console.log('[Sessions] Switching to:', item.dataset.sessionId);
+                    this.switchSession(item.dataset.sessionId);
+                }
+            });
+        } else {
+            console.warn('[Sessions] #session-list element NOT FOUND!');
+        }
 
         // Suggested Queries Click
         // Suggested Queries Click (Modified to listen on body for Sidebar buttons)
         document.body.addEventListener('click', (e) => {
             const btn = e.target.closest('.suggested-query');
             if (btn) {
-                const query = btn.textContent.trim();
+                const query = (btn.getAttribute('data-query') || btn.innerText).trim();
+
+                // Intercept "Data Mining" Button (Check ID or Text)
+                if (btn.id === 'btn-open-mining-modal' || query === '資料探勘') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    console.log('Opening Data Mining Modal');
+
+                    // Close other popovers
+                    const sidebar = document.getElementById('param-select-menu');
+                    if (sidebar) sidebar.classList.add('hidden');
+
+                    this.openDataMiningModal();
+                    return;
+                }
 
                 // Intercept "Draw Trend Chart"
                 if (query === '繪製趨勢圖') {
                     e.preventDefault();
                     e.stopPropagation();
+
+                    // Close Mining Modal
+                    const miningModal = document.getElementById('data-mining-modal');
+                    if (miningModal) miningModal.classList.add('hidden');
+
                     this.openParamSelectionModal(btn);
                     return;
                 }
@@ -199,6 +249,42 @@ class IntelligentAnalysis {
                 }
             }
         });
+
+        // Global ESC to close modals/popovers
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                const miningModal = document.getElementById('data-mining-modal');
+                if (miningModal) miningModal.classList.add('hidden');
+
+                const paramMenu = document.getElementById('param-select-menu');
+                if (paramMenu) paramMenu.classList.add('hidden');
+            }
+        });
+
+        // --- Data Mining Modal Listeners ---
+        document.addEventListener('click', (e) => {
+            // Opening logic moved to suggested-query listener above
+            if (e.target.closest('#btn-close-mining-modal') || e.target.id === 'btn-cancel-mining') {
+                const modal = document.getElementById('data-mining-modal');
+                if (modal) modal.classList.add('hidden');
+            } else if (e.target.closest('#btn-confirm-mining')) {
+                this.confirmDataMining();
+            } else if (e.target.id === 'dm-target-clear') {
+                this.toggleMiningSelection('target', 'none');
+            } else if (e.target.id === 'dm-feature-clear') {
+                this.toggleMiningSelection('feature', 'none');
+            } else if (e.target.id === 'dm-feature-select-all') {
+                this.toggleMiningSelection('feature', 'all');
+            }
+        });
+
+        document.addEventListener('input', (e) => {
+            if (e.target.id === 'dm-target-search') {
+                this.filterMiningList('target', e.target.value);
+            } else if (e.target.id === 'dm-feature-search') {
+                this.filterMiningList('feature', e.target.value);
+            }
+        });
     }
 
     async sendMessage() {
@@ -226,17 +312,32 @@ class IntelligentAnalysis {
         const signal = this.abortController.signal;
 
         try {
+            // Prepare request body
+            const requestBody = {
+                session_id: this.sessionId,
+                file_id: this.currentFileId,
+                message: message,
+                conversation_id: this.conversationId,
+                mode: this.analysisMode
+            };
+
+            // Add mining metadata if available
+            if (this.miningMetadata) {
+                if (this.miningMetadata.suspect_params) {
+                    requestBody.suspect_params = this.miningMetadata.suspect_params;
+                }
+                if (this.miningMetadata.target_range) {
+                    requestBody.target_range = this.miningMetadata.target_range;
+                }
+                // Clear metadata after use
+                this.miningMetadata = null;
+            }
+
             // 2. Start Request
             const response = await fetch('/api/analysis/chat/stream', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    session_id: this.sessionId,
-                    file_id: this.currentFileId,
-                    message: message,
-                    conversation_id: this.conversationId,
-                    mode: this.analysisMode
-                }),
+                body: JSON.stringify(requestBody),
                 signal: signal // Attach signal
             });
 
@@ -591,7 +692,7 @@ class IntelligentAnalysis {
                                 執行分析: <span class="text-blue-700 font-mono">${toolName}</span>
                                 <span class="ml-auto text-[9px] text-green-600 bg-green-50 px-1 rounded">完成</span>
                             </div>
-                            ${toolParams ? `<div class="text-[10px] text-slate-400 font-mono mt-0.5 ml-5 truncate" title='${toolParams}'>參數: ${toolParams}</div>` : ''}
+                            ${false ? `<div class="text-[10px] text-slate-400 font-mono mt-0.5 ml-5 truncate" title='${toolParams}'>參數: ${toolParams}</div>` : ''}
                             
                             <details class="mt-1 ml-5">
                                 <summary class="text-[10px] text-blue-500/80 cursor-pointer hover:text-blue-600 transition-colors w-fit">查看執行結果</summary>
@@ -748,13 +849,55 @@ class IntelligentAnalysis {
 
         switch (event.type) {
             case 'thought':
+            case 'thought':
                 // 強制展開細節區域
                 if (state.detailsWrapper) state.detailsWrapper.open = true;
                 state.thoughtsContainer.classList.remove('hidden');
-                const tDiv = document.createElement('div');
-                tDiv.className = "mb-1.5 last:mb-0 line-clamp-3 hover:line-clamp-none cursor-default transition-all";
-                tDiv.textContent = `Thought: ${event.content}`;
-                state.thoughtsContent.appendChild(tDiv);
+
+                // [Enhanced Visualization for QC]
+                if (event.content && event.content.includes("【QC 判決】")) {
+                    const qcDiv = document.createElement('div');
+                    qcDiv.className = "mb-2 p-3 bg-white border border-gray-200 rounded-lg shadow-sm";
+
+                    // Parse Content
+                    // Expected Format: "【QC 判決】\n結果: ✅ PASS\n原因: ...\n指引: ..."
+                    const lines = event.content.split('\n');
+                    const resultLine = lines.find(l => l.includes('結果:')) || '結果: 未知';
+                    const reasonLine = lines.find(l => l.includes('原因:')) || '原因: 無';
+                    const guideLine = lines.find(l => l.includes('指引:')) || '指引: 無';
+
+                    const isPass = resultLine.includes('✅') || resultLine.includes('PASS');
+                    const statusColor = isPass ? 'text-green-600 bg-green-50 border-green-200' : 'text-red-600 bg-red-50 border-red-200';
+                    const icon = isPass ? '✅' : '❌';
+
+                    qcDiv.innerHTML = `
+                        <div class="flex items-center gap-2 mb-2 pb-2 border-b border-gray-100">
+                            <span class="text-lg">⚖️</span>
+                            <span class="font-bold text-gray-700 text-sm">品質檢核報告 (QC Report)</span>
+                            <span class="ml-auto text-xs font-mono px-2 py-0.5 rounded border ${statusColor}">
+                                ${resultLine.split(':')[1].trim()}
+                            </span>
+                        </div>
+                        <div class="space-y-1.5 text-xs">
+                            <div class="flex gap-2">
+                                <span class="text-gray-400 font-medium min-w-[30px]">原因</span>
+                                <span class="text-gray-600">${reasonLine.split(':')[1].trim()}</span>
+                            </div>
+                            <div class="flex gap-2">
+                                <span class="text-gray-400 font-medium min-w-[30px]">指引</span>
+                                <span class="text-blue-600 font-medium">${guideLine.split(':')[1].trim()}</span>
+                            </div>
+                        </div>
+                    `;
+                    state.thoughtsContent.appendChild(qcDiv);
+                } else {
+                    // Regular Thought
+                    const tDiv = document.createElement('div');
+                    tDiv.className = "mb-1.5 last:mb-0 line-clamp-3 hover:line-clamp-none cursor-default transition-all";
+                    tDiv.textContent = `Thought: ${event.content}`;
+                    state.thoughtsContent.appendChild(tDiv);
+                }
+
                 this.scrollToBottom();
                 break;
 
@@ -764,7 +907,8 @@ class IntelligentAnalysis {
                 state.toolsContainer.classList.remove('hidden');
                 const toolIndex = state.toolsContainer.children.length + 1;
                 const toolDiv = document.createElement('div');
-                toolDiv.className = "tool-step border-l-2 border-blue-200 pl-3 py-1 bg-slate-50/50 rounded-r";
+                // [MODIFIED] Hide the tool execution block entirely per user request
+                toolDiv.className = "tool-step border-l-2 border-blue-200 pl-3 py-1 bg-slate-50/50 rounded-r hidden";
                 toolDiv.dataset.toolName = event.tool;
 
                 const paramsStr = JSON.stringify(event.params || {});
@@ -775,7 +919,7 @@ class IntelligentAnalysis {
                         執行分析: <span class="text-blue-700 font-mono">${event.tool}</span>
                         <span class="tool-status ml-auto text-[9px] text-yellow-600 bg-yellow-50 px-1 rounded">執行中...</span>
                     </div>
-                    <div class="text-[10px] text-slate-400 font-mono mt-0.5 ml-5 truncate" title='${paramsStr}'>參數: ${paramsStr}</div>
+                    <div class="text-[10px] text-slate-400 font-mono mt-0.5 ml-5 truncate hidden" title='${paramsStr}'>參數: ${paramsStr}</div>
                     <details class="mt-1 ml-5 hidden result-details">
                         <summary class="text-[10px] text-blue-500/80 cursor-pointer hover:text-blue-600 transition-colors w-fit">查看執行結果</summary>
                         <div class="mt-1 p-2 bg-white border border-slate-100 rounded shadow-sm overflow-auto max-h-48">
@@ -809,7 +953,14 @@ class IntelligentAnalysis {
                 // Append to log instead of replacing statusText header
                 if (event.content && state.statusLog) {
                     const logItem = document.createElement('div');
-                    logItem.textContent = event.content;
+
+                    // Add Step Numbering
+                    if (!state.logStepCount) state.logStepCount = 1;
+
+                    // Only number significant steps (skip simple status updates if needed, currently numbering all)
+                    logItem.textContent = `Step ${state.logStepCount}: ${event.content}`;
+                    state.logStepCount++;
+
                     // Add a small timestamp? Optional.
                     // logItem.textContent = `[${new Date().toLocaleTimeString()}] ${event.content}`;
                     state.statusLog.appendChild(logItem);
@@ -926,6 +1077,99 @@ class IntelligentAnalysis {
                     setTimeout(() => {
                         this.renderCharts(state.markdownBody);
                     }, 50);
+
+                    // --- Render Structured Report Cards (if available) ---
+                    const sr = (event.tool_result && event.tool_result.structured_report) || null;
+                    if (sr && sr.findings && sr.findings.length > 0) {
+                        const reportDiv = document.createElement('div');
+                        reportDiv.style.cssText = 'margin-top: 24px; border-top: 2px solid rgba(99,102,241,0.2); padding-top: 20px;';
+
+                        // Section Title
+                        const titleEl = document.createElement('div');
+                        titleEl.style.cssText = 'font-size: 13px; font-weight: 700; color: #6366f1; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 12px;';
+                        titleEl.textContent = 'Structured Findings';
+                        reportDiv.appendChild(titleEl);
+
+                        // Executive Summary Banner
+                        if (sr.executive_summary) {
+                            const summaryBanner = document.createElement('div');
+                            summaryBanner.style.cssText = 'padding: 12px 16px; background: linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%); border: 1px solid #c7d2fe; border-radius: 10px; font-size: 13px; color: #3730a3; font-weight: 500; margin-bottom: 14px; line-height: 1.6;';
+                            summaryBanner.textContent = sr.executive_summary;
+                            reportDiv.appendChild(summaryBanner);
+                        }
+
+                        // Severity style maps
+                        const sevStyles = {
+                            'CRITICAL': { bg: 'linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%)', border: '#fca5a5', badge: '#dc2626', badgeBg: '#fee2e2', text: '#991b1b' },
+                            'HIGH': { bg: 'linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%)', border: '#fdba74', badge: '#ea580c', badgeBg: '#ffedd5', text: '#9a3412' },
+                            'MEDIUM': { bg: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)', border: '#fcd34d', badge: '#d97706', badgeBg: '#fef3c7', text: '#92400e' },
+                            'LOW': { bg: 'linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)', border: '#86efac', badge: '#16a34a', badgeBg: '#dcfce7', text: '#166534' },
+                        };
+
+                        // Findings Cards
+                        sr.findings.forEach(finding => {
+                            const card = document.createElement('div');
+                            const sev = (finding.severity || 'LOW').toUpperCase();
+                            const s = sevStyles[sev] || sevStyles['LOW'];
+                            card.style.cssText = `padding: 12px 16px; background: ${s.bg}; border: 1px solid ${s.border}; border-left: 4px solid ${s.badge}; border-radius: 8px; margin-bottom: 8px; transition: transform 0.15s ease;`;
+                            card.onmouseenter = () => card.style.transform = 'translateX(4px)';
+                            card.onmouseleave = () => card.style.transform = 'translateX(0)';
+
+                            // Badge + Title row
+                            const header = document.createElement('div');
+                            header.style.cssText = 'display: flex; align-items: center; gap: 8px; margin-bottom: 4px;';
+
+                            const badge = document.createElement('span');
+                            badge.style.cssText = `font-size: 10px; font-weight: 800; padding: 2px 8px; border-radius: 4px; background: ${s.badgeBg}; color: ${s.badge}; letter-spacing: 0.5px;`;
+                            badge.textContent = sev;
+
+                            const title = document.createElement('span');
+                            title.style.cssText = `font-size: 13px; font-weight: 600; color: ${s.text};`;
+                            title.textContent = finding.title || '';
+
+                            header.appendChild(badge);
+                            header.appendChild(title);
+                            card.appendChild(header);
+
+                            if (finding.detail) {
+                                const detail = document.createElement('div');
+                                detail.style.cssText = 'font-size: 12px; color: #64748b; margin-top: 4px; line-height: 1.5;';
+                                detail.textContent = finding.detail;
+                                card.appendChild(detail);
+                            }
+
+                            reportDiv.appendChild(card);
+                        });
+
+                        // Action Items
+                        if (sr.action_items && sr.action_items.length > 0) {
+                            const actionsDiv = document.createElement('div');
+                            actionsDiv.style.cssText = 'margin-top: 14px; padding: 12px 16px; background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%); border: 1px solid #e2e8f0; border-radius: 10px;';
+
+                            const actTitle = document.createElement('div');
+                            actTitle.style.cssText = 'font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 1.2px; margin-bottom: 10px;';
+                            actTitle.textContent = 'Action Items';
+                            actionsDiv.appendChild(actTitle);
+
+                            const prioColors = { 'HIGH': '#ef4444', 'MEDIUM': '#f59e0b', 'LOW': '#22c55e' };
+                            sr.action_items.forEach(item => {
+                                const li = document.createElement('div');
+                                li.style.cssText = 'font-size: 13px; color: #475569; display: flex; align-items: flex-start; gap: 8px; margin-bottom: 6px; line-height: 1.5;';
+                                const prio = (item.priority || 'MEDIUM').toUpperCase();
+                                const dot = document.createElement('span');
+                                dot.style.cssText = `width: 8px; height: 8px; border-radius: 50%; background: ${prioColors[prio] || '#94a3b8'}; margin-top: 5px; flex-shrink: 0;`;
+                                const text = document.createElement('span');
+                                text.textContent = item.action || item;
+                                li.appendChild(dot);
+                                li.appendChild(text);
+                                actionsDiv.appendChild(li);
+                            });
+
+                            reportDiv.appendChild(actionsDiv);
+                        }
+
+                        state.markdownBody.appendChild(reportDiv);
+                    }
                 }
 
                 if (state.cursorCb) state.cursorCb.remove(); // 移除殘留光標
@@ -1246,9 +1490,13 @@ class IntelligentAnalysis {
             });
         }
 
-        // If filtering and only one result, or results exist, select the first valid one
-        // User UX improvement: if there's exactly one match, pre-select it? 
-        // No, stay with placeholder to avoid accidents unless explicitly requested.
+        // If filtering and we have results, auto-select the first one for better UX
+        if (filter && select.options.length > 1) {
+            select.selectedIndex = 1;
+        } else {
+            // Otherwise keep placeholder selected
+            select.value = "";
+        }
     }
 
     confirmParamSelection() {
@@ -1293,6 +1541,640 @@ class IntelligentAnalysis {
             fastBtn.classList.remove('active');
         }
     }
+    // --- Data Mining Modal Methods ---
+    openDataMiningModal() {
+        if (!this.currentFileParams || this.currentFileParams.length === 0) {
+            alert('無法獲取參數列表，請確認檔案已正確加載。');
+            return;
+        }
+
+        try {
+            const modal = document.getElementById('data-mining-modal');
+            if (!modal) {
+                console.error('Data Mining Modal element not found');
+                alert('系統錯誤：找不到視窗元件，請嘗試重新整理頁面。');
+                return;
+            }
+
+            modal.classList.remove('hidden');
+
+            // Initialize State
+            this.miningState = {
+                y: new Set(),
+                x: new Set(),
+                selectedSource: new Set(),
+                selectedY: new Set(),
+                selectedX: new Set()
+            };
+
+            // Bind Middle Buttons
+            const btnToY = document.getElementById('btn-to-y');
+            const btnToX = document.getElementById('btn-to-x');
+            const btnReturn = document.getElementById('btn-return');
+
+            if (btnToY) btnToY.onclick = () => this.moveSelectedSourceTo('y');
+            if (btnToX) btnToX.onclick = () => this.moveSelectedSourceTo('x');
+            if (btnReturn) btnReturn.onclick = () => this.moveAnySelectedBack();
+
+            // Populate lists
+            this.renderMiningLists();
+
+            // Reset Inputs (Safe check)
+            const ids = ['dm-range-start', 'dm-range-end', 'dm-source-search'];
+            ids.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.value = '';
+            });
+
+            // Bind search event
+            const searchInput = document.getElementById('dm-source-search');
+            if (searchInput) {
+                searchInput.oninput = (e) => this.filterMiningSource(e.target.value);
+            }
+
+            // Bind select all remaining to X
+            const selectAllBtn = document.getElementById('dm-x-select-all');
+            if (selectAllBtn) {
+                selectAllBtn.onclick = () => this.moveAllSourceToX();
+            }
+
+        } catch (err) {
+            console.error('Error opening mining modal:', err);
+            alert('開啟視窗時發生錯誤：' + err.message);
+        }
+    }
+
+    renderMiningLists() {
+        const sourceList = document.getElementById('dm-source-list');
+        const yList = document.getElementById('dm-y-list');
+
+        if (!sourceList || !yList) return;
+
+        // Clear current content
+        const searchInput = document.getElementById('dm-source-search');
+
+        sourceList.innerHTML = '';
+        yList.innerHTML = '';
+
+        if (this.miningState.y.size === 0) {
+            yList.innerHTML = '<div id="dm-y-placeholder" class="absolute inset-0 flex items-center justify-center text-gray-400 text-sm pointer-events-none select-none">無選取</div>';
+        }
+
+        // 1. Render Source List
+        this.currentFileParams.forEach(p => {
+            if (this.miningState.y.has(p)) return;
+
+            const isSelected = this.miningState.selectedSource.has(p);
+            const div = document.createElement('div');
+            div.className = `flex items-center gap-2 py-2 px-3 border border-transparent rounded-lg cursor-pointer transition-all select-none ${isSelected ? 'bg-blue-100 border-blue-300 text-blue-900' : 'hover:bg-gray-100 text-gray-700'}`;
+            div.onclick = (e) => this.toggleSelection(p, 'source', e);
+            div.innerHTML = `<span class="truncate text-sm flex-1 pointer-events-none select-none" title="${p}">${p}</span>`;
+            sourceList.appendChild(div);
+        });
+
+        // 2. Render Y List
+        this.miningState.y.forEach(p => {
+            const isSelected = this.miningState.selectedY.has(p);
+            const div = document.createElement('div');
+            div.className = `flex items-center gap-2 py-2 px-3 border border-transparent rounded-lg cursor-pointer transition-all select-none ${isSelected ? 'bg-blue-200 border-blue-400 text-blue-900' : 'hover:bg-blue-100 text-gray-700'}`;
+            div.onclick = (e) => this.toggleSelection(p, 'y', e);
+            div.innerHTML = `<span class="truncate text-sm flex-1 pointer-events-none select-none" title="${p}">${p}</span>`;
+            yList.appendChild(div);
+        });
+
+        this.updateMiningCounts();
+
+        // Re-apply filter if keyword exists
+        if (searchInput && searchInput.value) {
+            this.filterMiningSource(searchInput.value);
+        }
+    }
+
+    moveMiningItem(item, from, to) {
+        if (!this.miningState) return;
+
+        // Update State
+        if (to === 'y') {
+            this.miningState.y.add(item);
+        } else if (to === 'source') {
+            this.miningState.y.delete(item);
+        }
+
+        // Re-render
+        this.renderMiningLists();
+    }
+
+    moveAllSourceToX() {
+        if (!this.miningState) return;
+        this.currentFileParams.forEach(p => {
+            if (!this.miningState.y.has(p)) {
+                this.miningState.x.add(p);
+            }
+        });
+        this.renderMiningLists();
+    }
+
+    updateMiningCounts() {
+        if (!this.miningState) return;
+        const sourceCount = this.currentFileParams.length - this.miningState.y.size;
+
+        const sCountEl = document.getElementById('dm-source-count');
+        const yCountEl = document.getElementById('dm-y-count');
+
+        if (sCountEl) sCountEl.innerText = sourceCount;
+        if (yCountEl) yCountEl.innerText = this.miningState.y.size;
+
+        this.updateButtonStates();
+    }
+
+    updateButtonStates() {
+        const btnToY = document.getElementById('btn-to-y');
+        const btnReturn = document.getElementById('btn-return');
+
+        const hasSource = this.miningState.selectedSource && this.miningState.selectedSource.size > 0;
+        const hasDest = this.miningState.selectedY && this.miningState.selectedY.size > 0;
+
+        if (btnToY) btnToY.disabled = !hasSource;
+        if (btnReturn) btnReturn.disabled = !hasDest;
+
+        [btnToY, btnReturn].forEach(btn => {
+            if (btn) {
+                if (btn.disabled) btn.classList.add('opacity-50', 'cursor-not-allowed');
+                else btn.classList.remove('opacity-50', 'cursor-not-allowed');
+            }
+        });
+    }
+
+    toggleSelection(item, type, event) {
+        if (!this.miningState) return;
+
+        let targetSet, lastProp;
+        if (type === 'source') {
+            targetSet = this.miningState.selectedSource;
+            lastProp = 'lastSource';
+        } else if (type === 'y') {
+            targetSet = this.miningState.selectedY;
+            lastProp = 'lastY';
+        } else return;
+
+        // Shift Click (Range)
+        if (event && event.shiftKey && this.miningState[lastProp]) {
+            let list;
+            if (type === 'source') {
+                list = this.currentFileParams.filter(p => !this.miningState.y.has(p));
+            } else {
+                list = Array.from(this.miningState.y);
+            }
+            const startIdx = list.indexOf(this.miningState[lastProp]);
+            const endIdx = list.indexOf(item);
+
+            if (startIdx !== -1 && endIdx !== -1) {
+                const low = Math.min(startIdx, endIdx);
+                const high = Math.max(startIdx, endIdx);
+                if (!(event.ctrlKey || event.metaKey)) targetSet.clear();
+                for (let i = low; i <= high; i++) targetSet.add(list[i]);
+            }
+        }
+        // Ctrl Click (Toggle)
+        else if (event && (event.ctrlKey || event.metaKey)) {
+            if (targetSet.has(item)) targetSet.delete(item);
+            else targetSet.add(item);
+            this.miningState[lastProp] = item;
+        }
+        // Single Click
+        else {
+            targetSet.clear();
+            targetSet.add(item);
+            this.miningState[lastProp] = item;
+        }
+        this.renderMiningLists();
+    }
+
+    moveSelectedSourceTo(target) {
+        if (!this.miningState) return;
+        const items = this.miningState.selectedSource;
+        if (items.size === 0) return;
+        items.forEach(item => this.miningState.y.add(item));
+        this.miningState.selectedSource.clear();
+        this.renderMiningLists();
+    }
+
+    moveAnySelectedBack() {
+        if (!this.miningState) return;
+        if (this.miningState.selectedY) {
+            this.miningState.selectedY.forEach(item => this.miningState.y.delete(item));
+            this.miningState.selectedY.clear();
+        }
+        this.renderMiningLists();
+    }
+
+    filterMiningSource(keyword) {
+        const list = document.getElementById('dm-source-list');
+        if (!list) return;
+        const items = list.querySelectorAll('.dm-source-item');
+        const lowerKw = keyword.toLowerCase();
+        items.forEach(item => {
+            const textSpan = item.querySelector('span.truncate');
+            if (textSpan) {
+                const text = textSpan.innerText.toLowerCase();
+                if (text.includes(lowerKw)) {
+                    item.style.display = 'flex';
+                } else {
+                    item.style.display = 'none';
+                }
+            }
+        });
+    }
+
+    confirmDataMining() {
+        console.log('[DEBUG] confirmDataMining called');
+        const targets = Array.from(this.miningState.y);
+        console.log('[DEBUG] targets:', targets);
+
+        const start = document.getElementById('dm-range-start').value.trim();
+        const end = document.getElementById('dm-range-end').value.trim();
+
+        let query = '';
+        let targetRange = null;
+
+        // Build target range
+        if (start && end) {
+            targetRange = `${start}-${end}`;
+        } else if (start) {
+            targetRange = `${start}-`;
+        } else if (end) {
+            targetRange = `-${end}`;
+        }
+
+        // Build query based on selections
+        if (targets.length === 0) {
+            // No specific targets - analyze all fields
+            query = `請對所有欄位進行深度資料探勘與異常分析`;
+        } else {
+            // Specific targets selected
+            query = `請對目標欄位 ${targets.join(', ')} 進行深度資料探勘與異常分析`;
+        }
+
+        // Add range if specified
+        if (targetRange) {
+            query += `，分析區間為第 ${targetRange} 筆`;
+        } else {
+            query += `，分析全域數據`;
+        }
+
+        // Add instruction for AI
+        query += `。請自動關聯其他所有可能的影響因子，找出與目標變數相關性最高的特徵。`;
+
+        // Store structured metadata for sendMessage
+        this.miningMetadata = {
+            suspect_params: targets.length > 0 ? targets : null,
+            target_range: targetRange
+        };
+
+        this.elements.userInput.value = query;
+        this.elements.userInput.style.height = 'auto';
+        this.elements.userInput.style.height = this.elements.userInput.scrollHeight + 'px';
+        this.elements.btnSend.disabled = false;
+        this.sendMessage();
+
+        document.getElementById('data-mining-modal').classList.add('hidden');
+    }
+
+    // ========== Session Management ==========
+
+    async loadSessionList() {
+        try {
+            const response = await fetch(`/api/analysis/sessions?user_id=${encodeURIComponent(this.accountId)}`);
+            if (!response.ok) throw new Error('Failed to load sessions');
+            const data = await response.json();
+            this.renderSessionList(data.sessions || []);
+        } catch (err) {
+            console.error('[Sessions] Load error:', err);
+            if (this.elements.sessionList) {
+                this.elements.sessionList.innerHTML =
+                    '<div class="text-xs text-gray-400 text-center py-4">無法載入聊天室列表</div>';
+            }
+        }
+    }
+
+    renderSessionList(sessions) {
+        const container = this.elements.sessionList;
+        if (!container) return;
+
+        if (!sessions || sessions.length === 0) {
+            container.innerHTML =
+                '<div class="text-xs text-gray-300 text-center py-4">暫無聊天室</div>';
+            return;
+        }
+
+        container.innerHTML = sessions.map(s => {
+            const isActive = s.session_id === this.sessionId;
+            const title = this._escapeHtml(s.title || '新對話');
+            const count = s.message_count || 0;
+            const timeStr = s.last_active
+                ? new Date(s.last_active).toLocaleString('zh-TW', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                : '';
+
+            return `
+                <div class="session-item group flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-all
+                    ${isActive ? 'bg-blue-50 border border-blue-200' : 'bg-white border border-transparent hover:bg-gray-100 hover:border-gray-200'}"
+                    data-session-id="${s.session_id}">
+                    <div class="flex-1 min-w-0" onclick="window.ia.switchSession('${s.session_id}')">
+                        <div class="text-xs font-medium truncate ${isActive ? 'text-blue-700' : 'text-gray-700'}">
+                            ${title}
+                        </div>
+                        <div class="text-[10px] text-gray-400 mt-0.5">
+                            ${count} 條訊息 ${timeStr ? '· ' + timeStr : ''}
+                        </div>
+                    </div>
+                    ${!isActive ? `
+                    <button onclick="event.stopPropagation(); window.ia.deleteSession('${s.session_id}')"
+                        class="hidden group-hover:flex w-5 h-5 items-center justify-center text-gray-300 hover:text-red-500 rounded transition-colors flex-shrink-0"
+                        title="刪除">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>` : ''}
+                </div>
+            `;
+        }).join('');
+    }
+
+    async createNewSession() {
+        // 新聊天室 ID 以帳號名為前綴，確保帳號隔離
+        const uuid = window.crypto.randomUUID();
+        const newId = `${this.accountId}_${uuid}`;
+        try {
+            await fetch('/api/analysis/sessions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ session_id: newId }),
+            });
+        } catch (err) {
+            console.warn('[Sessions] Create API failed, continuing anyway:', err);
+        }
+
+        // Switch to new session
+        this.sessionId = newId;
+        this.currentFileId = null;
+        this.currentFilename = null;
+
+        // Reset UI
+        this.elements.chatContainer.innerHTML = '';
+        if (this.elements.welcomeScreen) {
+            this.elements.welcomeScreen.style.display = '';
+        }
+        this.elements.fileSelect.value = '';
+        if (this.elements.fileInfoPanel) {
+            this.elements.fileInfoPanel.classList.add('hidden');
+        }
+
+        // Reload file list for new session and refresh session list
+        this.loadSessionList();
+        console.log(`[Sessions] Created new session: ${newId}`);
+    }
+
+    async switchSession(sessionId) {
+        if (sessionId === this.sessionId) return;
+
+        // Guard: 分析進行中時警告用戶
+        if (this.isLoading) {
+            const confirmed = confirm('分析正在進行中，切換聊天室可能導致當前分析結果遺失。\n\n確定要切換嗎？');
+            if (!confirmed) return;
+            // 中斷當前分析
+            this.stopGeneration();
+        }
+
+        this.sessionId = sessionId;
+        this.currentFileId = null;
+        this.currentFilename = null;
+
+        // Reset UI
+        this.elements.chatContainer.innerHTML = '';
+        if (this.elements.welcomeScreen) {
+            this.elements.welcomeScreen.style.display = 'none';
+        }
+        this.elements.fileSelect.value = '';
+        if (this.elements.fileInfoPanel) {
+            this.elements.fileInfoPanel.classList.add('hidden');
+        }
+
+        // Load chat history for this session
+        await this._loadSessionHistory(sessionId);
+
+        // Refresh sidebar (highlight active session)
+        this.loadSessionList();
+        // Reload file list for this session
+        this.loadFileList();
+        console.log(`[Sessions] Switched to session: ${sessionId}`);
+    }
+
+    async _loadSessionHistory(sessionId) {
+        try {
+            const response = await fetch(`/api/analysis/sessions/${encodeURIComponent(sessionId)}/history?last_n=50`);
+            if (!response.ok) return;
+            const data = await response.json();
+            const messages = data.messages || [];
+
+            if (messages.length === 0) {
+                // No history, show welcome screen
+                if (this.elements.welcomeScreen) {
+                    this.elements.welcomeScreen.style.display = '';
+                }
+                return;
+            }
+
+            // Render each historical message
+            for (const msg of messages) {
+                if (msg.role === 'system') continue; // Skip system messages
+                const isUser = msg.role === 'user';
+                const row = document.createElement('div');
+                row.className = `flex ${isUser ? 'justify-end' : 'justify-start'} mb-3`;
+                row.innerHTML = `
+                    <div class="${isUser
+                        ? 'bg-blue-500 text-white rounded-2xl rounded-br-md px-4 py-2.5 max-w-[75%]'
+                        : 'bg-white border border-gray-100 rounded-2xl rounded-bl-md px-4 py-2.5 max-w-[85%] shadow-sm'}">
+                        <div class="text-sm whitespace-pre-wrap leading-relaxed">${isUser ? this._escapeHtml(msg.content) : this._renderMarkdown(msg.content || '')
+                    }</div>
+                    </div>
+                `;
+                this.elements.chatContainer.appendChild(row);
+            }
+            this.scrollToBottom();
+        } catch (err) {
+            console.warn('[Sessions] Failed to load history:', err);
+        }
+    }
+
+    async deleteSession(sessionId) {
+        if (!confirm('確定要刪除此聊天室嗎？')) return;
+        try {
+            await fetch(`/api/analysis/sessions/${sessionId}`, { method: 'DELETE' });
+        } catch (err) {
+            console.warn('[Sessions] Delete failed:', err);
+        }
+        this.loadSessionList();
+    }
+
+    _escapeHtml(str) {
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    }
+
+    // ========== Session Management ==========
+
+    async loadSessionList() {
+        if (!this.elements.sessionList) {
+            console.warn('[Sessions] sessionList element is null');
+            return;
+        }
+        try {
+            this.elements.sessionList.innerHTML = '<div class="text-xs text-gray-400 text-center py-3">載入中...</div>';
+            const response = await fetch('/api/analysis/sessions');
+            if (!response.ok) throw new Error('Failed to load sessions, status: ' + response.status);
+            const data = await response.json();
+            console.log('[Sessions] Loaded', (data.sessions || []).length, 'sessions');
+            this.renderSessionList(data.sessions || []);
+        } catch (err) {
+            console.error('[Sessions] Load error:', err);
+            if (this.elements.sessionList) {
+                this.elements.sessionList.innerHTML = '<div class="text-xs text-red-400 text-center py-3">無法載入聊天室</div>';
+            }
+        }
+    }
+
+    async createNewSession() {
+        try {
+            const response = await fetch('/api/analysis/sessions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title: '新對話' })
+            });
+            if (!response.ok) throw new Error('Failed to create session');
+            const data = await response.json();
+            this.sessionId = data.session_id;
+            // Clear chat and reload session list
+            if (this.elements.chatContainer) {
+                this.elements.chatContainer.innerHTML = '';
+            }
+            this.conversationId = null;
+            await this.loadSessionList();
+        } catch (err) {
+            console.error('[Sessions] Create error:', err);
+        }
+    }
+
+    async switchSession(sessionId) {
+        console.log('[Sessions] switchSession called:', sessionId, 'current:', this.sessionId);
+        if (sessionId === this.sessionId) {
+            console.log('[Sessions] Same session, skipping');
+            return;
+        }
+        this.sessionId = sessionId;
+        // Clear current chat
+        if (this.elements.chatContainer) {
+            this.elements.chatContainer.innerHTML = '';
+        }
+        this.conversationId = null;
+
+        // Load chat history for this session
+        try {
+            const response = await fetch(`/api/analysis/sessions/${sessionId}/history`);
+            if (response.ok) {
+                const data = await response.json();
+                const messages = data.messages || [];
+                for (const msg of messages) {
+                    this.addMessage(msg.role, msg.content);
+                }
+            }
+        } catch (err) {
+            console.error('[Sessions] History load error:', err);
+        }
+
+        // Update active state in UI
+        this.renderActiveSession(sessionId);
+    }
+
+    renderActiveSession(activeId) {
+        if (!this.elements.sessionList) return;
+        const items = this.elements.sessionList.querySelectorAll('[data-session-id]');
+        items.forEach(item => {
+            if (item.dataset.sessionId === activeId) {
+                item.classList.add('bg-blue-50', 'border-blue-200');
+                item.classList.remove('border-transparent', 'hover:bg-gray-50');
+            } else {
+                item.classList.remove('bg-blue-50', 'border-blue-200');
+                item.classList.add('border-transparent', 'hover:bg-gray-50');
+            }
+        });
+    }
+
+    renderSessionList(sessions) {
+        if (!this.elements.sessionList) return;
+
+        if (!sessions || sessions.length === 0) {
+            this.elements.sessionList.innerHTML = '<div class="text-xs text-gray-400 text-center py-3">暫無聊天室</div>';
+            return;
+        }
+
+        console.log('[Sessions] renderSessionList:', sessions.length, 'sessions');
+        this.elements.sessionList.innerHTML = sessions.map(s => {
+            const isActive = s.session_id === this.sessionId;
+            const title = s.title || s.session_id;
+            const msgCount = s.message_count || 0;
+            const lastActive = s.last_active ? new Date(s.last_active).toLocaleString('zh-TW', {
+                month: 'numeric', day: 'numeric',
+                hour: '2-digit', minute: '2-digit'
+            }) : '';
+            const activeCls = isActive
+                ? 'bg-blue-50 border-blue-200'
+                : 'border-transparent hover:bg-gray-50';
+
+            return `
+                <div class="session-item p-2 rounded-lg border cursor-pointer transition-colors ${activeCls}"
+                     data-session-id="${s.session_id}"
+                     onclick="window.ia && window.ia.switchSession('${s.session_id}')">
+                    <div class="flex items-center justify-between">
+                        <div class="flex-1 min-w-0">
+                            <div class="text-sm font-medium text-gray-700 truncate">${this._escapeHtml(title)}</div>
+                            <div class="text-xs text-gray-400 mt-0.5">
+                                ${msgCount} 條訊息${lastActive ? ' · ' + lastActive : ''}
+                            </div>
+                        </div>
+                        <button class="session-delete-btn ml-1 p-1 text-gray-300 hover:text-red-500 transition-colors"
+                                data-delete-session="${s.session_id}" title="刪除"
+                                onclick="event.stopPropagation(); window.ia && window.ia.deleteSession('${s.session_id}')">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        // Event delegation 已移到 init() 中，避免重複綁定
+    }
+
+    async deleteSession(sessionId) {
+        try {
+            const response = await fetch(`/api/analysis/sessions/${sessionId}`, {
+                method: 'DELETE'
+            });
+            if (!response.ok) throw new Error('Delete failed');
+            // If deleted the current session, switch to new
+            if (sessionId === this.sessionId) {
+                this.sessionId = 'default';
+                if (this.elements.chatContainer) {
+                    this.elements.chatContainer.innerHTML = '';
+                }
+            }
+            await this.loadSessionList();
+        } catch (err) {
+            console.error('[Sessions] Delete error:', err);
+        }
+    }
 }
 
 // Initialize
@@ -1308,6 +2190,19 @@ window.setAnalysisMode = (mode) => {
 
 window.openParamSelectionModal = () => window.ia?.openParamSelectionModal();
 window.closeParamSelectionModal = () => window.ia?.closeParamSelectionModal();
+window.confirmParamSelection = () => window.ia?.confirmParamSelection();
+window.updateParamCount = () => {
+    const checkboxes = document.querySelectorAll('input[name="trend-param"]:checked');
+    const countSpan = document.getElementById('trend-param-count');
+    if (countSpan) countSpan.innerText = checkboxes.length;
+};
+
+// Data Mining Modal Global Accessors
+window.openDataMiningModal = () => window.ia?.openDataMiningModal();
+window.closeDataMiningModal = () => {
+    const modal = document.getElementById('data-mining-modal');
+    if (modal) modal.classList.add('hidden');
+};
 window.confirmParamSelection = () => window.ia?.confirmParamSelection();
 window.updateParamCount = () => {
     const checkboxes = document.querySelectorAll('input[name="trend-param"]:checked');

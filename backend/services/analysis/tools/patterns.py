@@ -110,6 +110,54 @@ class FindTemporalPatternsTool(AnalysisTool):
         seg2_mean = float(data.iloc[third : 2 * third].mean())
         seg3_mean = float(data.iloc[2 * third :].mean())
 
+        # === 4. 變化率分析 (Rate of Change / 一階導數) ===
+        diff_series = data.diff().dropna()  # 一階差分
+        diff_mean = float(diff_series.mean())
+        diff_std = float(diff_series.std()) if len(diff_series) > 1 else 0.0
+        diff_abs_mean = float(diff_series.abs().mean())
+
+        # 滾動標準差 (局部波動性)
+        roll_window = max(5, n // 20)
+        rolling_std = data.rolling(window=roll_window).std().dropna()
+        rolling_std_cv = (
+            float(rolling_std.std() / (rolling_std.mean() + 1e-10))
+            if len(rolling_std) > 1
+            else 0.0
+        )
+
+        # 穩定性分類
+        # - 線性漂移: 差分均值遠離0 + 差分標準差小 (穩定地偏移)
+        # - 不穩定震盪: 差分標準差大 + 滾動標準差變異大
+        # - 穩定: 差分均值接近0 + 差分標準差小
+        drift_ratio = abs(diff_mean) / (diff_std + 1e-10)
+
+        if drift_ratio > 0.5 and abs(slope_pct) > 5:
+            stability_class = "LINEAR_DRIFT"
+            stability_desc = (
+                f"線性老化/漂移: 變化率穩定且方向一致 "
+                f"(平均變化率={diff_mean:.6f}/step, 變化率標準差={diff_std:.6f})"
+            )
+        elif rolling_std_cv > 0.5 or diff_std > 2 * diff_abs_mean:
+            stability_class = "UNSTABLE_OSCILLATION"
+            stability_desc = (
+                f"不穩定震盪: 局部波動性顯著變化 "
+                f"(滾動標準差 CV={rolling_std_cv:.3f}, 差分標準差={diff_std:.6f})"
+            )
+        else:
+            stability_class = "STABLE"
+            stability_desc = (
+                f"穩定運作: 變化率對稱且波動一致 (平均變化率={diff_mean:.6f}/step)"
+            )
+
+        rate_of_change = {
+            "diff_mean": round(diff_mean, 6),
+            "diff_std": round(diff_std, 6),
+            "diff_abs_mean": round(diff_abs_mean, 6),
+            "rolling_std_cv": round(rolling_std_cv, 4),
+            "stability_class": stability_class,
+            "stability_description": stability_desc,
+        }
+
         # 構建結論
         conclusion_parts = []
         conclusion_parts.append(
@@ -133,6 +181,9 @@ class FindTemporalPatternsTool(AnalysisTool):
         else:
             conclusion_parts.append("CUSUM 未偵測到顯著製程漂移。")
 
+        # 加入穩定性結論
+        conclusion_parts.append(f"動態穩定性: {stability_desc}。")
+
         return {
             "parameter": col,
             "total_points": n,
@@ -146,6 +197,7 @@ class FindTemporalPatternsTool(AnalysisTool):
                 "middle_third": seg2_mean,
                 "last_third": seg3_mean,
             },
+            "rate_of_change": rate_of_change,
             "cusum_change_points": change_points[:10],
             "cusum_total_shifts": len(change_points),
             "conclusion": " ".join(conclusion_parts),

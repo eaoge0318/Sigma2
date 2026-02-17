@@ -106,48 +106,51 @@ class FileService:
         except Exception as e:
             raise HTTPException(500, detail=f"Upload failed: {str(e)}")
 
+    def _list_files_sync(self, session_id: str) -> Dict[str, List[Dict[str, Any]]]:
+        """同步版本的 list_files，在 thread 中執行以避免阻塞 event loop"""
+        import hashlib
+
+        upload_dir = self.get_user_upload_dir(session_id)
+        analysis_base_dir = os.path.join(self.base_dir, session_id, "analysis")
+
+        files = []
+        if os.path.exists(upload_dir):
+            for filename in os.listdir(upload_dir):
+                if "(參數對應表)_" in filename:
+                    continue
+
+                file_path = os.path.join(upload_dir, filename)
+                if os.path.isfile(file_path):
+                    try:
+                        stats = os.stat(file_path)
+                        file_id = hashlib.md5(filename.encode()).hexdigest()[:12]
+                        summary_path = os.path.join(
+                            analysis_base_dir, file_id, "summary.json"
+                        )
+                        is_indexed = os.path.exists(summary_path)
+
+                        files.append(
+                            {
+                                "filename": filename,
+                                "size": stats.st_size,
+                                "uploaded_at": datetime.fromtimestamp(
+                                    stats.st_mtime
+                                ).strftime("%Y-%m-%d %H:%M:%S"),
+                                "is_indexed": is_indexed,
+                            }
+                        )
+                    except OSError:
+                        continue
+        return {"files": files}
+
     async def list_files(
         self, session_id: str = "default"
     ) -> Dict[str, List[Dict[str, Any]]]:
-        """列出已上傳的檔案 (含索引狀態檢查，並隱藏參數對應表)"""
-        import hashlib  # Ensure hash lib is available
+        """列出已上傳的檔案 (非阻塞: 在獨立 thread 中執行 I/O)"""
+        import asyncio
 
         try:
-            upload_dir = self.get_user_upload_dir(session_id)
-            analysis_base_dir = os.path.join(self.base_dir, session_id, "analysis")
-
-            files = []
-            if os.path.exists(upload_dir):
-                for filename in os.listdir(upload_dir):
-                    # 1. 隱藏參數對應表 (這些檔案由系統自動生成前綴，不應出現在列表中)
-                    if "(參數對應表)_" in filename:
-                        continue
-
-                    file_path = os.path.join(upload_dir, filename)
-                    if os.path.isfile(file_path):
-                        try:
-                            stats = os.stat(file_path)
-
-                            # 2. 檢查是否已索引 (Look for summary.json in analysis folder)
-                            file_id = hashlib.md5(filename.encode()).hexdigest()[:12]
-                            summary_path = os.path.join(
-                                analysis_base_dir, file_id, "summary.json"
-                            )
-                            is_indexed = os.path.exists(summary_path)
-
-                            files.append(
-                                {
-                                    "filename": filename,
-                                    "size": stats.st_size,
-                                    "uploaded_at": datetime.fromtimestamp(
-                                        stats.st_mtime
-                                    ).strftime("%Y-%m-%d %H:%M:%S"),
-                                    "is_indexed": is_indexed,
-                                }
-                            )
-                        except OSError:
-                            continue
-            return {"files": files}
+            return await asyncio.to_thread(self._list_files_sync, session_id)
         except Exception as e:
             raise HTTPException(500, detail=f"List files failed: {str(e)}")
 
@@ -171,6 +174,44 @@ class FileService:
         except Exception as e:
             raise HTTPException(500, detail=f"Delete failed: {str(e)}")
 
+    def _view_file_sync(
+        self, filename: str, page: int, page_size: int, session_id: str
+    ) -> Dict[str, Any]:
+        """同步版本的 view_file，在 thread 中執行以避免阻塞 event loop"""
+        if not filename or ".." in filename:
+            raise HTTPException(400, detail="Invalid filename")
+
+        upload_dir = self.get_user_upload_dir(session_id)
+        file_path = os.path.join(upload_dir, os.path.basename(filename))
+        if not os.path.exists(file_path):
+            raise HTTPException(404, detail="File not found")
+
+        total_lines = 0
+        with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+            for _ in f:
+                total_lines += 1
+
+        start_line = (page - 1) * page_size
+        content_lines = []
+        with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+            for _ in range(start_line):
+                if not f.readline():
+                    break
+
+            for _ in range(page_size):
+                line = f.readline()
+                if not line:
+                    break
+                content_lines.append(line)
+
+        return {
+            "filename": filename,
+            "content": "".join(content_lines),
+            "page": page,
+            "page_size": page_size,
+            "total_lines": total_lines,
+        }
+
     async def view_file(
         self,
         filename: str,
@@ -178,41 +219,13 @@ class FileService:
         page_size: int = 50,
         session_id: str = "default",
     ) -> Dict[str, Any]:
-        """預覽檔案內容"""
+        """預覽檔案內容 (非阻塞: 在獨立 thread 中執行 I/O)"""
+        import asyncio
+
         try:
-            if not filename or ".." in filename:
-                raise HTTPException(400, detail="Invalid filename")
-
-            upload_dir = self.get_user_upload_dir(session_id)
-            file_path = os.path.join(upload_dir, os.path.basename(filename))
-            if not os.path.exists(file_path):
-                raise HTTPException(404, detail="File not found")
-
-            total_lines = 0
-            with open(file_path, "r", encoding="utf-8", errors="replace") as f:
-                for _ in f:
-                    total_lines += 1
-
-            start_line = (page - 1) * page_size
-            content_lines = []
-            with open(file_path, "r", encoding="utf-8", errors="replace") as f:
-                for _ in range(start_line):
-                    if not f.readline():
-                        break
-
-                for _ in range(page_size):
-                    line = f.readline()
-                    if not line:
-                        break
-                    content_lines.append(line)
-
-            return {
-                "filename": filename,
-                "content": "".join(content_lines),
-                "page": page,
-                "page_size": page_size,
-                "total_lines": total_lines,
-            }
+            return await asyncio.to_thread(
+                self._view_file_sync, filename, page, page_size, session_id
+            )
         except HTTPException:
             raise
         except Exception as e:

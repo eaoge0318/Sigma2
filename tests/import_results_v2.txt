@@ -1,0 +1,6 @@
+PASS: correlation_network
+PASS: cv_ranking
+PASS: regime_detection
+PASS: multi_objective
+PASS: executor (all imports OK)
+DONE

@@ -53,8 +53,14 @@ DEFAULT_PRED_ALGO = "XGBoost"
 SHAP_SMOOTHING_WINDOW = 10
 
 # --- LLM 配置 ---
-LLM_API_URL = "http://10.10.20.214:11434/api/chat"
-LLM_MODEL = "gemma3:27b-it-qat"
+LLM_API_URL = "http://10.10.20.214:8000/v1/chat/completions"
+LLM_MODEL = "/models/gemma-3-27b-it-qat-compressed-tensors"
+
+#LLM_API_URL = "http://10.10.20.209:11434/api/chat"
+#LLM_MODEL = "gemma3:27b-it-qat"
+# LLM_API_URL = "http://10.10.20.214:11434/api/chat"
+# LLM_MODEL = "gemma3:27b-it-qat"
+
 
 # --- 儲存與監控 ---
 BASE_STORAGE_DIR = "workspace"
@@ -64,3 +70,6 @@ API_PORT = 8001
 # --- 初始化基本目錄 ---
 os.makedirs(DASHBOARD_DIR, exist_ok=True)
 os.makedirs(BASE_STORAGE_DIR, exist_ok=True)
+
+
+

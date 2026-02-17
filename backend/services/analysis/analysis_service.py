@@ -1,5 +1,6 @@
 import json
 import pandas as pd
+import numpy as np
 import hashlib
 import logging
 from pathlib import Path
@@ -19,6 +20,7 @@ class AnalysisService:
     def __init__(self, base_dir: str = "workspace"):
         self.base_dir = Path(base_dir)
         self.stop_events = {}  # session_id -> bool
+        self._df_cache = {}  # session_id_file_id -> pd.DataFrame
 
     def stop_generation(self, session_id: str):
         """設定停止標誌"""
@@ -68,107 +70,149 @@ class AnalysisService:
             logger.error(f"Prepare file failed: {e}")
             return False, str(e), {}
 
+    def get_dataframe(self, session_id: str, file_id: str) -> Optional[pd.DataFrame]:
+        """
+        獲取 DataFrame (優先從快取讀取)
+        """
+        cache_key = f"{session_id}_{file_id}"
+        if cache_key in self._df_cache:
+            # logger.info(f"Cache hit for {cache_key}")
+            return self._df_cache[cache_key]
+
+        # Cache miss - load from disk
+        summary = self.load_summary(session_id, file_id)
+        if not summary or "filename" not in summary:
+            return None
+
+        filename = summary["filename"]
+        csv_path = self.base_dir / session_id / "uploads" / filename
+
+        if not csv_path.exists():
+            return None
+
+        try:
+            # logger.info(f"Cache miss for {cache_key}, loading from disk...")
+            df = pd.read_csv(csv_path, encoding="utf-8-sig")
+            # Cleanup column names
+            df.columns = [str(c).strip() for c in df.columns]
+            self._df_cache[cache_key] = df
+            return df
+        except Exception as e:
+            logger.error(f"Failed to load dataframe for {filename}: {e}")
+            return None
+
+    def clear_cache(self, session_id: Optional[str] = None):
+        """清除快取 (可指定 session)"""
+        if session_id:
+            keys_to_remove = [k for k in self._df_cache if k.startswith(session_id)]
+            for k in keys_to_remove:
+                del self._df_cache[k]
+            logger.info(f"Cleared cache for session {session_id}")
+        else:
+            self._df_cache.clear()
+            logger.info("Cleared all dataframe cache")
+
     async def build_analysis_index(
         self, csv_path: str, session_id: str, filename: str
     ) -> Dict:
-        """為 CSV 文件建立分析索引 (使用模組化 Helper)"""
-        file_id = self.get_file_id(filename)
-        analysis_path = self.get_analysis_path(session_id, file_id, create=True)
+        """為 CSV 文件建立分析索引 (非阻塞: 在獨立 thread 中執行)"""
+        import asyncio
 
-        import os
+        def _build_index_sync():
+            file_id = self.get_file_id(filename)
+            analysis_path = self.get_analysis_path(session_id, file_id, create=True)
 
-        current_size = os.path.getsize(csv_path)
-        current_mtime = os.path.getmtime(csv_path)
+            import os
 
-        summary_file = analysis_path / "summary.json"
-        if summary_file.exists():
+            current_size = os.path.getsize(csv_path)
+            current_mtime = os.path.getmtime(csv_path)
+
+            summary_file = analysis_path / "summary.json"
+            if summary_file.exists():
+                try:
+                    with open(summary_file, "r", encoding="utf-8") as f:
+                        cached_summary = json.load(f)
+
+                    if (
+                        cached_summary.get("file_size") == current_size
+                        and cached_summary.get("last_modified") == current_mtime
+                    ):
+                        logger.info(f"Index already exists and is valid for {filename}")
+                        return cached_summary
+                    else:
+                        logger.info(f"Index out of date for {filename}, rebuilding...")
+                except Exception as e:
+                    logger.warning(f"Failed to read cached summary: {e}, will rebuild")
+
+            logger.info(f"Building index for {filename}")
+
             try:
-                with open(summary_file, "r", encoding="utf-8") as f:
-                    cached_summary = json.load(f)
+                df = pd.read_csv(csv_path, encoding="utf-8-sig")
+                df.columns = [str(c).strip() for c in df.columns]
 
-                # 校驗快取與原始檔案是否一致
-                if (
-                    cached_summary.get("file_size") == current_size
-                    and cached_summary.get("last_modified") == current_mtime
-                ):
-                    logger.info(f"Index already exists and is valid for {filename}")
-                    return cached_summary
-                else:
-                    logger.info(f"Index out of date for {filename}, rebuilding...")
+                summary = {
+                    "file_id": file_id,
+                    "filename": filename,
+                    "file_size": current_size,
+                    "last_modified": current_mtime,
+                    "total_rows": len(df),
+                    "total_columns": len(df.columns),
+                    "parameters": list(df.columns),
+                    "numerical_columns": df.select_dtypes(
+                        include=[np.number]
+                    ).columns.tolist(),
+                    "categories": StatisticsHelper.categorize_parameters(df.columns),
+                    "created_at": pd.Timestamp.now().isoformat(),
+                }
+
+                statistics = StatisticsHelper.calculate_statistics(df)
+                self._save_json(analysis_path / "statistics.json", statistics)
+
+                null_cols = [
+                    c for c, s in statistics.items() if s.get("missing_count", 0) > 0
+                ]
+                const_cols = [col for col in df.columns if df[col].nunique() <= 1]
+
+                sparse_cols = []
+                for col in df.columns:
+                    if col in null_cols or col in const_cols:
+                        continue
+                    if pd.api.types.is_numeric_dtype(df[col]):
+                        real_c = df[col].count() - (df[col] == 0).sum()
+                    else:
+                        real_c = df[col].count()
+                    if real_c < len(df) * 0.8:
+                        sparse_cols.append(col)
+
+                summary["quality_stats"] = {
+                    "null_column_count": len(null_cols),
+                    "constant_column_count": len(const_cols),
+                    "sparse_column_count": len(sparse_cols),
+                    "null_columns_preview": null_cols[:10],
+                    "constant_columns_preview": const_cols[:10],
+                    "sparse_columns_preview": sparse_cols[:10],
+                }
+
+                correlations = StatisticsHelper.calculate_correlations(df)
+                self._save_json(analysis_path / "correlations.json", correlations)
+
+                mapping = self._load_mapping_table(session_id)
+                semantic_index = IndexHelper.build_semantic_index(df.columns, mapping)
+                self._save_json(analysis_path / "semantic_index.json", semantic_index)
+
+                summary["mappings"] = {
+                    col: mapping[col] for col in df.columns if col in mapping
+                }
+                self._save_json(summary_file, summary)
+
+                logger.info(f"Index built successfully for {filename}")
+                return summary
+
             except Exception as e:
-                logger.warning(f"Failed to read cached summary: {e}, will rebuild")
+                logger.error(f"Failed to build index for {filename}: {str(e)}")
+                raise e
 
-        logger.info(f"Building index for {filename}")
-
-        try:
-            df = pd.read_csv(csv_path, encoding="utf-8-sig")
-            df.columns = [str(c).strip() for c in df.columns]
-
-            # 1. 基礎摘要 & 分類
-            summary = {
-                "file_id": file_id,
-                "filename": filename,
-                "file_size": current_size,
-                "last_modified": current_mtime,
-                "total_rows": len(df),
-                "total_columns": len(df.columns),
-                "parameters": list(df.columns),
-                "categories": StatisticsHelper.categorize_parameters(df.columns),
-                "created_at": pd.Timestamp.now().isoformat(),
-            }
-
-            # 2. 統計信息
-            statistics = StatisticsHelper.calculate_statistics(df)
-            self._save_json(analysis_path / "statistics.json", statistics)
-
-            # --- 新增：數據品質指標摘要 ---
-            null_cols = [
-                c for c, s in statistics.items() if s.get("missing_count", 0) > 0
-            ]
-            const_cols = [col for col in df.columns if df[col].nunique() <= 1]
-
-            # 偵測「稀疏」欄位：真值比例低於 80% (排除全空或全定值)
-            sparse_cols = []
-            for col in df.columns:
-                if col in null_cols or col in const_cols:
-                    continue
-                if pd.api.types.is_numeric_dtype(df[col]):
-                    real_c = df[col].count() - (df[col] == 0).sum()
-                else:
-                    real_c = df[col].count()
-                if real_c < len(df) * 0.8:
-                    sparse_cols.append(col)
-
-            summary["quality_stats"] = {
-                "null_column_count": len(null_cols),
-                "constant_column_count": len(const_cols),
-                "sparse_column_count": len(sparse_cols),
-                "null_columns_preview": null_cols[:10],
-                "constant_columns_preview": const_cols[:10],
-                "sparse_columns_preview": sparse_cols[:10],
-            }
-
-            # 3. 相關性矩陣
-            correlations = StatisticsHelper.calculate_correlations(df)
-            self._save_json(analysis_path / "correlations.json", correlations)
-
-            # 4. 語義索引
-            mapping = self._load_mapping_table(session_id)
-            semantic_index = IndexHelper.build_semantic_index(df.columns, mapping)
-            self._save_json(analysis_path / "semantic_index.json", semantic_index)
-
-            # 5. 保存映射快照
-            summary["mappings"] = {
-                col: mapping[col] for col in df.columns if col in mapping
-            }
-            self._save_json(summary_file, summary)
-
-            logger.info(f"Index built successfully for {filename}")
-            return summary
-
-        except Exception as e:
-            logger.error(f"Failed to build index for {filename}: {str(e)}")
-            raise e
+        return await asyncio.to_thread(_build_index_sync)
 
     def _save_json(self, path: Path, data: Dict):
         """輔助儲存方法"""
@@ -241,9 +285,15 @@ class AnalysisService:
             stats = self.load_statistics(session_id, file_id)
             is_incomplete = stats and any(p not in stats for p in all_params)
 
-            # 如果 quality_stats 缺失，或者尚未計算過「稀疏欄位」
+            # 如果 quality_stats 缺失，或者尚未計算過「稀疏欄位」，或者缺 numerical_columns
             q_stats = summary.get("quality_stats", {})
-            if not q_stats or is_incomplete or "sparse_column_count" not in q_stats:
+            if (
+                not q_stats
+                or is_incomplete
+                or "sparse_column_count" not in q_stats
+                or "numerical_columns" not in summary
+                or "recommended_targets" not in summary  # Force refresh if missing
+            ):
                 logger.info(
                     f"Quality data missing or incomplete for {file_id}. Forcing refresh..."
                 )
@@ -257,6 +307,9 @@ class AnalysisService:
 
                         # 更新摘要基礎資訊
                         summary["parameters"] = list(df.columns)
+                        summary["numerical_columns"] = df.select_dtypes(
+                            include=[np.number]
+                        ).columns.tolist()
                         summary["total_columns"] = len(df.columns)
                         summary["categories"] = StatisticsHelper.categorize_parameters(
                             df.columns
@@ -306,6 +359,59 @@ class AnalysisService:
                             "constant_columns_preview": const_cols[:10],
                             "sparse_columns_preview": sparse_cols[:10],
                         }
+
+                        # [NEW] Calculate Recommended Targets based on Variance (CV) & Keywords
+                        recommended_targets = []
+                        numerical_cols = summary.get("numerical_columns", [])
+
+                        if numerical_cols:
+                            try:
+                                # Calculate CV = std / mean (handle divide by zero)
+                                stats_df = df[numerical_cols].agg(["mean", "std"]).T
+                                stats_df["cv"] = stats_df["std"] / (
+                                    stats_df["mean"].abs() + 1e-9
+                                )
+                                stats_df = stats_df.sort_values("cv", ascending=False)
+
+                                # Filter: CV > 0.01 (min variability)
+                                high_variance = stats_df[
+                                    stats_df["cv"] > 0.01
+                                ].index.tolist()
+
+                                # Keyword prioritization
+                                keywords = [
+                                    "output",
+                                    "result",
+                                    "yield",
+                                    "target",
+                                    "score",
+                                    "price",
+                                    "quality",
+                                    "rate",
+                                    "efficiency",
+                                ]
+                                priority_targets = [
+                                    c
+                                    for c in high_variance
+                                    if any(k in c.lower() for k in keywords)
+                                ]
+
+                                # Combine: Priority first, then high variance
+                                recommended_targets = priority_targets + [
+                                    c
+                                    for c in high_variance
+                                    if c not in priority_targets
+                                ]
+
+                                # Limit to top 5
+                                recommended_targets = recommended_targets[:5]
+                            except Exception as e:
+                                logger.warning(
+                                    f"Failed to calculate recommended targets: {e}"
+                                )
+
+                        summary["recommended_targets"] = recommended_targets
+
                         self._save_json(
                             self.get_analysis_path(session_id, file_id)
                             / "summary.json",
@@ -379,7 +485,18 @@ class AnalysisService:
             path = self.get_analysis_path(session_id, file_id) / filename
             if path.exists():
                 with open(path, "r", encoding="utf-8") as f:
-                    return json.load(f)
+                    data = json.load(f)
+                    # [BUG FIX] Handle double-serialized JSON (stringified JSON)
+                    if isinstance(data, str):
+                        try:
+                            # Try to parse again if it looks like a JSON object/list
+                            if data.strip().startswith("{") or data.strip().startswith(
+                                "["
+                            ):
+                                data = json.loads(data)
+                        except json.JSONDecodeError:
+                            pass
+                    return data if isinstance(data, dict) else None
         except Exception:
             pass
         return None
