@@ -34,6 +34,7 @@ window.renderDashboardData = Dashboard.renderDashboardData;
 
 // Files
 window.handleMainFileUpload = FileMgr.handleMainFileUpload;
+window.handleDroppedFiles = FileMgr.handleDroppedFiles;
 window.uploadFile = FileMgr.uploadFile;
 window.deleteFile = FileMgr.deleteFile;
 window.viewFile = FileMgr.viewFile;

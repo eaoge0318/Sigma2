@@ -1,4 +1,4 @@
-"""
+﻿"""
 變異係數排名工具 (Coefficient of Variation Ranking)
 - CVRankingTool: 對所有參數計算 CV,識別最不穩定/最穩定的參數
 """
@@ -65,7 +65,7 @@ class CVRankingTool(AnalysisTool):
             means = numeric_df.mean()
             numeric_df = numeric_df[stds[stds > 0].index]
 
-            # Calculate CV for each parameter
+            # Calculate CV + Drift for each parameter
             cv_results = []
             for col in numeric_df.columns:
                 col_mean = means[col]
@@ -76,6 +76,24 @@ class CVRankingTool(AnalysisTool):
                     continue
 
                 cv = col_std / abs(col_mean)
+
+                # [NEW] 線性回歸斜率 — 偵測整段漂移 (Drift)
+                series = numeric_df[col].dropna()
+                x = np.arange(len(series))
+                slope = float(np.polyfit(x, series.values, 1)[0])
+                drift_total = abs(slope * len(series))
+                drift_sigma = drift_total / (float(col_std) + 1e-10)
+
+                if drift_sigma > 5:
+                    drift_grade = "severe_drift"
+                elif drift_sigma > 3:
+                    drift_grade = "significant_drift"
+                elif drift_sigma > 1.5:
+                    drift_grade = "moderate_drift"
+                elif drift_sigma > 0.5:
+                    drift_grade = "mild_drift"
+                else:
+                    drift_grade = "stable"
 
                 # Stability classification
                 if cv < 0.05:
@@ -98,11 +116,19 @@ class CVRankingTool(AnalysisTool):
                         "min": round(float(numeric_df[col].min()), 4),
                         "max": round(float(numeric_df[col].max()), 4),
                         "stability": stability,
+                        "slope": round(slope, 6),
+                        "drift_total_sigma": round(float(drift_sigma), 2),
+                        "drift_grade": drift_grade,
                     }
                 )
 
             # Sort by CV descending (most volatile first)
-            cv_results.sort(key=lambda x: x["cv"], reverse=True)
+            cv_sorted = sorted(cv_results, key=lambda x: x["cv"], reverse=True)
+
+            # [NEW] Sort by drift severity
+            drift_sorted = sorted(
+                cv_results, key=lambda x: x["drift_total_sigma"], reverse=True
+            )
 
             # Summary statistics
             all_cvs = [r["cv"] for r in cv_results]
@@ -111,14 +137,21 @@ class CVRankingTool(AnalysisTool):
                 s = r["stability"]
                 stability_counts[s] = stability_counts.get(s, 0) + 1
 
+            drift_counts = {}
+            for r in cv_results:
+                d = r["drift_grade"]
+                drift_counts[d] = drift_counts.get(d, 0) + 1
+
             return {
                 "status": "OK",
                 "total_parameters": len(cv_results),
-                "most_volatile": cv_results[:top_k],
-                "most_stable": cv_results[-top_k:][::-1]
-                if len(cv_results) > top_k
+                "most_volatile": cv_sorted[:top_k],
+                "most_stable": cv_sorted[-top_k:][::-1]
+                if len(cv_sorted) > top_k
                 else [],
+                "most_drifting": drift_sorted[:top_k],
                 "stability_distribution": stability_counts,
+                "drift_distribution": drift_counts,
                 "cv_statistics": {
                     "median_cv": round(float(np.median(all_cvs)), 6) if all_cvs else 0,
                     "mean_cv": round(float(np.mean(all_cvs)), 6) if all_cvs else 0,

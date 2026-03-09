@@ -1,4 +1,4 @@
-"""
+﻿"""
 多目標優化分析工具 (Multi-Objective Optimization)
 - MultiObjectiveTool: 同時分析多個目標之間的 Synergy/Trade-off,
   找出同時改善所有目標的"黃金參數"和需要權衡的"衝突參數"
@@ -94,7 +94,7 @@ class MultiObjectiveTool(AnalysisTool):
                         else 0
                     )
                     target_correlations[f"{t_a} vs {t_b}"] = {
-                        "correlation": round(float(r), 4),
+                        "correlation": round(float(r), 3),
                         "relationship": (
                             "strong_positive"
                             if r > 0.5

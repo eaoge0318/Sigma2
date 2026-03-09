@@ -1,3 +1,56 @@
+// === 全域 Lightbox (ESC 關閉 / 左右箭頭切換同組圖片) ===
+window._openLightbox = function (srcs, startIdx = 0) {
+    let current = startIdx;
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);display:flex;align-items:center;justify-content:center;z-index:9999;cursor:zoom-out;';
+
+    const bigImg = document.createElement('img');
+    bigImg.src = srcs[current];
+    bigImg.style.cssText = 'max-width:90vw;max-height:85vh;border-radius:8px;box-shadow:0 8px 32px rgba(0,0,0,0.5);transition:opacity 0.15s ease;';
+    bigImg.onclick = (e) => e.stopPropagation();
+    bigImg.style.cursor = 'default';
+
+    // 計數器
+    const counter = document.createElement('div');
+    counter.style.cssText = 'position:absolute;bottom:20px;left:50%;transform:translateX(-50%);color:rgba(255,255,255,0.7);font-size:13px;font-family:sans-serif;pointer-events:none;';
+    const updateCounter = () => { counter.textContent = srcs.length > 1 ? `${current + 1} / ${srcs.length}` : ''; };
+    updateCounter();
+
+    // 左右箭頭按鈕
+    if (srcs.length > 1) {
+        const makeBtn = (text, dir) => {
+            const btn = document.createElement('div');
+            btn.textContent = text;
+            btn.style.cssText = `position:absolute;top:50%;${dir}:16px;transform:translateY(-50%);color:rgba(255,255,255,0.7);font-size:36px;cursor:pointer;user-select:none;padding:8px 12px;border-radius:50%;transition:all 0.15s;`;
+            btn.onmouseenter = () => { btn.style.color = '#fff'; btn.style.background = 'rgba(255,255,255,0.15)'; };
+            btn.onmouseleave = () => { btn.style.color = 'rgba(255,255,255,0.7)'; btn.style.background = 'none'; };
+            btn.onclick = (e) => { e.stopPropagation(); navigate(text === '‹' ? -1 : 1); };
+            return btn;
+        };
+        overlay.appendChild(makeBtn('‹', 'left'));
+        overlay.appendChild(makeBtn('›', 'right'));
+    }
+
+    const navigate = (delta) => {
+        current = (current + delta + srcs.length) % srcs.length;
+        bigImg.style.opacity = '0.3';
+        setTimeout(() => { bigImg.src = srcs[current]; bigImg.style.opacity = '1'; updateCounter(); }, 80);
+    };
+
+    const onKey = (e) => {
+        if (e.key === 'Escape') { cleanup(); }
+        else if (e.key === 'ArrowLeft') { navigate(-1); }
+        else if (e.key === 'ArrowRight') { navigate(1); }
+    };
+    const cleanup = () => { document.removeEventListener('keydown', onKey); overlay.remove(); };
+
+    overlay.onclick = cleanup;
+    overlay.appendChild(bigImg);
+    overlay.appendChild(counter);
+    document.addEventListener('keydown', onKey);
+    document.body.appendChild(overlay);
+};
+
 class IntelligentAnalysis {
     constructor() {
         // 帳號 ID: 從父視窗繼承 (Dashboard 的 SESSION_ID)，用於隔離不同帳號
@@ -12,6 +65,7 @@ class IntelligentAnalysis {
         this.analysisMode = 'fast'; // 'fast' or 'full'
         this.isLoading = false;
         this.currentFileParams = []; // Store current file parameters
+        this.pendingAttachments = []; // [{name, type, dataUrl}]
 
         // DOM Elements
         this.elements = {
@@ -38,7 +92,12 @@ class IntelligentAnalysis {
 
             // Sidebar - Mapping Table
             mappingUploadInput: document.getElementById('mapping-upload-input'),
-            mappingFileName: document.getElementById('mapping-file-name')
+            mappingFileName: document.getElementById('mapping-file-name'),
+
+            // Sidebar - Data Description
+            dataDescriptionInput: document.getElementById('data-description-input'),
+            dataDescStatus: document.getElementById('data-desc-status'),
+            dataDescCount: document.getElementById('data-desc-count')
         };
 
         this.init();
@@ -94,7 +153,8 @@ class IntelligentAnalysis {
         this.bindEvents();
         await this.loadFileList();
         await this.checkMappingStatus();
-        // this.loadHistory(); // Future: Load chat history
+        // 載入聊天室列表
+        await this.loadSessionList();
     }
 
     bindEvents() {
@@ -130,12 +190,26 @@ class IntelligentAnalysis {
             }
         });
 
-        // File Selection Change
-        this.elements.fileSelect.addEventListener('change', (e) => {
+        // File Selection Change -> 每次選檔都開啟新對話 (新資料夾)
+        this.elements.fileSelect.addEventListener('change', async (e) => {
             const fileId = e.target.value;
             if (fileId) {
                 const selectedOption = e.target.options[e.target.selectedIndex];
-                const filename = selectedOption.text.replace(' (已索引)', ''); // Clean up text if needed
+                const filename = selectedOption.text;
+
+                // 每次選檔都生成新的 conversationId → 建立新的 analysis 資料夾
+                this.conversationId = crypto.randomUUID().slice(0, 12);
+                console.log(`[Sessions] File selected: ${filename}, new conversation: ${this.conversationId}`);
+
+                // 清空聊天區
+                this.currentFileId = null;
+                this.currentFilename = null;
+                this.elements.chatContainer.innerHTML = '';
+                if (this.elements.welcomeScreen) {
+                    this.elements.welcomeScreen.style.display = '';
+                    this.elements.welcomeScreen.classList.remove('hidden');
+                }
+
                 this.handleFileSelect(fileId, filename);
             }
         });
@@ -143,6 +217,26 @@ class IntelligentAnalysis {
         // Attachment Button
         this.elements.btnAttach.addEventListener('click', () => {
             this.elements.fileAttachment.click();
+        });
+
+        // File attachment change handler
+        this.elements.fileAttachment.addEventListener('change', (e) => {
+            Array.from(e.target.files).forEach(f => this._addAttachment(f));
+            e.target.value = ''; // reset so same file can be re-selected
+        });
+
+        // Paste screenshot from clipboard
+        this.elements.userInput.addEventListener('paste', (e) => {
+            const items = e.clipboardData?.items;
+            if (!items) return;
+            for (const item of items) {
+                if (item.type.startsWith('image/')) {
+                    e.preventDefault();
+                    const blob = item.getAsFile();
+                    if (blob) this._addAttachment(blob);
+                    break;
+                }
+            }
         });
 
         this.elements.mappingUploadInput.addEventListener('change', (e) => {
@@ -158,8 +252,7 @@ class IntelligentAnalysis {
             });
         }
 
-        // Load existing sessions on startup
-        this.loadSessionList();
+        // 聊天室列表在 init() 中載入, 不自動切換 (用戶手動點擊)
 
         // Session click event delegation (一次性綁定，避免重複)
         if (this.elements.sessionList) {
@@ -179,8 +272,13 @@ class IntelligentAnalysis {
                 // Session card click
                 const item = e.target.closest('.session-item');
                 if (item && item.dataset.sessionId) {
-                    console.log('[Sessions] Switching to:', item.dataset.sessionId);
-                    this.switchSession(item.dataset.sessionId);
+                    console.log('[Sessions] Switching to:', item.dataset.sessionId, 'file:', item.dataset.fileId, 'conv:', item.dataset.conversationId);
+                    this.switchSession(
+                        item.dataset.sessionId,
+                        item.dataset.fileId || '',
+                        item.dataset.filename || '',
+                        item.dataset.conversationId || 'default'
+                    );
                 }
             });
         } else {
@@ -208,8 +306,16 @@ class IntelligentAnalysis {
                     return;
                 }
 
+                // Intercept "統計工具" Button
+                if (btn.id === 'btn-open-stat-tool' || query === '統計工具') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    this.openStatToolModal();
+                    return;
+                }
+
                 // Intercept "Draw Trend Chart"
-                if (query === '繪製趨勢圖') {
+                if (query === '趨勢圖' || query === '繪製趨勢圖') {
                     e.preventDefault();
                     e.stopPropagation();
 
@@ -256,6 +362,9 @@ class IntelligentAnalysis {
                 const miningModal = document.getElementById('data-mining-modal');
                 if (miningModal) miningModal.classList.add('hidden');
 
+                const statModal = document.getElementById('stat-tool-modal');
+                if (statModal) statModal.classList.add('hidden');
+
                 const paramMenu = document.getElementById('param-select-menu');
                 if (paramMenu) paramMenu.classList.add('hidden');
             }
@@ -269,6 +378,10 @@ class IntelligentAnalysis {
                 if (modal) modal.classList.add('hidden');
             } else if (e.target.closest('#btn-confirm-mining')) {
                 this.confirmDataMining();
+            } else if (e.target.closest('#btn-confirm-optim')) {
+                this.confirmOptimization();
+            } else if (e.target.closest('#btn-confirm-stat-tool')) {
+                this.confirmStatTool();
             } else if (e.target.id === 'dm-target-clear') {
                 this.toggleMiningSelection('target', 'none');
             } else if (e.target.id === 'dm-feature-clear') {
@@ -285,11 +398,90 @@ class IntelligentAnalysis {
                 this.filterMiningList('feature', e.target.value);
             }
         });
+
+        // --- Data Description: blur = save, input = counter ---
+        if (this.elements.dataDescriptionInput) {
+            this.elements.dataDescriptionInput.addEventListener('blur', () => {
+                this.saveDataDescription();
+            });
+            this.elements.dataDescriptionInput.addEventListener('input', () => {
+                const len = this.elements.dataDescriptionInput.value.length;
+                if (this.elements.dataDescCount) {
+                    this.elements.dataDescCount.textContent = `${len}/500`;
+                }
+            });
+        }
     }
 
+    // === File Attachment Helpers ===
+    _addAttachment(file) {
+        if (this.pendingAttachments.length >= 5) {
+            alert('最多附加 5 個檔案');
+            return;
+        }
+        if (file.size > 10 * 1024 * 1024) {
+            alert('檔案過大（上限 10MB）');
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = () => {
+            const name = file.name || `screenshot_${Date.now()}.png`;
+            this.pendingAttachments.push({ name, type: file.type, dataUrl: reader.result });
+            this._renderAttachmentPreview();
+            // Enable send button even if no text
+            this.elements.btnSend.disabled = false;
+        };
+        reader.readAsDataURL(file);
+    }
+
+    _renderAttachmentPreview() {
+        let strip = document.getElementById('attachment-preview-strip');
+        if (!strip) {
+            strip = document.createElement('div');
+            strip.id = 'attachment-preview-strip';
+            strip.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;padding:6px 12px 0;';
+            // Insert before the input flex row
+            const inputArea = this.elements.userInput.closest('.p-4');
+            if (inputArea) {
+                const flexRow = inputArea.querySelector('.flex.items-center.gap-3');
+                if (flexRow) inputArea.insertBefore(strip, flexRow);
+            }
+        }
+        strip.innerHTML = '';
+        if (this.pendingAttachments.length === 0) {
+            strip.style.display = 'none';
+            return;
+        }
+        strip.style.display = 'flex';
+        this.pendingAttachments.forEach((att, i) => {
+            const chip = document.createElement('div');
+            chip.style.cssText = 'display:flex;align-items:center;gap:4px;padding:4px 8px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;font-size:11px;color:#475569;max-width:180px;';
+            if (att.type.startsWith('image/')) {
+                const thumb = document.createElement('img');
+                thumb.src = att.dataUrl;
+                thumb.style.cssText = 'width:24px;height:24px;object-fit:cover;border-radius:4px;';
+                chip.appendChild(thumb);
+            } else {
+                const icon = document.createElement('span');
+                icon.textContent = '📄';
+                chip.appendChild(icon);
+            }
+            const label = document.createElement('span');
+            label.textContent = att.name.length > 15 ? att.name.slice(0, 12) + '...' : att.name;
+            label.style.cssText = 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+            chip.appendChild(label);
+            const removeBtn = document.createElement('span');
+            removeBtn.textContent = '×';
+            removeBtn.style.cssText = 'cursor:pointer;color:#94a3b8;font-size:14px;font-weight:bold;margin-left:2px;';
+            removeBtn.onclick = () => { this.pendingAttachments.splice(i, 1); this._renderAttachmentPreview(); };
+            chip.appendChild(removeBtn);
+            strip.appendChild(chip);
+        });
+    }
     async sendMessage() {
         const message = this.elements.userInput.value.trim();
-        if (!message || this.isLoading) return;
+        const attachments = [...this.pendingAttachments];
+        if ((!message && attachments.length === 0) || this.isLoading) return;
 
         this.stopRequested = false; // Reset stop state
 
@@ -298,10 +490,17 @@ class IntelligentAnalysis {
             return;
         }
 
-        // 1. Show User Message
-        this.addMessage('user', message);
+        // 1. Show User Message (with attachment previews)
+        let displayMsg = message;
+        if (attachments.length > 0) {
+            const names = attachments.map(a => `📎 ${a.name}`).join('\n');
+            displayMsg = (message ? message + '\n' : '') + names;
+        }
+        this.addMessage('user', displayMsg, null, null, false, attachments);
         this.elements.userInput.value = '';
         this.elements.userInput.style.height = 'auto';
+        this.pendingAttachments = [];
+        this._renderAttachmentPreview();
 
         // Switch Send button to Stop button
         this.updateSendButtonState('stop');
@@ -318,7 +517,8 @@ class IntelligentAnalysis {
                 file_id: this.currentFileId,
                 message: message,
                 conversation_id: this.conversationId,
-                mode: this.analysisMode
+                mode: this.analysisMode,
+                attachments: attachments.length > 0 ? attachments.map(a => ({ name: a.name, type: a.type, data: a.dataUrl })) : undefined
             };
 
             // Add mining metadata if available
@@ -329,12 +529,15 @@ class IntelligentAnalysis {
                 if (this.miningMetadata.target_range) {
                     requestBody.target_range = this.miningMetadata.target_range;
                 }
+                if (this.miningMetadata.baseline_range) {
+                    requestBody.baseline_range = this.miningMetadata.baseline_range;
+                }
                 // Clear metadata after use
                 this.miningMetadata = null;
             }
 
             // 2. Start Request
-            const response = await fetch('/api/analysis/chat/stream', {
+            const response = await fetch('/api/analysis/chat/stream/v3', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(requestBody),
@@ -383,9 +586,14 @@ class IntelligentAnalysis {
                                     eventData = { content: jsonStr };
                                 }
 
-                                // Inject event type if missing
-                                if (currentEventName && !eventData.type) {
+                                // Inject event type: SSE event name takes priority
+                                if (currentEventName) {
                                     eventData.type = currentEventName;
+                                }
+
+                                // Debug: chart events
+                                if (eventData.type === 'chart_image' || eventData.type === 'mini_chart') {
+                                    console.log(`[SSE] ${eventData.type} event received`, Object.keys(eventData));
                                 }
 
                                 this.handleStreamEvent(streamState, eventData);
@@ -414,6 +622,8 @@ class IntelligentAnalysis {
             this.updateSendButtonState('send');
             this.abortController = null;
             this.stopRequested = false; // Ensure reset on finish
+            // 刷新聊天室列表
+            this.loadSessionList();
         }
     }
 
@@ -545,10 +755,6 @@ class IntelligentAnalysis {
                 const opt = document.createElement('option');
                 opt.value = file.filename; // Use filename as value for prepare API
                 opt.text = file.filename;
-                // Mark if indexed visually? In dropdown it's hard.
-                if (file.is_indexed) {
-                    opt.text += ' (已索引)';
-                }
                 select.appendChild(opt);
             });
 
@@ -596,11 +802,19 @@ class IntelligentAnalysis {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     filename: filename,
-                    session_id: this.sessionId
+                    session_id: this.sessionId,
+                    conversation_id: this.conversationId
                 })
             });
 
-            if (!res.ok) throw new Error('索引建立失敗');
+            if (!res.ok) {
+                let detail = '索引建立失敗';
+                try {
+                    const errBody = await res.json();
+                    detail = errBody.detail || detail;
+                } catch (_) { /* ignore parse error */ }
+                throw new Error(detail);
+            }
             const result = await res.json();
 
             this.currentFileId = result.file_id;
@@ -615,9 +829,17 @@ class IntelligentAnalysis {
             this.elements.infoCols.textContent = summary.total_columns || '-';
             this.elements.infoStatus.textContent = '已就緒';
 
-            // Show Panel
+            // Show Panel + Toggle Button
             this.elements.fileLoadingIndicator.classList.add('hidden');
             this.elements.fileInfoPanel.classList.remove('hidden');
+            const toggleBtn = document.getElementById('file-info-toggle');
+            if (toggleBtn) toggleBtn.classList.remove('hidden');
+
+            // Load data description for this file
+            this.loadDataDescription(this.currentFileId);
+
+            // Refresh mapping status for this file
+            this.checkMappingStatus();
 
             // Enable Input and Focus
             this.elements.userInput.disabled = false;
@@ -631,6 +853,9 @@ class IntelligentAnalysis {
             const totalCols = summary.total_columns || 0;
             this.addMessage('assistant', `已切換至文件 **${filename}**。\n我已經分析了數據結構，共 **${totalRows}** 行數據，包含 **${totalCols}** 個欄位。`);
 
+            // Refresh session list so new chatroom appears in sidebar
+            this.loadSessionList();
+
         } catch (error) {
             alert(`文件準備失敗: ${error.message}`);
             this.elements.fileLoadingIndicator.classList.add('hidden');
@@ -640,7 +865,7 @@ class IntelligentAnalysis {
 
     // --- UI Helpers ---
 
-    addMessage(role, content, allToolCalls = null, thoughts = null, animate = false) {
+    addMessage(role, content, allToolCalls = null, thoughts = null, animate = false, attachments = []) {
         // Hide welcome screen when adding a user message (interaction starts)
         // OR if the assistant sends a message (e.g. file ready), should we hide it?
         // User wants "Restore to beginning". Beginning has shortcuts.
@@ -726,6 +951,32 @@ class IntelligentAnalysis {
             </div>
         `;
 
+        // Render image attachment thumbnails for user messages
+        if (role === 'user' && attachments && attachments.length > 0) {
+            const bubble = div.querySelector('.message-bubble');
+            const strip = document.createElement('div');
+            strip.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;';
+            const imgAtts = attachments.filter(a => a.type.startsWith('image/'));
+            const otherAtts = attachments.filter(a => !a.type.startsWith('image/'));
+            imgAtts.forEach(att => {
+                const thumb = document.createElement('img');
+                thumb.src = att.dataUrl;
+                thumb.title = att.name;
+                thumb.style.cssText = 'width:80px;height:80px;object-fit:cover;border-radius:8px;border:2px solid rgba(255,255,255,0.3);cursor:pointer;transition:transform 0.15s;';
+                thumb.onmouseenter = () => { thumb.style.transform = 'scale(1.08)'; };
+                thumb.onmouseleave = () => { thumb.style.transform = ''; };
+                thumb.onclick = () => { window._openLightbox([att.dataUrl], 0); };
+                strip.appendChild(thumb);
+            });
+            otherAtts.forEach(att => {
+                const chip = document.createElement('span');
+                chip.textContent = `📄 ${att.name}`;
+                chip.style.cssText = 'font-size:11px;background:rgba(255,255,255,0.15);padding:3px 8px;border-radius:6px;';
+                strip.appendChild(chip);
+            });
+            bubble.appendChild(strip);
+        }
+
         this.elements.chatContainer.appendChild(div);
         this.scrollToBottom();
 
@@ -774,14 +1025,16 @@ class IntelligentAnalysis {
             <div class="message-bubble prose prose-sm max-w-none">
                 <!-- 思考與工具執行詳情 (使用 details 以便縮放) -->
                 <details class="workflow-details mb-3 group" open>
-                    <summary>
+                    <summary style="display:flex; align-items:center; gap:8px;">
                         <svg class="w-3.5 h-3.5 group-open:rotate-90 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
                         <span class="thought-label">Thought for 0s</span>
+                        <span class="status-log-latest text-[11px] text-gray-400 font-mono" style="flex:1; text-align:right; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"></span>
+                        <button class="status-log-toggle text-[9px] text-gray-400 hover:text-gray-600 cursor-pointer" style="flex-shrink:0; background:none; border:none; padding:2px 4px; display:none;" title="展開/收起歷史">▼</button>
                     </summary>
                     
                     <div class="details-content mt-2 space-y-3">
-                        <!-- 狀態日誌 (新增) -->
-                        <div class="status-log space-y-1 text-xs text-gray-600 font-mono border-l-2 border-gray-300 pl-2 bg-gray-50/50 py-1 rounded-r"></div>
+                        <!-- 狀態日誌歷史 (摺疊) -->
+                        <div class="status-log space-y-0.5 text-xs text-gray-500 font-mono border-l-2 border-gray-200 pl-2 bg-gray-50/30 py-1 rounded-r" style="display:none;"></div>
 
                         <!-- 思考區塊 -->
                         <div class="ai-thoughts p-2.5 bg-blue-50/20 border-l-2 border-blue-400 rounded-r hidden">
@@ -794,18 +1047,31 @@ class IntelligentAnalysis {
                     </div>
                 </details>
                 
+                <!-- 圖表容器 (在報告上方) -->
+                <div class="chart-container"></div>
                 <!-- 回應內容區塊 -->
                 <div class="markdown-body">
-                    <span class="typing-output"></span><span class="typing-cursor">▍</span>
+                    <span class="typing-output"></span><span class="typing-cursor">◍</span>
                 </div>
             </div>
         `;
+
+        const statusLogToggle = row.querySelector('.status-log-toggle');
+        const statusLogHistory = row.querySelector('.status-log');
+        if (statusLogToggle && statusLogHistory) {
+            statusLogToggle.addEventListener('click', () => {
+                const isHidden = statusLogHistory.style.display === 'none';
+                statusLogHistory.style.display = isHidden ? 'block' : 'none';
+                statusLogToggle.textContent = isHidden ? '▲' : '▼';
+            });
+        }
 
         return {
             row: row,
             detailsWrapper: row.querySelector('.workflow-details'),
             detailsLabel: row.querySelector('.thought-label'),
             statusLog: row.querySelector('.status-log'),
+            statusLogLatest: row.querySelector('.status-log-latest'),
             thoughtsContainer: row.querySelector('.ai-thoughts'),
             thoughtsContent: row.querySelector('.thoughts-content'),
             toolsContainer: row.querySelector('.tool-execution-chain'),
@@ -814,7 +1080,10 @@ class IntelligentAnalysis {
             typingIndicator: row.querySelector('.typing-indicator'),
             timerLabel: row.querySelector('.timer-label'),
             markdownBody: row.querySelector('.markdown-body'),
-            fullText: '' // 用於存儲原始 Markdown 文字，實作即時渲染
+            chartContainer: row.querySelector('.chart-container'),
+            fullText: '', // 用於存儲原始 Markdown 文字，實作即時渲染
+            chartImages: [], // 存儲圖表 {base64, title, index}
+            chartMapping: null // chart_index → finding_index mapping
         };
     }
 
@@ -830,9 +1099,157 @@ class IntelligentAnalysis {
 
             // 渲染完成後，觸發圖表解析
             this.renderCharts(state.markdownBody);
+
+            // 如果已收到 chart mapping，嵌入圖表
+            if (state.chartMapping && state.chartImages.length > 0) {
+                this._injectInlineCharts(state);
+            }
         } catch (e) {
             console.error("Markdown rendering error:", e);
         }
+    }
+
+    _injectInlineCharts(state) {
+        // 找所有「發現 N:」標題 (h2/h3/h4 containing "發現")
+        const headings = state.markdownBody.querySelectorAll('h2, h3, h4');
+        const findingHeadings = [];
+        headings.forEach(h => {
+            // 匹配「發現 N」或「📊 參數名」格式的標題
+            if (h.textContent.match(/發現\s*\d+/) || h.textContent.match(/📊/)) {
+                findingHeadings.push(h);
+            }
+        });
+
+        if (findingHeadings.length === 0) return;
+
+        const mapping = state.chartMapping; // {chart_idx: finding_idx}
+
+        // 收集每個 finding 的圖表
+        const findingCharts = {}; // finding_idx → [chart objects]
+        const globalCharts = []; // finding_idx === -1
+
+        for (const [chartIdx, findingIdx] of Object.entries(mapping)) {
+            const ci = parseInt(chartIdx);
+            const fi = parseInt(findingIdx);
+            const chart = state.chartImages[ci];
+            if (!chart) continue;
+
+            if (fi >= 0 && fi < findingHeadings.length) {
+                if (!findingCharts[fi]) findingCharts[fi] = [];
+                findingCharts[fi].push(chart);
+            } else {
+                globalCharts.push(chart);
+            }
+        }
+
+        // 在每個「發現 N」標題下方插入圖表行
+        for (const [fi, charts] of Object.entries(findingCharts)) {
+            const heading = findingHeadings[parseInt(fi)];
+            if (!heading) continue;
+
+            // 找到這個 heading 後的下一個 heading (或末尾) 之間的內容節點
+            // 插入在 heading 的下一個兄弟位置
+            const thumbRow = document.createElement('div');
+            thumbRow.className = 'inline-chart-row flex gap-2 my-2 flex-wrap';
+            thumbRow.style.cssText = 'max-width: 100%; overflow-x: auto;';
+
+            charts.forEach(chart => {
+                const thumb = document.createElement('div');
+                thumb.className = 'inline-chart-thumb border border-slate-200 rounded-lg overflow-hidden shadow-sm';
+                thumb.style.cssText = 'width: 180px; flex-shrink: 0; cursor: pointer;';
+
+                if (chart.title) {
+                    const titleDiv = document.createElement('div');
+                    titleDiv.className = 'text-[9px] font-medium text-slate-500 px-1.5 py-0.5 bg-slate-50 truncate';
+                    titleDiv.textContent = chart.title;
+                    titleDiv.title = chart.title; // tooltip
+                    thumb.appendChild(titleDiv);
+                }
+
+                const img = document.createElement('img');
+                img.src = `data:image/png;base64,${chart.base64}`;
+                img.alt = chart.title || 'Chart';
+                img.style.cssText = 'width: 100%; cursor: zoom-in;';
+                img.onclick = () => {
+                    const isZoomed = thumb.dataset.zoomed === 'true';
+                    thumb.style.width = isZoomed ? '180px' : '640px';
+                    thumb.dataset.zoomed = isZoomed ? 'false' : 'true';
+                };
+                thumb.appendChild(img);
+                thumbRow.appendChild(thumb);
+            });
+
+            // 插入到 heading 後面
+            heading.after(thumbRow);
+        }
+
+        // === 第二輪: 用參數名把 global charts 配對到 📊 段落 ===
+        if (globalCharts.length > 0) {
+            // 抽取 📊 headings 的參數名
+            const paramHeadings = findingHeadings
+                .map((h, i) => ({ heading: h, idx: i, text: h.textContent }))
+                .filter(item => item.text.includes('📊'));
+
+            // 參數名匹配: chart title 包含 heading 中的參數名
+            const _extractParam = (text) => {
+                // 從 "📊 METROLOGY-COATINGWEIGHT: 正常" 取 "METROLOGY-COATINGWEIGHT"
+                const m = text.match(/📊\s*([A-Z][A-Z0-9\-_]+)/i);
+                return m ? m[1] : null;
+            };
+
+            const usedGlobal = new Set();
+            for (const ph of paramHeadings) {
+                const paramName = _extractParam(ph.text);
+                if (!paramName) continue;
+
+                const matchedCharts = [];
+                globalCharts.forEach((chart, gi) => {
+                    if (usedGlobal.has(gi)) return;
+                    if (chart.title && chart.title.includes(paramName)) {
+                        matchedCharts.push(chart);
+                        usedGlobal.add(gi);
+                    }
+                });
+
+                if (matchedCharts.length === 0) continue;
+
+                const thumbRow = document.createElement('div');
+                thumbRow.className = 'inline-chart-row flex gap-2 my-2 flex-wrap';
+                thumbRow.style.cssText = 'max-width: 100%; overflow-x: auto;';
+
+                matchedCharts.forEach(chart => {
+                    const thumb = document.createElement('div');
+                    thumb.className = 'inline-chart-thumb border border-slate-200 rounded-lg overflow-hidden shadow-sm';
+                    thumb.style.cssText = 'width: 180px; flex-shrink: 0; cursor: pointer;';
+
+                    if (chart.title) {
+                        const titleDiv = document.createElement('div');
+                        titleDiv.className = 'text-[9px] font-medium text-slate-500 px-1.5 py-0.5 bg-slate-50 truncate';
+                        titleDiv.textContent = chart.title;
+                        titleDiv.title = chart.title;
+                        thumb.appendChild(titleDiv);
+                    }
+
+                    const img = document.createElement('img');
+                    img.src = `data:image/png;base64,${chart.base64}`;
+                    img.alt = chart.title || 'Chart';
+                    img.style.cssText = 'width: 100%; cursor: zoom-in;';
+                    img.onclick = () => {
+                        const isZoomed = thumb.dataset.zoomed === 'true';
+                        thumb.style.width = isZoomed ? '180px' : '640px';
+                        thumb.dataset.zoomed = isZoomed ? 'false' : 'true';
+                    };
+                    thumb.appendChild(img);
+                    thumbRow.appendChild(thumb);
+                });
+
+                ph.heading.after(thumbRow);
+            }
+
+            console.log(`[ChartMapping] Name-matched ${usedGlobal.size} global charts to 📊 headings`);
+        }
+
+        console.log(`[ChartMapping] Injected charts: ${Object.keys(findingCharts).length} findings, ${globalCharts.length} global`);
     }
 
     handleStreamEvent(state, event) {
@@ -890,6 +1307,116 @@ class IntelligentAnalysis {
                         </div>
                     `;
                     state.thoughtsContent.appendChild(qcDiv);
+                } else if (event.content && event.content.startsWith('[MINI_CHART]')) {
+                    // [NEW] Mini Chart in thinking flow
+                    try {
+                        const chartJsonStr = event.content.substring('[MINI_CHART]'.length);
+                        const chartData = JSON.parse(chartJsonStr);
+                        if (chartData && chartData.type === 'chart') {
+                            const chartWrapper = document.createElement('div');
+                            chartWrapper.className = "mb-2 p-2 bg-white border border-slate-200 rounded-lg shadow-sm";
+                            chartWrapper.style.cssText = "max-width: 320px;";
+
+                            // Title
+                            if (chartData.title) {
+                                const titleEl = document.createElement('div');
+                                titleEl.className = "text-[10px] font-medium text-slate-500 mb-1 truncate";
+                                titleEl.textContent = chartData.title;
+                                chartWrapper.appendChild(titleEl);
+                            }
+
+                            // Canvas
+                            const canvasContainer = document.createElement('div');
+                            canvasContainer.style.cssText = "width: 280px; height: 160px;";
+                            const canvas = document.createElement('canvas');
+                            canvas.width = 280;
+                            canvas.height = 160;
+                            canvasContainer.appendChild(canvas);
+                            chartWrapper.appendChild(canvasContainer);
+
+                            state.thoughtsContent.appendChild(chartWrapper);
+
+                            // Render Chart.js
+                            try {
+                                const ctx = canvas.getContext('2d');
+                                const miniConfig = {
+                                    type: chartData.chart_type || 'line',
+                                    data: {
+                                        labels: chartData.labels || [],
+                                        datasets: (chartData.datasets || []).map(ds => ({
+                                            ...ds,
+                                            borderWidth: ds.borderWidth || 1.5,
+                                            pointRadius: Math.min(ds.pointRadius || 2, 3),
+                                            tension: 0.2,
+                                        }))
+                                    },
+                                    options: {
+                                        responsive: true,
+                                        maintainAspectRatio: false,
+                                        animation: { duration: 300 },
+                                        plugins: {
+                                            legend: {
+                                                display: (chartData.datasets || []).length > 1,
+                                                position: 'bottom',
+                                                labels: { font: { size: 9 }, boxWidth: 10, padding: 4 }
+                                            },
+                                            title: { display: false }
+                                        },
+                                        scales: {
+                                            x: {
+                                                display: true,
+                                                ticks: { font: { size: 8 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 6 },
+                                                grid: { display: false }
+                                            },
+                                            y: {
+                                                display: true,
+                                                ticks: { font: { size: 8 }, maxTicksLimit: 5 },
+                                                grid: { color: 'rgba(0,0,0,0.04)' }
+                                            },
+                                            ...(chartData.options?.scales || {})
+                                        }
+                                    }
+                                };
+                                new Chart(ctx, miniConfig);
+                            } catch (chartErr) {
+                                console.error('[MiniChart] Render error:', chartErr);
+                                canvasContainer.innerHTML = '<span class="text-[10px] text-red-400">chart render failed</span>';
+                            }
+                        }
+                    } catch (parseErr) {
+                        console.warn('[MiniChart] Parse error:', parseErr);
+                    }
+                } else if (event.content && event.content.startsWith('[EVIDENCE_IMG]')) {
+                    // [Multimodal] Evidence chart image from matplotlib
+                    try {
+                        const payload = event.content.substring('[EVIDENCE_IMG]'.length);
+                        const pipeIdx = payload.indexOf('|');
+                        const toolName = pipeIdx > 0 ? payload.substring(0, pipeIdx) : 'chart';
+                        const imgBase64 = pipeIdx > 0 ? payload.substring(pipeIdx + 1) : payload;
+
+                        const chartWrapper = document.createElement('div');
+                        chartWrapper.className = "mb-2 p-2 bg-white border border-slate-200 rounded-lg shadow-sm";
+                        chartWrapper.style.cssText = "max-width: 480px; cursor: pointer; overflow: visible; position: relative; z-index: 10;";
+
+                        // Title
+                        const titleEl = document.createElement('div');
+                        titleEl.className = "text-[10px] font-medium text-slate-500 mb-1 flex items-center gap-1";
+                        titleEl.innerHTML = `<span style="color:#6366f1">&#9632;</span> ${toolName}`;
+                        chartWrapper.appendChild(titleEl);
+
+                        // Image
+                        const img = document.createElement('img');
+                        img.src = `data:image/png;base64,${imgBase64}`;
+                        img.alt = toolName;
+                        img.style.cssText = "width: 100%; border-radius: 4px; transition: transform 0.2s; transform-origin: left center;";
+                        img.onmouseover = () => { img.style.transform = "scale(1.8)"; chartWrapper.style.zIndex = "999"; };
+                        img.onmouseout = () => { img.style.transform = "scale(1)"; chartWrapper.style.zIndex = "10"; };
+                        chartWrapper.appendChild(img);
+
+                        state.thoughtsContent.appendChild(chartWrapper);
+                    } catch (imgErr) {
+                        console.warn('[EvidenceImg] Parse error:', imgErr);
+                    }
                 } else {
                     // Regular Thought
                     const tDiv = document.createElement('div');
@@ -945,6 +1472,19 @@ class IntelligentAnalysis {
                     return;
                 }
                 state.fullText += chunk;
+
+                // [Safety] Detect if accumulated text is accidentally JSON
+                if (state.fullText.length > 200 && !state._jsonCheckDone) {
+                    const trimmed = state.fullText.trim();
+                    if (trimmed.startsWith('{') && trimmed.includes('"response"')) {
+                        state._jsonCheckDone = true;
+                        console.warn('[Analysis] Detected JSON structure in text_chunk stream, will extract on completion');
+                        state._suspectedJson = true;
+                    } else {
+                        state._jsonCheckDone = true;
+                    }
+                }
+
                 this.updateMarkdown(state);
                 this.scrollToBottom();
                 break;
@@ -952,18 +1492,131 @@ class IntelligentAnalysis {
             case 'status':
                 // Append to log instead of replacing statusText header
                 if (event.content && state.statusLog) {
-                    const logItem = document.createElement('div');
+                    // Turn Numbering (from backend)
+                    const turn = event.turn ?? state._lastKnownTurn ?? 0;
+                    if (event.turn !== undefined && event.turn > 0) state._lastKnownTurn = event.turn;
 
-                    // Add Step Numbering
-                    if (!state.logStepCount) state.logStepCount = 1;
+                    // [MINI_CHART] 檢測: 圖表渲染到 "AI 思考流程" 區塊
+                    if (event.content.startsWith('[MINI_CHART]')) {
+                        // Status log 只顯示簡短文字
+                        const logItem = document.createElement('div');
+                        logItem.textContent = `Step ${turn}: [圖表已渲染至思考流程]`;
+                        logItem.style.color = '#94a3b8';
+                        state.statusLog.appendChild(logItem);
 
-                    // Only number significant steps (skip simple status updates if needed, currently numbering all)
-                    logItem.textContent = `Step ${state.logStepCount}: ${event.content}`;
-                    state.logStepCount++;
+                        // 圖表渲染到 thoughtsContent
+                        try {
+                            const chartJsonStr = event.content.substring('[MINI_CHART]'.length);
+                            const chartData = JSON.parse(chartJsonStr);
+                            if (chartData && chartData.type === 'chart' && state.thoughtsContent) {
+                                // 確保 思考區塊 可見
+                                if (state.thoughtsContainer) {
+                                    state.thoughtsContainer.classList.remove('hidden');
+                                }
 
-                    // Add a small timestamp? Optional.
-                    // logItem.textContent = `[${new Date().toLocaleTimeString()}] ${event.content}`;
-                    state.statusLog.appendChild(logItem);
+                                const chartWrapper = document.createElement('div');
+                                chartWrapper.className = "mb-2 p-2 bg-white border border-slate-200 rounded-lg shadow-sm";
+
+                                // 動態尺寸: 複雜圖表類型給更大空間
+                                const complexTypes = ['radar', 'scatter', 'bubble'];
+                                const isComplex = complexTypes.includes(chartData.chart_type) ||
+                                    (chartData.title && chartData.title.includes('平行座標'));
+                                const chartW = isComplex ? 480 : 320;
+                                const chartH = isComplex ? 280 : 180;
+                                chartWrapper.style.cssText = `max-width: ${chartW + 20}px; margin: 6px 0;`;
+
+                                // Title
+                                if (chartData.title) {
+                                    const titleEl = document.createElement('div');
+                                    titleEl.className = "text-[11px] font-medium text-slate-600 mb-1";
+                                    titleEl.textContent = chartData.title;
+                                    chartWrapper.appendChild(titleEl);
+                                }
+
+                                // Canvas
+                                const canvasContainer = document.createElement('div');
+                                canvasContainer.style.cssText = `width: ${chartW}px; height: ${chartH}px;`;
+                                const canvas = document.createElement('canvas');
+                                canvas.width = chartW;
+                                canvas.height = chartH;
+                                canvasContainer.appendChild(canvas);
+                                chartWrapper.appendChild(canvasContainer);
+
+                                state.thoughtsContent.appendChild(chartWrapper);
+
+                                // Render Chart.js
+                                try {
+                                    const ctx = canvas.getContext('2d');
+                                    const miniConfig = {
+                                        type: chartData.chart_type || 'line',
+                                        data: {
+                                            labels: chartData.labels || [],
+                                            datasets: (chartData.datasets || []).map(ds => ({
+                                                ...ds,
+                                                borderWidth: ds.borderWidth || 1.5,
+                                                pointRadius: Array.isArray(ds.pointRadius)
+                                                    ? ds.pointRadius
+                                                    : Math.min(ds.pointRadius || 2, 3),
+                                                tension: 0.2,
+                                            }))
+                                        },
+                                        options: {
+                                            responsive: true,
+                                            maintainAspectRatio: false,
+                                            animation: { duration: 300 },
+                                            plugins: {
+                                                legend: {
+                                                    display: (chartData.datasets || []).length > 1 && (chartData.datasets || []).length <= 5,
+                                                    position: 'bottom',
+                                                    labels: { font: { size: 9 }, boxWidth: 10, padding: 4 }
+                                                },
+                                                title: { display: false }
+                                            },
+                                            scales: {
+                                                x: {
+                                                    display: true,
+                                                    ticks: { font: { size: 8 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 6 },
+                                                    grid: { display: false }
+                                                },
+                                                y: {
+                                                    display: true,
+                                                    ticks: { font: { size: 8 }, maxTicksLimit: 5 },
+                                                    grid: { color: 'rgba(0,0,0,0.04)' }
+                                                },
+                                                ...(chartData.options?.scales || {})
+                                            }
+                                        }
+                                    };
+                                    new Chart(ctx, miniConfig);
+                                } catch (chartErr) {
+                                    console.error('[MiniChart] Render error:', chartErr);
+                                    canvasContainer.innerHTML = '<span class="text-[10px] text-red-400">chart render failed</span>';
+                                }
+                            }
+                        } catch (parseErr) {
+                            console.warn('[MiniChart] Parse error:', parseErr);
+                        }
+                    } else {
+                        // 普通 status 訊息: 只顯示最新一筆，舊的收進摺疊
+                        if (!state._statusCounter) state._statusCounter = 0;
+                        state._statusCounter++;
+                        const stepNum = state._statusCounter;
+
+                        const latestEl = state.statusLogLatest;
+                        if (latestEl) {
+                            latestEl.textContent = event.content;
+                        }
+                        // 超過 1 筆時顯示 toggle
+                        if (stepNum > 1) {
+                            const toggleBtn = state.row.querySelector('.status-log-toggle');
+                            if (toggleBtn) toggleBtn.style.display = '';
+                        }
+                        // 同時加進完整歷史
+                        const logItem = document.createElement('div');
+                        logItem.textContent = `Step ${stepNum}: ${event.content}`;
+                        state.statusLog.appendChild(logItem);
+                    }
+
                     // 修正：狀態更新時也必須滾動，否則思考過程會被擋住
                     this.scrollToBottom();
                 }
@@ -1020,6 +1673,283 @@ class IntelligentAnalysis {
                 // 已廢棄：回歸 text_chunk 命名
                 break;
 
+            // === Code Interpreter Events ===
+
+            case 'code_block':
+                // Code block: create container (may be empty for streaming)
+                if (state.thoughtsContainer) {
+                    state.thoughtsContainer.classList.remove('hidden');
+                    if (state.detailsWrapper) state.detailsWrapper.open = true;
+                }
+                if (state.thoughtsContent) {
+                    const codeDetails = document.createElement('details');
+                    codeDetails.className = "mb-2 rounded-lg overflow-hidden border border-slate-300 shadow-sm";
+
+                    const codeSummary = document.createElement('summary');
+                    codeSummary.className = "flex items-center gap-2 px-3 py-1.5 bg-slate-700 text-slate-300 text-[10px] font-mono cursor-pointer select-none";
+                    codeSummary.innerHTML = `<span style="color:#f472b6">&#9654;</span> Python <span class="ml-auto text-slate-500">Round ${event.round || 1}</span>`;
+                    codeDetails.appendChild(codeSummary);
+
+                    const codeBody = document.createElement('pre');
+                    codeBody.className = "p-3 bg-slate-900 text-green-300 text-[11px] font-mono leading-relaxed overflow-auto max-h-80 whitespace-pre-wrap";
+                    codeBody.style.resize = "vertical";
+                    codeBody.id = `code-body-round-${event.round || 1}`;
+                    if (event.code) {
+                        codeBody.textContent = event.code;
+                    }
+                    codeDetails.appendChild(codeBody);
+
+                    state.thoughtsContent.appendChild(codeDetails);
+                    this.scrollToBottom();
+                }
+                break;
+
+            case 'code_chunk':
+                // Typewriter: append chunk to current round's code body
+                if (state.thoughtsContent && event.chunk) {
+                    const roundNum = event.round || 1;
+                    // 用 state.row 做 scoped 搜尋，避免跨分析 ID 碰撞
+                    if (!state._msgId) state._msgId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+                    const codeId = `code-body-${state._msgId}-r${roundNum}`;
+                    let codeBody = document.getElementById(codeId);
+
+                    // Race condition fix: code_chunk may arrive before code_block
+                    if (!codeBody) {
+                        // Auto-create code container
+                        if (state.thoughtsContainer) {
+                            state.thoughtsContainer.classList.remove('hidden');
+                            if (state.detailsWrapper) state.detailsWrapper.open = true;
+                        }
+                        const codeDetails = document.createElement('details');
+                        codeDetails.className = "mb-2 rounded-lg overflow-hidden border border-slate-300 shadow-sm";
+                        const codeSummary = document.createElement('summary');
+                        codeSummary.className = "flex items-center gap-2 px-3 py-1.5 bg-slate-700 text-slate-300 text-[10px] font-mono cursor-pointer select-none";
+                        codeSummary.innerHTML = `<span style="color:#f472b6">&#9654;</span> Python <span class="ml-auto text-slate-500">Round ${roundNum}</span>`;
+                        codeDetails.appendChild(codeSummary);
+                        codeBody = document.createElement('pre');
+                        codeBody.className = "p-3 bg-slate-900 text-green-300 text-[11px] font-mono leading-relaxed overflow-auto max-h-80 whitespace-pre-wrap";
+                        codeBody.style.resize = "vertical";
+                        codeBody.id = codeId;
+                        codeDetails.appendChild(codeBody);
+                        state.thoughtsContent.appendChild(codeDetails);
+                    }
+
+                    codeBody.textContent += event.chunk;
+                    this.scrollToBottom();
+                }
+                break;
+
+            case 'mini_chart':
+                // Tool mode chart: render in chartContainer (survives markdown re-render)
+                if (state.chartContainer && event.chart) {
+                    try {
+                        const chartData = event.chart;
+                        const chartWrapper = document.createElement('div');
+                        chartWrapper.className = "my-3 p-3 bg-white border border-slate-200 rounded-lg shadow-sm";
+
+                        if (chartData.title) {
+                            const title = document.createElement('div');
+                            title.className = "text-sm font-semibold text-slate-700 mb-2";
+                            title.textContent = chartData.title;
+                            chartWrapper.appendChild(title);
+                        }
+
+                        const canvas = document.createElement('canvas');
+                        canvas.style.maxHeight = '350px';
+                        chartWrapper.appendChild(canvas);
+                        state.chartContainer.appendChild(chartWrapper);
+
+                        if (typeof Chart !== 'undefined' && chartData.data) {
+                            // Apply default styling to datasets
+                            if (chartData.data.datasets) {
+                                const colors = ['#3B82F6', '#EF4444', '#10B981', '#F59E0B', '#8B5CF6'];
+                                chartData.data.datasets.forEach((ds, i) => {
+                                    ds.borderWidth = ds.borderWidth || 2;
+                                    ds.borderColor = ds.borderColor || colors[i % colors.length];
+                                    ds.backgroundColor = ds.backgroundColor || colors[i % colors.length] + '20';
+                                    ds.pointRadius = ds.pointRadius === undefined ? 0 : ds.pointRadius;
+                                    ds.tension = ds.tension || 0.1;
+                                });
+                            }
+                            new Chart(canvas, {
+                                type: chartData.chart_type || 'line',
+                                data: chartData.data,
+                                options: {
+                                    responsive: true,
+                                    maintainAspectRatio: false,
+                                    plugins: { legend: { display: true } },
+                                    scales: { y: { beginAtZero: false } }
+                                }
+                            });
+                        }
+                        this.scrollToBottom();
+                    } catch (e) {
+                        console.error('[mini_chart] render error:', e);
+                    }
+                }
+                break;
+
+            case 'code_output':
+                // 程式執行輸出
+                if (state.thoughtsContent) {
+                    // 即時行輸出 (is_line=true): 追加到既有容器
+                    if (event.is_line && event.stdout) {
+                        // 找或建立即時輸出容器
+                        let liveContainer = state.thoughtsContent.querySelector('.code-output-live-' + (event.round || 1));
+                        if (!liveContainer) {
+                            const outDetails = document.createElement('details');
+                            outDetails.className = `mb-2 rounded-lg overflow-hidden border border-slate-200 shadow-sm code-output-wrapper-${event.round || 1}`;
+
+                            const outSummary = document.createElement('summary');
+                            outSummary.className = "flex items-center gap-2 px-3 py-1.5 bg-slate-100 text-slate-600 text-[10px] font-mono cursor-pointer select-none";
+                            outSummary.innerHTML = `<span style="color:#22c55e">&#9632;</span> 執行結果 <span class="ml-auto text-slate-400">Round ${event.round || 1}</span>`;
+                            outDetails.appendChild(outSummary);
+
+                            liveContainer = document.createElement('pre');
+                            liveContainer.className = `p-3 bg-white text-slate-700 text-[11px] font-mono leading-relaxed overflow-auto max-h-80 whitespace-pre-wrap code-output-live-${event.round || 1}`;
+                            liveContainer.style.resize = "vertical";
+                            outDetails.appendChild(liveContainer);
+
+                            state.thoughtsContent.appendChild(outDetails);
+                        }
+                        liveContainer.textContent += event.stdout + '\n';
+                        this.scrollToBottom();
+                    }
+                    // 最終輸出 (error/stderr): 建立新容器
+                    else if (event.stdout || event.stderr || event.error) {
+                        const outWrapper = document.createElement('div');
+                        outWrapper.className = "mb-2 rounded-lg overflow-hidden border border-slate-200 shadow-sm";
+
+                        // Header
+                        const outHeader = document.createElement('div');
+                        outHeader.className = "flex items-center gap-2 px-3 py-1.5 bg-slate-100 text-slate-600 text-[10px] font-mono";
+                        outHeader.innerHTML = `<span style="color:#22c55e">&#9632;</span> 執行結果 <span class="ml-auto text-slate-400">Round ${event.round || 1}</span>`;
+                        outWrapper.appendChild(outHeader);
+
+                        // Output body
+                        const outBody = document.createElement('pre');
+                        outBody.className = "p-3 bg-white text-slate-700 text-[11px] font-mono leading-relaxed overflow-auto max-h-60 whitespace-pre-wrap";
+
+                        let outputText = '';
+                        if (event.stdout) outputText += event.stdout;
+                        if (event.stderr) outputText += (outputText ? '\n' : '') + event.stderr;
+                        if (event.error) {
+                            outBody.className = "p-3 bg-red-50 text-red-700 text-[11px] font-mono leading-relaxed overflow-auto max-h-60 whitespace-pre-wrap";
+                            outputText += (outputText ? '\n' : '') + '--- ERROR ---\n' + event.error;
+                        }
+                        outBody.textContent = outputText;
+                        outWrapper.appendChild(outBody);
+
+                        state.thoughtsContent.appendChild(outWrapper);
+                        this.scrollToBottom();
+                    }
+                }
+                break;
+
+            case 'chart_image':
+                // matplotlib 圖表: 同一 Round 的圖表收在同一個摺疊裡
+                if (event.image_base64) {
+                    const targetContainer = state.chartContainer || state.markdownBody;
+                    if (!targetContainer) break;
+
+                    const roundKey = event.round || 'pre';
+                    const containerId = `chart-group-round-${roundKey}`;
+
+                    // 找或建立該 Round 的摺疊容器
+                    let chartDetails = targetContainer.querySelector(`#${containerId}`);
+                    let chartBody;
+                    if (!chartDetails) {
+                        chartDetails = document.createElement('details');
+                        chartDetails.id = containerId;
+                        chartDetails.className = "mb-2 rounded-lg overflow-hidden border border-slate-200 shadow-sm";
+
+                        const chartSummary = document.createElement('summary');
+                        chartSummary.className = "flex items-center gap-2 px-3 py-1.5 bg-blue-50 text-slate-600 text-[10px] font-mono cursor-pointer select-none";
+                        const roundLabel = roundKey === 'pre' ? '前處理' : `Round ${roundKey}`;
+                        chartSummary.innerHTML = `<span style="color:#3B82F6">&#9632;</span> 分析圖表 <span class="chart-count-badge ml-1 text-[9px] bg-blue-100 text-blue-600 px-1.5 rounded-full">1</span> <span class="ml-auto text-slate-400">${roundLabel}</span>`;
+                        chartDetails.appendChild(chartSummary);
+
+                        chartBody = document.createElement('div');
+                        chartBody.className = "p-2 bg-white space-y-2 chart-body";
+                        chartDetails.appendChild(chartBody);
+
+                        // 底部「收起」按鈕（避免滑到最下面後要滾回去關）
+                        const collapseBtn = document.createElement('div');
+                        collapseBtn.className = "text-center py-1.5 bg-blue-50 text-blue-500 text-[10px] cursor-pointer select-none hover:bg-blue-100 transition-colors";
+                        collapseBtn.textContent = "▲ 收起圖表";
+                        collapseBtn.onclick = (e) => {
+                            e.preventDefault();
+                            chartDetails.removeAttribute('open');
+                            chartDetails.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                        };
+                        chartDetails.appendChild(collapseBtn);
+
+                        targetContainer.appendChild(chartDetails);
+                    } else {
+                        chartBody = chartDetails.querySelector('.chart-body');
+                        // 更新計數
+                        const badge = chartDetails.querySelector('.chart-count-badge');
+                        if (badge) {
+                            const count = chartBody.querySelectorAll('img').length + 1;
+                            badge.textContent = count;
+                        }
+                    }
+
+                    // 圖片 wrapper (含標題)
+                    const imgWrapper = document.createElement('div');
+                    imgWrapper.className = "border border-slate-100 rounded-lg overflow-hidden";
+                    imgWrapper.style.cssText = "max-width: 640px; cursor: pointer;";
+
+                    if (event.title) {
+                        const imgTitle = document.createElement('div');
+                        imgTitle.className = "text-[10px] font-medium text-slate-500 px-2 py-1 bg-slate-50";
+                        imgTitle.textContent = event.title;
+                        imgWrapper.appendChild(imgTitle);
+                    }
+
+                    const chartImg = document.createElement('img');
+                    chartImg.src = `data:image/png;base64,${event.image_base64}`;
+                    chartImg.alt = event.title || 'Analysis Chart';
+                    chartImg.style.cssText = "width: 100%; border-radius: 0 0 6px 6px; transition: transform 0.3s ease; transform-origin: left center; cursor: zoom-in;";
+                    chartImg.onclick = () => {
+                        const isZoomed = chartImg.dataset.zoomed === 'true';
+                        chartImg.style.transform = isZoomed ? "scale(1)" : "scale(1.5)";
+                        chartImg.style.cursor = isZoomed ? "zoom-in" : "zoom-out";
+                        imgWrapper.style.overflow = isZoomed ? "hidden" : "visible";
+                        imgWrapper.style.zIndex = isZoomed ? "10" : "999";
+                        imgWrapper.style.position = isZoomed ? "" : "relative";
+                        chartImg.dataset.zoomed = isZoomed ? 'false' : 'true';
+                    };
+                    imgWrapper.appendChild(chartImg);
+                    chartBody.appendChild(imgWrapper);
+
+                    // 存儲圖表以供 chart_mapping 使用
+                    state.chartImages.push({
+                        base64: event.image_base64,
+                        title: event.title || '',
+                        round: event.round || 0,
+                    });
+
+                    this.scrollToBottom();
+                }
+                break;
+
+            case 'chart_mapping':
+                // 收到 chart-to-finding mapping (from Evidence Evaluator)
+                console.log('[ChartMapping] Received mapping:', event);
+                state.chartMapping = event; // {"0": 0, "1": 1, "2": -1, ...}
+                break;
+
+            case 'intent_confirmation':
+                // Route intent 需要用戶確認分析參數
+                console.log('[IntentConfirmation] Received:', event);
+                // Remove empty streaming message row (analysis didn't run)
+                if (state && state.row) {
+                    state.row.remove();
+                }
+                this.showIntentConfirmation(event);
+                break;
+
             case 'response':
                 // 串流結束後的最終校驗與渲染
                 if (state.markdownBody) {
@@ -1043,14 +1973,34 @@ class IntelligentAnalysis {
 
                     // 3. 備援：如果累積的 fullText 本身就是 JSON (AI 誤輸出的情況)
                     let finalContent = backendContent || state.fullText;
-                    if (typeof finalContent === 'string' && (finalContent.trim().startsWith('{') || finalContent.trim().startsWith('['))) {
+
+                    // [Enhanced] 更積極地檢測和提取 JSON 包裝的內容
+                    if (typeof finalContent === 'string' && finalContent.trim().startsWith('{')) {
                         try {
-                            const parsed = JSON.parse(finalContent);
+                            const parsed = JSON.parse(finalContent.trim());
                             if (parsed.response || parsed.content || parsed.summary) {
                                 finalContent = parsed.response || parsed.content || parsed.summary;
-                                console.log("[Analysis] Extracted content from accidentally JSON-wrapped fullText");
+                                console.log("[Analysis] Extracted content from JSON-wrapped output");
                             }
-                        } catch (e) { /* Not a valid JSON, keep as is */ }
+                        } catch (e) {
+                            // 不是完整的 JSON，嘗試 regex 提取
+                            const jsonMatch = finalContent.match(/^\s*\{\s*"response"\s*:\s*"([\s\S]+?)"\s*[,}]/);
+                            if (jsonMatch && jsonMatch[1] && jsonMatch[1].length > 50) {
+                                // 還原 JSON 轉義字元
+                                finalContent = jsonMatch[1]
+                                    .replace(/\\n/g, '\n')
+                                    .replace(/\\t/g, '\t')
+                                    .replace(/\\\\/g, '\\')
+                                    .replace(/\\"/g, '"');
+                                console.log("[Analysis] Regex-extracted content from partial JSON");
+                            }
+                        }
+                    }
+
+                    // [Safety] 如果 fullText 被標記為疑似 JSON 且 backendContent 可用，優先使用 backendContent
+                    if (state._suspectedJson && backendContent && typeof backendContent === 'string' && !backendContent.trim().startsWith('{')) {
+                        finalContent = backendContent;
+                        console.log("[Analysis] Used backendContent over suspected JSON fullText");
                     }
 
                     // 徹底清除物件雜訊
@@ -1078,97 +2028,254 @@ class IntelligentAnalysis {
                         this.renderCharts(state.markdownBody);
                     }, 50);
 
-                    // --- Render Structured Report Cards (if available) ---
-                    const sr = (event.tool_result && event.tool_result.structured_report) || null;
-                    if (sr && sr.findings && sr.findings.length > 0) {
-                        const reportDiv = document.createElement('div');
-                        reportDiv.style.cssText = 'margin-top: 24px; border-top: 2px solid rgba(99,102,241,0.2); padding-top: 20px;';
+                    // === 方案 E: Inline Chart Injection ===
+                    // 報告渲染完後，把匹配的圖表插入「發現 N」段落下方
+                    // Stream 上方的圖預設收合
+                    setTimeout(() => {
+                        try {
+                            const msgRow = state.markdownBody.closest('.message-row');
+                            if (!msgRow) return;
+                            const allChartImgs = Array.from(msgRow.querySelectorAll('.chart-body img'));
+                            if (allChartImgs.length === 0) return;
 
-                        // Section Title
-                        const titleEl = document.createElement('div');
-                        titleEl.style.cssText = 'font-size: 13px; font-weight: 700; color: #6366f1; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 12px;';
-                        titleEl.textContent = 'Structured Findings';
-                        reportDiv.appendChild(titleEl);
-
-                        // Executive Summary Banner
-                        if (sr.executive_summary) {
-                            const summaryBanner = document.createElement('div');
-                            summaryBanner.style.cssText = 'padding: 12px 16px; background: linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%); border: 1px solid #c7d2fe; border-radius: 10px; font-size: 13px; color: #3730a3; font-weight: 500; margin-bottom: 14px; line-height: 1.6;';
-                            summaryBanner.textContent = sr.executive_summary;
-                            reportDiv.appendChild(summaryBanner);
-                        }
-
-                        // Severity style maps
-                        const sevStyles = {
-                            'CRITICAL': { bg: 'linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%)', border: '#fca5a5', badge: '#dc2626', badgeBg: '#fee2e2', text: '#991b1b' },
-                            'HIGH': { bg: 'linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%)', border: '#fdba74', badge: '#ea580c', badgeBg: '#ffedd5', text: '#9a3412' },
-                            'MEDIUM': { bg: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)', border: '#fcd34d', badge: '#d97706', badgeBg: '#fef3c7', text: '#92400e' },
-                            'LOW': { bg: 'linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)', border: '#86efac', badge: '#16a34a', badgeBg: '#dcfce7', text: '#166534' },
-                        };
-
-                        // Findings Cards
-                        sr.findings.forEach(finding => {
-                            const card = document.createElement('div');
-                            const sev = (finding.severity || 'LOW').toUpperCase();
-                            const s = sevStyles[sev] || sevStyles['LOW'];
-                            card.style.cssText = `padding: 12px 16px; background: ${s.bg}; border: 1px solid ${s.border}; border-left: 4px solid ${s.badge}; border-radius: 8px; margin-bottom: 8px; transition: transform 0.15s ease;`;
-                            card.onmouseenter = () => card.style.transform = 'translateX(4px)';
-                            card.onmouseleave = () => card.style.transform = 'translateX(0)';
-
-                            // Badge + Title row
-                            const header = document.createElement('div');
-                            header.style.cssText = 'display: flex; align-items: center; gap: 8px; margin-bottom: 4px;';
-
-                            const badge = document.createElement('span');
-                            badge.style.cssText = `font-size: 10px; font-weight: 800; padding: 2px 8px; border-radius: 4px; background: ${s.badgeBg}; color: ${s.badge}; letter-spacing: 0.5px;`;
-                            badge.textContent = sev;
-
-                            const title = document.createElement('span');
-                            title.style.cssText = `font-size: 13px; font-weight: 600; color: ${s.text};`;
-                            title.textContent = finding.title || '';
-
-                            header.appendChild(badge);
-                            header.appendChild(title);
-                            card.appendChild(header);
-
-                            if (finding.detail) {
-                                const detail = document.createElement('div');
-                                detail.style.cssText = 'font-size: 12px; color: #64748b; margin-top: 4px; line-height: 1.5;';
-                                detail.textContent = finding.detail;
-                                card.appendChild(detail);
-                            }
-
-                            reportDiv.appendChild(card);
-                        });
-
-                        // Action Items
-                        if (sr.action_items && sr.action_items.length > 0) {
-                            const actionsDiv = document.createElement('div');
-                            actionsDiv.style.cssText = 'margin-top: 14px; padding: 12px 16px; background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%); border: 1px solid #e2e8f0; border-radius: 10px;';
-
-                            const actTitle = document.createElement('div');
-                            actTitle.style.cssText = 'font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 1.2px; margin-bottom: 10px;';
-                            actTitle.textContent = 'Action Items';
-                            actionsDiv.appendChild(actTitle);
-
-                            const prioColors = { 'HIGH': '#ef4444', 'MEDIUM': '#f59e0b', 'LOW': '#22c55e' };
-                            sr.action_items.forEach(item => {
-                                const li = document.createElement('div');
-                                li.style.cssText = 'font-size: 13px; color: #475569; display: flex; align-items: flex-start; gap: 8px; margin-bottom: 6px; line-height: 1.5;';
-                                const prio = (item.priority || 'MEDIUM').toUpperCase();
-                                const dot = document.createElement('span');
-                                dot.style.cssText = `width: 8px; height: 8px; border-radius: 50%; background: ${prioColors[prio] || '#94a3b8'}; margin-top: 5px; flex-shrink: 0;`;
-                                const text = document.createElement('span');
-                                text.textContent = item.action || item;
-                                li.appendChild(dot);
-                                li.appendChild(text);
-                                actionsDiv.appendChild(li);
+                            // 1) 收合 stream 上方的圖表 <details>
+                            msgRow.querySelectorAll('.chart-container details[open]').forEach(d => {
+                                d.removeAttribute('open');
                             });
 
-                            reportDiv.appendChild(actionsDiv);
-                        }
+                            // 1.5) 前處理圖表縮圖 → 插入到「分析概述」後面
+                            //      但如果有 📊 heading (目標參數模式)，不放概述，改由 _injectInlineCharts 處理
+                            const hasParamHeadings = Array.from(state.markdownBody.querySelectorAll('h2, h3, h4')).some(h => h.textContent.includes('\u{1F4CA}'));
+                            const preprocessImgs = allChartImgs.filter(img =>
+                                (img.alt || '').includes('前處理') || (img.closest('div')?.textContent || '').includes('前處理')
+                            );
+                            if (preprocessImgs.length > 0 && !hasParamHeadings) {
+                                // 找「分析概述」或報告第一個 heading / 第一個 <p>
+                                const allEls = state.markdownBody.querySelectorAll('h2, h3, p');
+                                let summaryAnchor = null;
+                                for (const el of allEls) {
+                                    const t = el.textContent || '';
+                                    if (/分析概述|概覽|Overview|Summary|報告/i.test(t)) {
+                                        summaryAnchor = el;
+                                        break;
+                                    }
+                                }
+                                // fallback: 第一個 <p>
+                                if (!summaryAnchor) {
+                                    summaryAnchor = state.markdownBody.querySelector('p');
+                                }
+                                if (summaryAnchor) {
+                                    const prepBlock = document.createElement('div');
+                                    prepBlock.style.cssText = 'margin: 8px 0 12px; display: flex; gap: 6px; flex-wrap: wrap;';
+                                    preprocessImgs.forEach(img => {
+                                        const thumb = document.createElement('img');
+                                        thumb.src = img.src;
+                                        thumb.alt = img.alt || '前處理圖表';
+                                        thumb.title = img.alt || '點擊放大';
+                                        thumb.style.cssText = 'height: 80px; border-radius: 6px; border: 1px solid rgba(0,0,0,0.08); cursor: pointer; opacity: 0.85; transition: all 0.2s ease;';
+                                        thumb.onmouseenter = () => { thumb.style.opacity = '1'; thumb.style.transform = 'scale(1.05)'; thumb.style.boxShadow = '0 3px 10px rgba(0,0,0,0.12)'; };
+                                        thumb.onmouseleave = () => { thumb.style.opacity = '0.85'; thumb.style.transform = 'scale(1)'; thumb.style.boxShadow = 'none'; };
+                                        thumb.onclick = () => {
+                                            const srcs = preprocessImgs.map(i => i.src);
+                                            window._openLightbox(srcs, srcs.indexOf(img.src));
+                                        };
+                                        prepBlock.appendChild(thumb);
+                                    });
+                                    if (summaryAnchor.nextSibling) {
+                                        summaryAnchor.parentNode.insertBefore(prepBlock, summaryAnchor.nextSibling);
+                                    } else {
+                                        summaryAnchor.parentNode.appendChild(prepBlock);
+                                    }
+                                }
+                            }
 
-                        state.markdownBody.appendChild(reportDiv);
+                            // 2) 掃描 markdown 裡的「發現」區段
+                            //    可能是 h2/h3 heading 或 **發現 N:** 等
+                            const allElements = state.markdownBody.querySelectorAll('h2, h3, p, li, strong');
+                            const findingPattern = /發現\s*\d+|Finding\s*\d+/i;
+                            const sections = []; // [{heading, textBlock, element}]
+
+                            allElements.forEach(el => {
+                                const txt = el.textContent || '';
+                                if (findingPattern.test(txt)) {
+                                    // 收集這個 heading 和後續兄弟元素的文字作為 section
+                                    let fullText = txt;
+                                    let lastEl = el;
+                                    let sib = el.nextElementSibling;
+                                    // 往下收集直到下一個 finding、行動建議標題、或最多 8 個兄弟
+                                    const stopPattern = /行動|建議|結論|摘要|Action|Recommend|Summary/i;
+                                    let sibCount = 0;
+                                    while (sib && sibCount < 8) {
+                                        const sibText = sib.textContent || '';
+                                        if (findingPattern.test(sibText)) break;
+                                        if (stopPattern.test(sibText) && (sib.tagName === 'H2' || sib.tagName === 'H3' || sib.tagName === 'H4' || sib.tagName === 'STRONG')) break;
+                                        fullText += ' ' + sibText;
+                                        lastEl = sib;
+                                        sib = sib.nextElementSibling;
+                                        sibCount++;
+                                    }
+                                    sections.push({ heading: el, fullText, insertAfter: lastEl });
+                                }
+                            });
+
+                            if (sections.length === 0) return;
+
+                            // 3) 對每個 section，提取 keywords 並匹配圖表
+                            const usedSrcs = new Set();
+                            sections.forEach(sec => {
+                                const colMatches = sec.fullText.match(/[A-Z][A-Z0-9_-]{4,}/g) || [];
+                                const ivMatches = sec.fullText.match(/#(\d+-\d+)/g) || [];
+                                const intervals = ivMatches.map(m => m.replace('#', ''));
+                                const keywords = [...new Set([...intervals, ...colMatches])].filter(k => k.length > 3);
+                                if (keywords.length === 0) return;
+
+                                const matched = [];
+                                const localSeen = new Set(); // 同一 finding 內避免重複
+                                allChartImgs.forEach(img => {
+                                    const wrapperText = img.closest('div')?.textContent || '';
+                                    const searchText = `${img.alt || ''} ${wrapperText}`.toLowerCase();
+                                    const isMatch = keywords.some(kw => searchText.includes(kw.toLowerCase()));
+                                    if (isMatch && !localSeen.has(img.src) && matched.length < 6) {
+                                        localSeen.add(img.src);
+                                        usedSrcs.add(img.src); // 只用來決定「其他圖表」
+                                        matched.push({ src: img.src, alt: img.alt || wrapperText.trim().slice(0, 60) || '' });
+                                    }
+                                });
+                                console.log(`[ChartMatch] Section: "${sec.fullText.slice(0, 80)}..." | keywords:`, keywords, `| matched: ${matched.length}/${allChartImgs.length}`);
+                                if (matched.length === 0) {
+                                    console.log(`[ChartMatch] ❌ No match. Chart alts:`, allChartImgs.map(i => i.alt));
+                                    return;
+                                }
+
+                                // 4) 建立 inline 縮圖列
+                                const chartBlock = document.createElement('div');
+                                chartBlock.style.cssText = 'margin: 8px 0 16px; display: flex; gap: 6px; flex-wrap: wrap;';
+
+                                matched.forEach(m => {
+                                    const thumb = document.createElement('img');
+                                    thumb.src = m.src;
+                                    thumb.alt = m.alt;
+                                    thumb.title = m.alt || '點擊放大';
+                                    thumb.style.cssText = 'height: 100px; border-radius: 6px; border: 1px solid rgba(0,0,0,0.08); cursor: pointer; opacity: 0.8; transition: all 0.2s ease;';
+                                    thumb.onmouseenter = () => { thumb.style.opacity = '1'; thumb.style.transform = 'scale(1.05)'; thumb.style.boxShadow = '0 3px 10px rgba(0,0,0,0.12)'; };
+                                    thumb.onmouseleave = () => { thumb.style.opacity = '0.8'; thumb.style.transform = 'scale(1)'; thumb.style.boxShadow = 'none'; };
+                                    thumb.onclick = () => {
+                                        window._openLightbox(matched.map(x => x.src), matched.indexOf(m));
+                                    };
+                                    chartBlock.appendChild(thumb);
+                                });
+
+                                // 5) 插入到該段落後面
+                                if (sec.insertAfter.nextSibling) {
+                                    sec.insertAfter.parentNode.insertBefore(chartBlock, sec.insertAfter.nextSibling);
+                                } else {
+                                    sec.insertAfter.parentNode.appendChild(chartBlock);
+                                }
+                            });
+
+                            // 6) 沒有被任何 finding 匹配的圖，放最後作為「其他圖表」
+                            const unmatchedImgs = allChartImgs.filter(img => !usedSrcs.has(img.src));
+                            if (unmatchedImgs.length > 0) {
+                                const otherBlock = document.createElement('details');
+                                otherBlock.style.cssText = 'margin-top: 16px; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;';
+                                const otherSummary = document.createElement('summary');
+                                otherSummary.style.cssText = 'padding: 8px 12px; background: #f8fafc; font-size: 11px; font-weight: 600; color: #94a3b8; cursor: pointer; letter-spacing: 0.5px;';
+                                otherSummary.textContent = `📊 其他圖表 (${unmatchedImgs.length})`;
+                                otherBlock.appendChild(otherSummary);
+                                const otherBody = document.createElement('div');
+                                otherBody.style.cssText = 'padding: 8px; display: flex; gap: 6px; flex-wrap: wrap;';
+                                unmatchedImgs.forEach(img => {
+                                    const thumb = document.createElement('img');
+                                    thumb.src = img.src;
+                                    thumb.alt = img.alt || '';
+                                    thumb.style.cssText = 'height: 72px; border-radius: 6px; border: 1px solid rgba(0,0,0,0.08); cursor: pointer; opacity: 0.8;';
+                                    thumb.onclick = () => {
+                                        const allSrcs = unmatchedImgs.map(x => x.src);
+                                        window._openLightbox(allSrcs, allSrcs.indexOf(img.src));
+                                    };
+                                    otherBody.appendChild(thumb);
+                                });
+                                otherBlock.appendChild(otherBody);
+                                state.markdownBody.appendChild(otherBlock);
+                            }
+                        } catch (e) { console.warn('[Analysis] Inline chart injection error:', e); }
+                    }, 150);
+
+                    // --- Render Scene Suggestion Buttons (場景選擇按鈕) ---
+                    // follow_up_items 在 StopEvent 的 data 子物件中
+                    const eventData = (event && event.data) || event || {};
+                    console.log('[Analysis] response event keys:', Object.keys(event));
+                    console.log('[Analysis] event.data keys:', event.data ? Object.keys(event.data) : 'no data');
+                    console.log('[Analysis] follow_up_items:', eventData.follow_up_items);
+                    const followUpItems = eventData.follow_up_items || event.follow_up_items || [];
+                    const sceneItems = followUpItems.filter(item =>
+                        item && typeof item === 'object' && item.scene_id
+                    );
+                    if (sceneItems.length > 0) {
+                        const sceneDiv = document.createElement('div');
+                        sceneDiv.style.cssText = 'margin-top: 20px; border-top: 2px solid rgba(139,92,246,0.2); padding-top: 16px;';
+
+                        const sceneTitleEl = document.createElement('div');
+                        sceneTitleEl.style.cssText = 'font-size: 13px; font-weight: 700; color: #7c3aed; margin-bottom: 10px; display: flex; align-items: center; gap: 6px;';
+                        sceneTitleEl.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg> 可深入分析的方向`;
+                        sceneDiv.appendChild(sceneTitleEl);
+
+                        const sceneGrid = document.createElement('div');
+                        sceneGrid.style.cssText = 'display: flex; flex-wrap: wrap; gap: 8px;';
+
+                        sceneItems.forEach(item => {
+                            const btn = document.createElement('button');
+                            btn.style.cssText = `
+                                padding: 8px 14px;
+                                background: linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%);
+                                border: 1px solid #c4b5fd;
+                                border-radius: 8px;
+                                font-size: 12px;
+                                color: #5b21b6;
+                                font-weight: 500;
+                                cursor: pointer;
+                                transition: all 0.2s ease;
+                                display: flex;
+                                align-items: center;
+                                gap: 6px;
+                                text-align: left;
+                                line-height: 1.4;
+                            `;
+                            btn.onmouseenter = () => {
+                                btn.style.background = 'linear-gradient(135deg, #ede9fe 0%, #ddd6fe 100%)';
+                                btn.style.borderColor = '#a78bfa';
+                                btn.style.transform = 'translateY(-1px)';
+                                btn.style.boxShadow = '0 2px 8px rgba(139,92,246,0.15)';
+                            };
+                            btn.onmouseleave = () => {
+                                btn.style.background = 'linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%)';
+                                btn.style.borderColor = '#c4b5fd';
+                                btn.style.transform = 'translateY(0)';
+                                btn.style.boxShadow = 'none';
+                            };
+
+                            const badge = document.createElement('span');
+                            badge.style.cssText = 'font-size: 10px; font-weight: 700; background: #7c3aed; color: white; padding: 1px 6px; border-radius: 4px; flex-shrink: 0;';
+                            badge.textContent = item.scene_id;
+
+                            const label = document.createElement('span');
+                            label.textContent = item.label;
+
+                            btn.appendChild(badge);
+                            btn.appendChild(label);
+
+                            // Click handler: send scene select message
+                            btn.addEventListener('click', () => {
+                                const sceneMsg = `[SCENE_SELECT:${item.scene_id}] ${item.label}`;
+                                this.elements.userInput.value = sceneMsg;
+                                this.sendMessage();
+                            });
+
+                            sceneGrid.appendChild(btn);
+                        });
+
+                        sceneDiv.appendChild(sceneGrid);
+                        state.markdownBody.appendChild(sceneDiv);
                     }
                 }
 
@@ -1189,7 +2296,7 @@ class IntelligentAnalysis {
                 break;
 
             case 'error':
-                state.contentOutput.textContent += `❌ ${event.content}`;
+                state.contentOutput.textContent += `❌ ${event.detail || event.content || event.message || '未知錯誤'}`;
                 break;
         }
     }
@@ -1341,21 +2448,74 @@ class IntelligentAnalysis {
 
     async checkMappingStatus() {
         try {
-            const response = await fetch(`/api/analysis/mapping-status?session_id=${this.sessionId}`);
+            let url = `/api/analysis/mapping-status?session_id=${this.sessionId}`;
+            if (this.currentFileId) {
+                url += `&file_id=${this.currentFileId}`;
+            }
+            const response = await fetch(url);
+            const badge = document.getElementById('mapping-badge');
+            const modalName = document.getElementById('mapping-modal-name');
+            const deleteBtn = document.getElementById('btn-mapping-delete');
+
             if (response.ok) {
                 const data = await response.json();
                 if (data.active_mapping) {
                     this.elements.mappingFileName.textContent = data.active_mapping;
-                    this.elements.mappingFileName.classList.add('text-blue-600');
-                    this.elements.mappingFileName.classList.remove('text-gray-600');
+                    if (badge) {
+                        badge.textContent = '已就緒';
+                        badge.className = 'px-1.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-600 cursor-pointer hover:opacity-80 transition-opacity';
+                    }
+                    if (modalName) {
+                        modalName.textContent = data.active_mapping;
+                        modalName.className = 'font-medium ml-1 text-green-600';
+                    }
+                    if (deleteBtn) deleteBtn.classList.remove('hidden');
                 } else {
                     this.elements.mappingFileName.textContent = '尚未設定';
-                    this.elements.mappingFileName.classList.remove('text-blue-600');
-                    this.elements.mappingFileName.classList.add('text-gray-600');
+                    if (badge) {
+                        badge.textContent = '未設定';
+                        badge.className = 'px-1.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-400 cursor-pointer hover:opacity-80 transition-opacity';
+                    }
+                    if (modalName) {
+                        modalName.textContent = '尚未設定';
+                        modalName.className = 'font-medium ml-1 text-gray-400';
+                    }
+                    if (deleteBtn) deleteBtn.classList.add('hidden');
                 }
             }
         } catch (error) {
             console.error('Failed to check mapping status:', error);
+        }
+    }
+
+    openMappingModal() {
+        const modal = document.getElementById('mapping-modal');
+        if (modal) { modal.classList.remove('hidden'); modal.classList.add('flex'); }
+    }
+
+    closeMappingModal() {
+        const modal = document.getElementById('mapping-modal');
+        if (modal) { modal.classList.add('hidden'); modal.classList.remove('flex'); }
+    }
+
+    async deleteMapping() {
+        if (!confirm('確定要移除術語對應表嗎？')) return;
+        try {
+            let url = `/api/analysis/mapping?session_id=${this.sessionId}`;
+            if (this.currentFileId) {
+                url += `&file_id=${this.currentFileId}`;
+            }
+            const response = await fetch(url, { method: 'DELETE' });
+            if (response.ok) {
+                await this.checkMappingStatus();
+                this.closeMappingModal();
+            } else {
+                const err = await response.json();
+                alert(`移除失敗: ${err.detail || '未知錯誤'}`);
+            }
+        } catch (error) {
+            console.error('Delete mapping error:', error);
+            alert('移除對應表時發生錯誤');
         }
     }
 
@@ -1376,20 +2536,21 @@ class IntelligentAnalysis {
         // If a file is currently selected, bind mapping to it
         if (this.currentFileId) {
             formData.append('file_id', this.currentFileId);
-            console.log(`Binding mapping to file: ${this.currentFilename} (${this.currentFileId})`);
         }
 
         try {
             this.elements.mappingFileName.textContent = '上傳中...';
+            const badge = document.getElementById('mapping-badge');
+            if (badge) badge.textContent = '上傳中...';
+
             const response = await fetch('/api/analysis/upload', {
                 method: 'POST',
                 body: formData
             });
 
             if (response.ok) {
-                const result = await response.json();
-                alert('對應表上傳成功！AI 現在能看懂您的專業術語了。');
                 await this.checkMappingStatus();
+                this.closeMappingModal();
             } else {
                 const error = await response.json();
                 alert(`上傳失敗: ${error.detail || '未知錯誤'}`);
@@ -1401,6 +2562,140 @@ class IntelligentAnalysis {
             await this.checkMappingStatus();
         } finally {
             this.elements.mappingUploadInput.value = ''; // Reset input
+        }
+    }
+
+    // --- Data Description (資料描述) ---
+    _updateDescriptionBadge(description) {
+        const badge = document.getElementById('description-badge');
+        if (!badge) return;
+        if (description && description.trim()) {
+            badge.textContent = '已設定';
+            badge.className = 'px-1.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-600 cursor-pointer hover:opacity-80 transition-opacity';
+        } else {
+            badge.textContent = '未設定';
+            badge.className = 'px-1.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-400 cursor-pointer hover:opacity-80 transition-opacity';
+        }
+    }
+
+    async loadDataDescription(fileId) {
+        if (!fileId) return;
+        const input = this.elements.dataDescriptionInput;
+        if (!input) return;
+
+        input.value = '';
+        this._updateDescriptionBadge('');
+
+        try {
+            const res = await fetch(`/api/analysis/data_description/${fileId}`);
+            if (res.ok) {
+                const data = await res.json();
+                const desc = data.description || '';
+                input.value = desc;
+                this._updateDescriptionBadge(desc);
+            }
+        } catch (err) {
+            console.error('[DataDesc] Load failed:', err);
+        }
+    }
+
+    async saveDataDescription() {
+        const input = this.elements.dataDescriptionInput;
+        if (!input || !this.currentFileId) return;
+
+        const description = input.value.trim();
+
+        try {
+            const res = await fetch('/api/analysis/data_description', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    file_id: this.currentFileId,
+                    description: description
+                })
+            });
+            if (res.ok) {
+                this._updateDescriptionBadge(description);
+            }
+        } catch (err) {
+            console.error('[DataDesc] Save failed:', err);
+        }
+    }
+
+    openDescriptionModal() {
+        const modal = document.getElementById('description-modal');
+        const modalInput = document.getElementById('description-modal-input');
+        const counter = document.getElementById('description-modal-count');
+        if (!modal) return;
+
+        // Sync value from hidden input to modal textarea
+        const currentDesc = this.elements.dataDescriptionInput ? this.elements.dataDescriptionInput.value : '';
+        if (modalInput) {
+            modalInput.value = currentDesc;
+            // Live counter
+            if (counter) counter.textContent = `${currentDesc.length}/500`;
+            modalInput.oninput = () => {
+                if (counter) counter.textContent = `${modalInput.value.length}/500`;
+            };
+        }
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+        if (modalInput) modalInput.focus();
+    }
+
+    closeDescriptionModal() {
+        const modal = document.getElementById('description-modal');
+        if (modal) { modal.classList.add('hidden'); modal.classList.remove('flex'); }
+    }
+
+    async saveDescriptionFromModal() {
+        const modalInput = document.getElementById('description-modal-input');
+        const statusEl = document.getElementById('description-modal-status');
+        if (!modalInput || !this.currentFileId) return;
+
+        const description = modalInput.value.trim();
+        // Sync to hidden input
+        if (this.elements.dataDescriptionInput) this.elements.dataDescriptionInput.value = description;
+
+        if (statusEl) { statusEl.textContent = '儲存中...'; statusEl.className = 'text-[10px] text-gray-400'; }
+
+        try {
+            const res = await fetch('/api/analysis/data_description', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ file_id: this.currentFileId, description })
+            });
+            if (res.ok) {
+                this._updateDescriptionBadge(description);
+                if (statusEl) { statusEl.textContent = '已儲存'; statusEl.className = 'text-[10px] text-green-500'; }
+                setTimeout(() => this.closeDescriptionModal(), 600);
+            } else {
+                if (statusEl) { statusEl.textContent = '儲存失敗'; statusEl.className = 'text-[10px] text-red-400'; }
+            }
+        } catch (err) {
+            console.error('[DataDesc] Save failed:', err);
+            if (statusEl) { statusEl.textContent = '儲存失敗'; statusEl.className = 'text-[10px] text-red-400'; }
+        }
+    }
+
+    async clearDescriptionFromModal() {
+        const modalInput = document.getElementById('description-modal-input');
+        if (modalInput) modalInput.value = '';
+        if (this.elements.dataDescriptionInput) this.elements.dataDescriptionInput.value = '';
+        const counter = document.getElementById('description-modal-count');
+        if (counter) counter.textContent = '0/500';
+
+        if (!this.currentFileId) return;
+        try {
+            await fetch('/api/analysis/data_description', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ file_id: this.currentFileId, description: '' })
+            });
+            this._updateDescriptionBadge('');
+            this.closeDescriptionModal();
+        } catch (err) {
+            console.error('[DataDesc] Clear failed:', err);
         }
     }
 
@@ -1511,7 +2806,7 @@ class IntelligentAnalysis {
             return;
         }
 
-        let query = `請幫我繪製 ${col} 的趨勢圖`;
+        let query = `[DRAW:${col}] 請幫我繪製 ${col} 的趨勢圖`;
         if (keyword) {
             query += `，並篩選包含關鍵字 "${keyword}" 的數據`;
         }
@@ -1557,6 +2852,13 @@ class IntelligentAnalysis {
             }
 
             modal.classList.remove('hidden');
+
+            // Initialize range rows container with one empty row
+            const rangeContainer = document.getElementById('dm-range-rows');
+            if (rangeContainer) {
+                rangeContainer.innerHTML = '';
+                addDmRangeRow();
+            }
 
             // Initialize State
             this.miningState = {
@@ -1628,6 +2930,7 @@ class IntelligentAnalysis {
             const div = document.createElement('div');
             div.className = `flex items-center gap-2 py-2 px-3 border border-transparent rounded-lg cursor-pointer transition-all select-none ${isSelected ? 'bg-blue-100 border-blue-300 text-blue-900' : 'hover:bg-gray-100 text-gray-700'}`;
             div.onclick = (e) => this.toggleSelection(p, 'source', e);
+            div.ondblclick = () => this.moveMiningItem(p, 'source', 'y');
             div.innerHTML = `<span class="truncate text-sm flex-1 pointer-events-none select-none" title="${p}">${p}</span>`;
             sourceList.appendChild(div);
         });
@@ -1638,6 +2941,7 @@ class IntelligentAnalysis {
             const div = document.createElement('div');
             div.className = `flex items-center gap-2 py-2 px-3 border border-transparent rounded-lg cursor-pointer transition-all select-none ${isSelected ? 'bg-blue-200 border-blue-400 text-blue-900' : 'hover:bg-blue-100 text-gray-700'}`;
             div.onclick = (e) => this.toggleSelection(p, 'y', e);
+            div.ondblclick = () => this.moveMiningItem(p, 'y', 'source');
             div.innerHTML = `<span class="truncate text-sm flex-1 pointer-events-none select-none" title="${p}">${p}</span>`;
             yList.appendChild(div);
         });
@@ -1791,13 +3095,154 @@ class IntelligentAnalysis {
         const targets = Array.from(this.miningState.y);
         console.log('[DEBUG] targets:', targets);
 
+        // Read multi-segment target ranges from row inputs
+        const rangeRows = document.querySelectorAll('#dm-range-rows .dm-range-row');
+        const ranges = [];
+        rangeRows.forEach(row => {
+            const start = row.querySelector('.dm-range-start')?.value?.trim();
+            const end = row.querySelector('.dm-range-end')?.value?.trim();
+            if (start && end) ranges.push(`${start}-${end}`);
+            else if (start) ranges.push(start);
+        });
+        let targetRange = ranges.length > 0 ? ranges.join(', ') : null;
+
+        let query = '';
+
+        // Build query based on selections
+        if (targets.length === 0) {
+            query = `深度資料探勘: 1) 找出異常欄位（哪些參數有問題）2) 找出異常區間（哪些資料點/樣本是異常的，標出第幾筆到第幾筆）3) 分析異常欄位之間的關聯性。三個維度都要分析，不要只做欄位分析`;
+        } else {
+            query = `請對目標欄位 ${targets.join(', ')} 進行深度資料探勘與異常分析`;
+        }
+
+        if (targetRange) {
+            query += `，分析區間為第 ${targetRange} 筆`;
+        } else {
+            query += `，分析全域數據`;
+        }
+
+        query += `。找出關聯影響因子、異常區段與區間差異。`;
+
+        // Store structured metadata for sendMessage
+        this.miningMetadata = {
+            suspect_params: targets.length > 0 ? targets : null,
+            target_range: targetRange
+        };
+
+        // Read baseline mode from radio
+        const baselineMode = document.querySelector('input[name="dm-baseline-mode"]:checked')?.value || 'auto';
+        if (baselineMode === 'auto' && targetRange) {
+            this.miningMetadata.baseline_range = '__AUTO__';
+        } else if (baselineMode === 'specify') {
+            const blStart = document.getElementById('dm-baseline-start')?.value?.trim();
+            const blEnd = document.getElementById('dm-baseline-end')?.value?.trim();
+            if (blStart && blEnd) this.miningMetadata.baseline_range = `${blStart}-${blEnd}`;
+            else if (blStart) this.miningMetadata.baseline_range = blStart;
+        }
+        // baselineMode === 'none' → don't set baseline_range
+
+        // If triggered from intent_confirmation, use pending query & task prefix
+        if (this._pendingIntentTaskType) {
+            const taskType = this._pendingIntentTaskType;
+            const intentQuery = this._pendingIntentQuery || '';
+            query = `[TASK:${taskType}] ${intentQuery || query}`;
+            this._pendingIntentTaskType = null;
+            this._pendingIntentQuery = null;
+        }
+
+        this.elements.userInput.value = query;
+        this.elements.userInput.style.height = 'auto';
+        this.elements.userInput.style.height = this.elements.userInput.scrollHeight + 'px';
+        this.elements.btnSend.disabled = false;
+        this.sendMessage();
+
+        closeMiningPanel();
+    }
+
+    showIntentConfirmation(intentData) {
+        // Store pending intent info for use when user confirms via modal
+        this._pendingIntentQuery = intentData.restatement;
+        this._pendingIntentTaskType = intentData.task_type;
+
+        // Open the mining modal (reuse wizard UI)
+        this.openDataMiningModal();
+
+        // Pre-fill target range rows
+        if (intentData.target_range) {
+            const container = document.getElementById('dm-range-rows');
+            if (container) {
+                container.innerHTML = ''; // clear the default empty row
+                const rawRanges = Array.isArray(intentData.target_range)
+                    ? intentData.target_range
+                    : [intentData.target_range];
+                rawRanges.forEach(r => {
+                    const str = String(r);
+                    const match = str.match(/(\d+)\s*[-~]\s*(\d+)/);
+                    if (match) addDmRangeRow(match[1], match[2]);
+                    else addDmRangeRow(str, '');
+                });
+            }
+        }
+
+        // Pre-fill baseline range
+        if (intentData.baseline_range) {
+            const specifyRadio = document.querySelector('input[name="dm-baseline-mode"][value="specify"]');
+            if (specifyRadio) {
+                specifyRadio.checked = true;
+                document.getElementById('dm-baseline-custom')?.classList.remove('hidden');
+            }
+            const blStr = String(intentData.baseline_range);
+            const blMatch = blStr.match(/(\d+)\s*[-~]\s*(\d+)/);
+            if (blMatch) {
+                const blStart = document.getElementById('dm-baseline-start');
+                const blEnd = document.getElementById('dm-baseline-end');
+                if (blStart) blStart.value = blMatch[1];
+                if (blEnd) blEnd.value = blMatch[2];
+            }
+        }
+
+        // Pre-select target params in the transfer list
+        if (intentData.target_params && intentData.target_params.length > 0 && this.miningState) {
+            intentData.target_params.forEach(p => {
+                if (this.currentFileParams.includes(p)) {
+                    this.miningState.y.add(p);
+                }
+            });
+            this.renderMiningLists();
+        }
+
+        // Switch to Step 1 (range) to let user review
+        switchDmStep(1);
+    }
+
+    confirmIntentAnalysis(skip = false) {
+        // Legacy: no longer used separately, confirmDataMining handles it
+        // But keep for safety in case anything still calls it
+        const panel = document.getElementById('intent-confirm-panel');
+        if (panel) panel.remove();
+
+        if (skip) {
+            const query = this._pendingIntentQuery || '開始分析';
+            const taskType = this._pendingIntentTaskType || 'anomaly_detection';
+            this.miningMetadata = {};
+            this.elements.userInput.value = `[TASK:${taskType}] ${query}`;
+            this.elements.userInput.style.height = 'auto';
+            this.elements.userInput.style.height = this.elements.userInput.scrollHeight + 'px';
+            this.sendMessage();
+        }
+    }
+
+    confirmOptimization() {
+        console.log('[DEBUG] confirmOptimization called');
+        const targets = Array.from(this.miningState.y);
+        console.log('[DEBUG] optimization targets:', targets);
+
         const start = document.getElementById('dm-range-start').value.trim();
         const end = document.getElementById('dm-range-end').value.trim();
 
         let query = '';
         let targetRange = null;
 
-        // Build target range
         if (start && end) {
             targetRange = `${start}-${end}`;
         } else if (start) {
@@ -1806,26 +3251,20 @@ class IntelligentAnalysis {
             targetRange = `-${end}`;
         }
 
-        // Build query based on selections
         if (targets.length === 0) {
-            // No specific targets - analyze all fields
-            query = `請對所有欄位進行深度資料探勘與異常分析`;
+            query = `請進行全域參數最佳化分析，找出影響品質的關鍵可控參數，並給出最佳操作建議`;
         } else {
-            // Specific targets selected
-            query = `請對目標欄位 ${targets.join(', ')} 進行深度資料探勘與異常分析`;
+            query = `請針對 ${targets.join(', ')} 進行最佳化分析，找出哪些可控參數對其影響最大，以及最佳操作區間`;
         }
 
-        // Add range if specified
         if (targetRange) {
             query += `，分析區間為第 ${targetRange} 筆`;
         } else {
             query += `，分析全域數據`;
         }
 
-        // Add instruction for AI
-        query += `。請自動關聯其他所有可能的影響因子，找出與目標變數相關性最高的特徵。`;
+        query += `。找出關鍵影響因子與最佳操作條件。`;
 
-        // Store structured metadata for sendMessage
         this.miningMetadata = {
             suspect_params: targets.length > 0 ? targets : null,
             target_range: targetRange
@@ -1837,17 +3276,344 @@ class IntelligentAnalysis {
         this.elements.btnSend.disabled = false;
         this.sendMessage();
 
-        document.getElementById('data-mining-modal').classList.add('hidden');
+        closeMiningPanel();
+    }
+
+    // ========== Statistical Tool Methods ==========
+
+    static STAT_TOOL_REGISTRY = {
+        '資料清理': [
+            { id: 'filter_dead_columns', name: '過濾死水欄位', desc: '移除標準差 ≈ 0 的常數欄位', params: [] },
+        ],
+        '異常偵測': [
+            {
+                id: 'find_anomalies', name: '異常偵測 (IF/Zscore)', desc: 'Isolation Forest 或 Z-score 整體異常偵測', params: [
+                    { key: 'method', label: '方法', type: 'select', options: ['isolation_forest', 'zscore'], default: 'isolation_forest' },
+                    { key: 'contamination', label: '異常比例', type: 'number', default: 0.05, min: 0.01, max: 0.5, step: 0.01 },
+                ]
+            },
+            { id: 'detect_outliers_iqr', name: 'IQR 離群值偵測', desc: '用 IQR 方法找每個欄位的離群值', params: [] },
+            {
+                id: 'hotelling_t2', name: 'Hotelling T²', desc: '多變量異常偵測 (高維自動 PCA 降維)', params: [
+                    { key: 'alpha', label: '顯著水準', type: 'number', default: 0.01, min: 0.001, max: 0.1, step: 0.005 },
+                ]
+            },
+            { id: 't2_contribution', name: 'T² 貢獻分解', desc: '找出哪些原始參數導致 T² 超標', params: [] },
+            {
+                id: 'robust_zscore', name: 'Robust Z-score', desc: '用 MAD 找系統性偏移欄位', params: [
+                    { key: 'threshold', label: 'Z-score 閾值', type: 'number', default: 3.0, min: 1.5, max: 5.0, step: 0.5 },
+                ]
+            },
+            {
+                id: 'classify_anomaly_type', name: '異常類型分類', desc: '將異常分類：Freeze/Spike/Drift/Oscillation/Level Shift', params: [
+                    { key: 'target_col', label: '目標欄位', type: 'column', required: true },
+                ]
+            },
+        ],
+        '相關性分析': [
+            {
+                id: 'top_correlations', name: '相關性分析', desc: '找出相關性最高的欄位對', params: [
+                    { key: 'target', label: '目標欄位 (選填)', type: 'column', required: false },
+                    { key: 'min_abs_corr', label: '最低相關係數', type: 'number', default: 0.3, min: 0.1, max: 0.9, step: 0.1 },
+                ]
+            },
+            {
+                id: 'correlation_network', name: '相關性網路', desc: '找出 Hub 參數 (Degree + Betweenness Centrality)', params: [
+                    { key: 'threshold', label: '相關性閾值', type: 'number', default: 0.5, min: 0.2, max: 0.9, step: 0.1 },
+                ]
+            },
+            { id: 'collinearity_analysis', name: '共線性分析 (VIF)', desc: 'VIF + Condition Number + 高共線性群組', params: [] },
+        ],
+        '偏移偵測': [
+            {
+                id: 'segment_drift', name: '區間偏移偵測', desc: 'CUSUM 或 EWMA 偵測單一欄位偏移', params: [
+                    { key: 'target_col', label: '目標欄位', type: 'column', required: true },
+                    { key: 'method', label: '方法', type: 'select', options: ['cusum', 'ewma'], default: 'cusum' },
+                ]
+            },
+            {
+                id: 'scan_all_drift', name: '全域偏移掃描', desc: '對所有欄位做偏移掃描，回傳最嚴重 Top-N', params: [
+                    { key: 'method', label: '方法', type: 'select', options: ['cusum', 'ewma'], default: 'cusum' },
+                ]
+            },
+            {
+                id: 'distribution_shift', name: '分佈偏移 (KS-test)', desc: '前後半段分佈偏移偵測', params: [
+                    { key: 'target_col', label: '目標欄位', type: 'column', required: true },
+                ]
+            },
+        ],
+        '分組比較': [
+            {
+                id: 'compare_groups', name: '分組比較', desc: '比較兩組資料的差異，找出差異最大的欄位', params: [
+                    { key: 'group_a_range', label: 'A 組 (起-迄)', type: 'text', placeholder: '例：1-50' },
+                    { key: 'group_b_range', label: 'B 組 (起-迄)', type: 'text', placeholder: '例：51-100' },
+                ]
+            },
+        ],
+        '進階分析': [
+            {
+                id: 'frequency_analysis', name: '頻率分析 (FFT)', desc: '用 FFT 找主要頻率成分', params: [
+                    { key: 'target_col', label: '目標欄位', type: 'column', required: true },
+                ]
+            },
+            {
+                id: 'residual_analysis', name: '殘差分析', desc: '線性回歸預測 target 後分析殘差', params: [
+                    { key: 'target_col', label: '目標欄位', type: 'column', required: true },
+                ]
+            },
+            {
+                id: 'pca_analysis', name: 'PCA 降維', desc: '主成分分析 + 各 PC 的 loading', params: [
+                    { key: 'n_components', label: '主成分數', type: 'number', default: 5, min: 2, max: 20, step: 1 },
+                ]
+            },
+            {
+                id: 'control_loop_assessment', name: '控制迴路評估', desc: 'Harris Index + 追蹤誤差評估', params: [
+                    { key: 'target_col', label: '目標欄位 (PV)', type: 'column', required: true },
+                ]
+            },
+            {
+                id: 'operating_window', name: '操作窗口', desc: '根據好壞分組找最佳操作範圍', params: [
+                    { key: 'target_col', label: '目標欄位', type: 'column', required: true },
+                    { key: 'direction', label: '方向', type: 'select', options: ['maximize', 'minimize'], default: 'maximize' },
+                ]
+            },
+            {
+                id: 'feature_importance', name: '特徵重要性', desc: 'Random Forest 或 Mutual Info 排名', params: [
+                    { key: 'target_col', label: '目標欄位', type: 'column', required: true },
+                    { key: 'method', label: '方法', type: 'select', options: ['random_forest', 'mutual_info'], default: 'random_forest' },
+                ]
+            },
+            {
+                id: 'cross_correlation_lag', name: '交叉相關 (時間延遲)', desc: '找兩序列最佳延遲', params: [
+                    { key: 'col_a', label: '欄位 A', type: 'column', required: true },
+                    { key: 'col_b', label: '欄位 B', type: 'column', required: true },
+                ]
+            },
+            {
+                id: 'wavelet_analysis', name: '小波分析', desc: 'Morlet 小波分解多尺度結構', params: [
+                    { key: 'target_col', label: '目標欄位', type: 'column', required: true },
+                ]
+            },
+            {
+                id: 'trend_prediction', name: '趨勢預測', desc: '線性回歸 + 信賴區間預測', params: [
+                    { key: 'target_col', label: '目標欄位', type: 'column', required: true },
+                    { key: 'forecast_horizon', label: '預測長度', type: 'number', default: 20, min: 5, max: 100, step: 5 },
+                ]
+            },
+        ],
+        '繪圖工具': [
+            { id: 'plot_correlation_heatmap', name: '相關性熱圖', desc: '繪製 Top-N 子集的相關性熱圖', params: [] },
+            {
+                id: 'plot_scatter', name: '散佈圖', desc: '兩欄位的散佈圖', params: [
+                    { key: 'x_col', label: 'X 軸欄位', type: 'column', required: true },
+                    { key: 'y_col', label: 'Y 軸欄位', type: 'column', required: true },
+                ]
+            },
+            {
+                id: 'plot_trend', name: '趨勢圖', desc: '欄位趨勢圖 + 移動平均', params: [
+                    { key: 'target_col', label: '目標欄位', type: 'column', required: true },
+                ]
+            },
+            {
+                id: 'plot_distribution_compare', name: '分佈對比圖', desc: '兩組的直方圖對比', params: [
+                    { key: 'target_col', label: '目標欄位', type: 'column', required: true },
+                    { key: 'group_a_range', label: 'A 組 (起-迄)', type: 'text', placeholder: '例：1-50' },
+                    { key: 'group_b_range', label: 'B 組 (起-迄)', type: 'text', placeholder: '例：51-100' },
+                ]
+            },
+        ],
+    };
+
+    openStatToolModal() {
+        if (!this.currentFileParams || this.currentFileParams.length === 0) {
+            alert('無法獲取參數列表，請確認檔案已正確加載。');
+            return;
+        }
+
+        const modal = document.getElementById('stat-tool-modal');
+        if (!modal) return;
+
+        // Populate tool selector
+        const select = document.getElementById('st-tool-select');
+        if (!select) return;
+
+        select.innerHTML = '<option value="" disabled selected>-- 請選擇工具 --</option>';
+        const registry = IntelligentAnalysis.STAT_TOOL_REGISTRY;
+        for (const [category, tools] of Object.entries(registry)) {
+            const group = document.createElement('optgroup');
+            group.label = category;
+            tools.forEach(t => {
+                const opt = document.createElement('option');
+                opt.value = t.id;
+                opt.textContent = t.name;
+                group.appendChild(opt);
+            });
+            select.appendChild(group);
+        }
+
+        // Bind change event
+        select.onchange = () => this.renderStatToolParams(select.value);
+
+        // Reset
+        document.getElementById('st-tool-desc').classList.add('hidden');
+        document.getElementById('st-params-area').classList.add('hidden');
+        document.getElementById('st-params-container').innerHTML = '';
+
+        modal.classList.remove('hidden');
+    }
+
+    renderStatToolParams(toolId) {
+        const descEl = document.getElementById('st-tool-desc');
+        const paramsArea = document.getElementById('st-params-area');
+        const container = document.getElementById('st-params-container');
+        container.innerHTML = '';
+
+        // Find tool in registry
+        let tool = null;
+        for (const tools of Object.values(IntelligentAnalysis.STAT_TOOL_REGISTRY)) {
+            tool = tools.find(t => t.id === toolId);
+            if (tool) break;
+        }
+        if (!tool) return;
+
+        // Show description
+        descEl.textContent = tool.desc;
+        descEl.classList.remove('hidden');
+
+        if (tool.params.length === 0) {
+            paramsArea.classList.add('hidden');
+            return;
+        }
+
+        paramsArea.classList.remove('hidden');
+
+        tool.params.forEach(p => {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'flex flex-col gap-1';
+
+            const label = document.createElement('label');
+            label.className = 'text-xs text-gray-600 font-medium';
+            label.textContent = p.label + (p.required ? ' *' : '');
+            wrapper.appendChild(label);
+
+            if (p.type === 'column') {
+                const sel = document.createElement('select');
+                sel.id = `st-param-${p.key}`;
+                sel.className = 'w-full border border-gray-300 rounded-lg py-2 px-3 text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500';
+                if (!p.required) {
+                    const emptyOpt = document.createElement('option');
+                    emptyOpt.value = '';
+                    emptyOpt.textContent = '(不指定)';
+                    sel.appendChild(emptyOpt);
+                }
+                this.currentFileParams.forEach(col => {
+                    const opt = document.createElement('option');
+                    opt.value = col;
+                    opt.textContent = col;
+                    sel.appendChild(opt);
+                });
+                wrapper.appendChild(sel);
+            } else if (p.type === 'select') {
+                const sel = document.createElement('select');
+                sel.id = `st-param-${p.key}`;
+                sel.className = 'w-full border border-gray-300 rounded-lg py-2 px-3 text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500';
+                p.options.forEach(o => {
+                    const opt = document.createElement('option');
+                    opt.value = o;
+                    opt.textContent = o;
+                    if (o === p.default) opt.selected = true;
+                    sel.appendChild(opt);
+                });
+                wrapper.appendChild(sel);
+            } else if (p.type === 'number') {
+                const input = document.createElement('input');
+                input.type = 'number';
+                input.id = `st-param-${p.key}`;
+                input.className = 'w-full border border-gray-300 rounded-lg py-2 px-3 text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500';
+                input.value = p.default ?? '';
+                if (p.min !== undefined) input.min = p.min;
+                if (p.max !== undefined) input.max = p.max;
+                if (p.step !== undefined) input.step = p.step;
+                wrapper.appendChild(input);
+            } else {
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.id = `st-param-${p.key}`;
+                input.className = 'w-full border border-gray-300 rounded-lg py-2 px-3 text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500';
+                if (p.placeholder) input.placeholder = p.placeholder;
+                wrapper.appendChild(input);
+            }
+
+            container.appendChild(wrapper);
+        });
+    }
+
+    confirmStatTool() {
+        const select = document.getElementById('st-tool-select');
+        const toolId = select?.value;
+        if (!toolId) {
+            alert('請先選擇工具');
+            return;
+        }
+
+        // Find tool
+        let tool = null;
+        for (const tools of Object.values(IntelligentAnalysis.STAT_TOOL_REGISTRY)) {
+            tool = tools.find(t => t.id === toolId);
+            if (tool) break;
+        }
+        if (!tool) return;
+
+        // Collect params
+        const params = {};
+        for (const p of tool.params) {
+            const el = document.getElementById(`st-param-${p.key}`);
+            const val = el?.value?.trim() ?? '';
+            if (p.required && !val) {
+                alert(`請填寫必要參數：${p.label}`);
+                return;
+            }
+            if (val) {
+                params[p.key] = p.type === 'number' ? parseFloat(val) : val;
+            }
+        }
+
+        // Build [DIRECT_TOOL] message
+        const paramStr = Object.keys(params).length > 0
+            ? '(' + Object.entries(params).map(([k, v]) => `${k}=${typeof v === 'string' ? `"${v}"` : v}`).join(', ') + ')'
+            : '()';
+
+        const query = `[DIRECT_TOOL] ${tool.id}${paramStr}`;
+
+        this.elements.userInput.value = query;
+        this.elements.userInput.style.height = 'auto';
+        this.elements.userInput.style.height = this.elements.userInput.scrollHeight + 'px';
+        this.elements.btnSend.disabled = false;
+        this.sendMessage();
+
+        document.getElementById('stat-tool-modal').classList.add('hidden');
     }
 
     // ========== Session Management ==========
 
-    async loadSessionList() {
+
+    async loadSessionList(autoLoadLatest = false) {
         try {
-            const response = await fetch(`/api/analysis/sessions?user_id=${encodeURIComponent(this.accountId)}`);
+            const response = await fetch(`/api/analysis/sessions?user_id=${encodeURIComponent(this.sessionId)}`);
             if (!response.ok) throw new Error('Failed to load sessions');
             const data = await response.json();
-            this.renderSessionList(data.sessions || []);
+            const sessions = data.sessions || [];
+            this.renderSessionList(sessions);
+
+            // 首次載入時自動切換到最近的聊天室
+            if (autoLoadLatest && sessions.length > 0) {
+                const latest = sessions[0]; // sessions 已按時間排序
+                const fid = latest.file_id || '';
+                const fname = latest.filename || '';
+                if (fid && (fid !== (this.currentFileId || '') || this.elements.chatContainer.children.length === 0)) {
+                    await this.switchSession(latest.session_id, fid, fname);
+                }
+            }
         } catch (err) {
             console.error('[Sessions] Load error:', err);
             if (this.elements.sessionList) {
@@ -1868,27 +3634,36 @@ class IntelligentAnalysis {
         }
 
         container.innerHTML = sessions.map(s => {
-            const isActive = s.session_id === this.sessionId;
+            const isActive = s.session_id === this.sessionId && (s.file_id || '') === (this.currentFileId || '') && (s.conversation_id || 'default') === (this.conversationId || 'default');
             const title = this._escapeHtml(s.title || '新對話');
             const count = s.message_count || 0;
             const timeStr = s.last_active
                 ? new Date(s.last_active).toLocaleString('zh-TW', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
                 : '';
+            const activeIcon = isActive
+                ? '<span class="inline-block w-2 h-2 rounded-full bg-blue-500 mr-1.5 flex-shrink-0" title="目前聊天室"></span>'
+                : '';
+            const fileId = s.file_id || '';
+            const filename = s.filename ? this._escapeHtml(s.filename) : '';
+            const convId = s.conversation_id || 'default';
 
             return `
-                <div class="session-item group flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-all
-                    ${isActive ? 'bg-blue-50 border border-blue-200' : 'bg-white border border-transparent hover:bg-gray-100 hover:border-gray-200'}"
-                    data-session-id="${s.session_id}">
-                    <div class="flex-1 min-w-0" onclick="window.ia.switchSession('${s.session_id}')">
-                        <div class="text-xs font-medium truncate ${isActive ? 'text-blue-700' : 'text-gray-700'}">
-                            ${title}
-                        </div>
-                        <div class="text-[10px] text-gray-400 mt-0.5">
-                            ${count} 條訊息 ${timeStr ? '· ' + timeStr : ''}
+                <div class="session-item group flex items-center gap-1.5 px-2 py-1.5 rounded-lg cursor-pointer transition-all
+                    ${isActive ? 'bg-blue-50 border border-blue-200 ring-1 ring-blue-300' : 'bg-white border border-transparent hover:bg-gray-100 hover:border-gray-200'}"
+                    data-session-id="${s.session_id}" data-file-id="${fileId}" data-filename="${filename}" data-conversation-id="${convId}">
+                    <div class="flex-1 min-w-0 flex items-center">
+                        ${activeIcon}
+                        <div class="min-w-0 flex-1">
+                            <div class="text-[13px] font-medium leading-snug line-clamp-2 ${isActive ? 'text-blue-700' : 'text-gray-800'}">
+                                ${title}
+                            </div>
+                            <div class="text-[9px] text-gray-400 truncate mt-0.5">
+                                ${count}條 ${timeStr ? '· ' + timeStr : ''}${filename ? ' · ' + filename : ''}
+                            </div>
                         </div>
                     </div>
                     ${!isActive ? `
-                    <button onclick="event.stopPropagation(); window.ia.deleteSession('${s.session_id}')"
+                    <button onclick="event.stopPropagation(); window.ia.deleteSession('${s.session_id}', '${fileId}')"
                         class="hidden group-hover:flex w-5 h-5 items-center justify-center text-gray-300 hover:text-red-500 rounded transition-colors flex-shrink-0"
                         title="刪除">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1901,21 +3676,8 @@ class IntelligentAnalysis {
     }
 
     async createNewSession() {
-        // 新聊天室 ID 以帳號名為前綴，確保帳號隔離
-        const uuid = window.crypto.randomUUID();
-        const newId = `${this.accountId}_${uuid}`;
-        try {
-            await fetch('/api/analysis/sessions', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ session_id: newId }),
-            });
-        } catch (err) {
-            console.warn('[Sessions] Create API failed, continuing anyway:', err);
-        }
-
-        // Switch to new session
-        this.sessionId = newId;
+        // 在同一 Session 內建立新對話（新 conversationId，保持檔案存取權）
+        this.conversationId = crypto.randomUUID().slice(0, 12);
         this.currentFileId = null;
         this.currentFilename = null;
 
@@ -1929,13 +3691,12 @@ class IntelligentAnalysis {
             this.elements.fileInfoPanel.classList.add('hidden');
         }
 
-        // Reload file list for new session and refresh session list
+        // 重新載入聊天室列表
         this.loadSessionList();
-        console.log(`[Sessions] Created new session: ${newId}`);
+        console.log(`[Sessions] New conversation: ${this.conversationId} in session: ${this.sessionId}`);
     }
 
-    async switchSession(sessionId) {
-        if (sessionId === this.sessionId) return;
+    async switchSession(sessionId, fileId = '', filename = '', conversationId = 'default') {
 
         // Guard: 分析進行中時警告用戶
         if (this.isLoading) {
@@ -1945,36 +3706,82 @@ class IntelligentAnalysis {
             this.stopGeneration();
         }
 
+        // 1. 更新 Session 狀態
         this.sessionId = sessionId;
-        this.currentFileId = null;
-        this.currentFilename = null;
+        this.currentFileId = fileId || null;
+        this.currentFilename = filename || null;
+        this.conversationId = conversationId || 'default';
 
-        // Reset UI
+        // 2. 清空聊天區（準備載入歷史）
         this.elements.chatContainer.innerHTML = '';
         if (this.elements.welcomeScreen) {
             this.elements.welcomeScreen.style.display = 'none';
         }
-        this.elements.fileSelect.value = '';
-        if (this.elements.fileInfoPanel) {
-            this.elements.fileInfoPanel.classList.add('hidden');
+
+        // 3. 恢復檔案上下文（靜默呼叫 prepare API，不觸發 handleFileSelect）
+        if (filename) {
+            // 同步檔案選擇器（僅視覺更新，不觸發 change 事件）
+            if (this.elements.fileSelect) {
+                for (let i = 0; i < this.elements.fileSelect.options.length; i++) {
+                    const optText = this.elements.fileSelect.options[i].text;
+                    if (optText === filename) {
+                        this.elements.fileSelect.selectedIndex = i;
+                        break;
+                    }
+                }
+            }
+            // 呼叫 prepare API 恢復檔案摘要（已索引的檔案會直接回傳，不會重建）
+            try {
+                const res = await fetch('/api/analysis/prepare', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filename: filename, session_id: this.sessionId, conversation_id: this.conversationId })
+                });
+                if (res.ok) {
+                    const result = await res.json();
+                    if (result.file_id) this.currentFileId = result.file_id;
+                    const summary = result.summary || {};
+                    this.currentFileParams = summary.parameters || [];
+                    this.currentFileCategories = summary.categories || {};
+                    if (this.elements.infoRows) this.elements.infoRows.textContent = summary.total_rows ? summary.total_rows.toLocaleString() : '-';
+                    if (this.elements.infoCols) this.elements.infoCols.textContent = summary.total_columns || '-';
+                    if (this.elements.infoStatus) this.elements.infoStatus.textContent = '已就緒';
+                    if (this.elements.fileLoadingIndicator) this.elements.fileLoadingIndicator.classList.add('hidden');
+                    if (this.elements.fileInfoPanel) this.elements.fileInfoPanel.classList.remove('hidden');
+                    if (this.elements.userInput) this.elements.userInput.disabled = false;
+                    // 恢復術語對應與資料描述
+                    this.loadDataDescription(this.currentFileId);
+                    this.checkMappingStatus();
+                }
+            } catch (e) {
+                console.warn('[Sessions] 恢復檔案上下文失敗:', e);
+            }
         }
 
-        // Load chat history for this session
-        await this._loadSessionHistory(sessionId);
+        // 4. 載入聊天歷史
+        await this._loadSessionHistory(this.sessionId, this.currentFileId || '', this.conversationId);
 
-        // Refresh sidebar (highlight active session)
+        // 5. 更新側欄 (高亮 active session)
         this.loadSessionList();
-        // Reload file list for this session
-        this.loadFileList();
-        console.log(`[Sessions] Switched to session: ${sessionId}`);
+        console.log(`[Sessions] Switched to session: ${sessionId}, file: ${this.currentFileId}, filename: ${filename}`);
     }
 
-    async _loadSessionHistory(sessionId) {
+    async _loadSessionHistory(sessionId, fileId = '', conversationId = 'default') {
+        console.log(`[History] Loading history: sessionId=${sessionId}, fileId=${fileId}, conv=${conversationId}`);
         try {
-            const response = await fetch(`/api/analysis/sessions/${encodeURIComponent(sessionId)}/history?last_n=50`);
-            if (!response.ok) return;
+            let url = `/api/analysis/sessions/${encodeURIComponent(sessionId)}/history?last_n=50`;
+            if (fileId) url += `&file_id=${encodeURIComponent(fileId)}`;
+            if (conversationId) url += `&conversation_id=${encodeURIComponent(conversationId)}`;
+            console.log(`[History] Fetching: ${url}`);
+            const response = await fetch(url);
+            console.log(`[History] Response status: ${response.status}`);
+            if (!response.ok) {
+                console.warn(`[History] API returned ${response.status}`);
+                return;
+            }
             const data = await response.json();
             const messages = data.messages || [];
+            console.log(`[History] Got ${messages.length} messages`);
 
             if (messages.length === 0) {
                 // No history, show welcome screen
@@ -1988,14 +3795,16 @@ class IntelligentAnalysis {
             for (const msg of messages) {
                 if (msg.role === 'system') continue; // Skip system messages
                 const isUser = msg.role === 'user';
+                const contentHtml = isUser
+                    ? this._escapeHtml(msg.content)
+                    : (typeof marked !== 'undefined' ? marked.parse(msg.content || '') : this._escapeHtml(msg.content || ''));
                 const row = document.createElement('div');
                 row.className = `flex ${isUser ? 'justify-end' : 'justify-start'} mb-3`;
                 row.innerHTML = `
                     <div class="${isUser
                         ? 'bg-blue-500 text-white rounded-2xl rounded-br-md px-4 py-2.5 max-w-[75%]'
                         : 'bg-white border border-gray-100 rounded-2xl rounded-bl-md px-4 py-2.5 max-w-[85%] shadow-sm'}">
-                        <div class="text-sm whitespace-pre-wrap leading-relaxed">${isUser ? this._escapeHtml(msg.content) : this._renderMarkdown(msg.content || '')
-                    }</div>
+                        <div class="${isUser ? 'text-sm whitespace-pre-wrap leading-relaxed' : 'text-sm leading-relaxed markdown-body'}">${contentHtml}</div>
                     </div>
                 `;
                 this.elements.chatContainer.appendChild(row);
@@ -2006,10 +3815,12 @@ class IntelligentAnalysis {
         }
     }
 
-    async deleteSession(sessionId) {
+    async deleteSession(sessionId, fileId = '') {
         if (!confirm('確定要刪除此聊天室嗎？')) return;
         try {
-            await fetch(`/api/analysis/sessions/${sessionId}`, { method: 'DELETE' });
+            let url = `/api/analysis/sessions/${sessionId}`;
+            if (fileId) url += `?file_id=${encodeURIComponent(fileId)}`;
+            await fetch(url, { method: 'DELETE' });
         } catch (err) {
             console.warn('[Sessions] Delete failed:', err);
         }
@@ -2022,159 +3833,7 @@ class IntelligentAnalysis {
         return div.innerHTML;
     }
 
-    // ========== Session Management ==========
 
-    async loadSessionList() {
-        if (!this.elements.sessionList) {
-            console.warn('[Sessions] sessionList element is null');
-            return;
-        }
-        try {
-            this.elements.sessionList.innerHTML = '<div class="text-xs text-gray-400 text-center py-3">載入中...</div>';
-            const response = await fetch('/api/analysis/sessions');
-            if (!response.ok) throw new Error('Failed to load sessions, status: ' + response.status);
-            const data = await response.json();
-            console.log('[Sessions] Loaded', (data.sessions || []).length, 'sessions');
-            this.renderSessionList(data.sessions || []);
-        } catch (err) {
-            console.error('[Sessions] Load error:', err);
-            if (this.elements.sessionList) {
-                this.elements.sessionList.innerHTML = '<div class="text-xs text-red-400 text-center py-3">無法載入聊天室</div>';
-            }
-        }
-    }
-
-    async createNewSession() {
-        try {
-            const response = await fetch('/api/analysis/sessions', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ title: '新對話' })
-            });
-            if (!response.ok) throw new Error('Failed to create session');
-            const data = await response.json();
-            this.sessionId = data.session_id;
-            // Clear chat and reload session list
-            if (this.elements.chatContainer) {
-                this.elements.chatContainer.innerHTML = '';
-            }
-            this.conversationId = null;
-            await this.loadSessionList();
-        } catch (err) {
-            console.error('[Sessions] Create error:', err);
-        }
-    }
-
-    async switchSession(sessionId) {
-        console.log('[Sessions] switchSession called:', sessionId, 'current:', this.sessionId);
-        if (sessionId === this.sessionId) {
-            console.log('[Sessions] Same session, skipping');
-            return;
-        }
-        this.sessionId = sessionId;
-        // Clear current chat
-        if (this.elements.chatContainer) {
-            this.elements.chatContainer.innerHTML = '';
-        }
-        this.conversationId = null;
-
-        // Load chat history for this session
-        try {
-            const response = await fetch(`/api/analysis/sessions/${sessionId}/history`);
-            if (response.ok) {
-                const data = await response.json();
-                const messages = data.messages || [];
-                for (const msg of messages) {
-                    this.addMessage(msg.role, msg.content);
-                }
-            }
-        } catch (err) {
-            console.error('[Sessions] History load error:', err);
-        }
-
-        // Update active state in UI
-        this.renderActiveSession(sessionId);
-    }
-
-    renderActiveSession(activeId) {
-        if (!this.elements.sessionList) return;
-        const items = this.elements.sessionList.querySelectorAll('[data-session-id]');
-        items.forEach(item => {
-            if (item.dataset.sessionId === activeId) {
-                item.classList.add('bg-blue-50', 'border-blue-200');
-                item.classList.remove('border-transparent', 'hover:bg-gray-50');
-            } else {
-                item.classList.remove('bg-blue-50', 'border-blue-200');
-                item.classList.add('border-transparent', 'hover:bg-gray-50');
-            }
-        });
-    }
-
-    renderSessionList(sessions) {
-        if (!this.elements.sessionList) return;
-
-        if (!sessions || sessions.length === 0) {
-            this.elements.sessionList.innerHTML = '<div class="text-xs text-gray-400 text-center py-3">暫無聊天室</div>';
-            return;
-        }
-
-        console.log('[Sessions] renderSessionList:', sessions.length, 'sessions');
-        this.elements.sessionList.innerHTML = sessions.map(s => {
-            const isActive = s.session_id === this.sessionId;
-            const title = s.title || s.session_id;
-            const msgCount = s.message_count || 0;
-            const lastActive = s.last_active ? new Date(s.last_active).toLocaleString('zh-TW', {
-                month: 'numeric', day: 'numeric',
-                hour: '2-digit', minute: '2-digit'
-            }) : '';
-            const activeCls = isActive
-                ? 'bg-blue-50 border-blue-200'
-                : 'border-transparent hover:bg-gray-50';
-
-            return `
-                <div class="session-item p-2 rounded-lg border cursor-pointer transition-colors ${activeCls}"
-                     data-session-id="${s.session_id}"
-                     onclick="window.ia && window.ia.switchSession('${s.session_id}')">
-                    <div class="flex items-center justify-between">
-                        <div class="flex-1 min-w-0">
-                            <div class="text-sm font-medium text-gray-700 truncate">${this._escapeHtml(title)}</div>
-                            <div class="text-xs text-gray-400 mt-0.5">
-                                ${msgCount} 條訊息${lastActive ? ' · ' + lastActive : ''}
-                            </div>
-                        </div>
-                        <button class="session-delete-btn ml-1 p-1 text-gray-300 hover:text-red-500 transition-colors"
-                                data-delete-session="${s.session_id}" title="刪除"
-                                onclick="event.stopPropagation(); window.ia && window.ia.deleteSession('${s.session_id}')">
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                            </svg>
-                        </button>
-                    </div>
-                </div>
-            `;
-        }).join('');
-
-        // Event delegation 已移到 init() 中，避免重複綁定
-    }
-
-    async deleteSession(sessionId) {
-        try {
-            const response = await fetch(`/api/analysis/sessions/${sessionId}`, {
-                method: 'DELETE'
-            });
-            if (!response.ok) throw new Error('Delete failed');
-            // If deleted the current session, switch to new
-            if (sessionId === this.sessionId) {
-                this.sessionId = 'default';
-                if (this.elements.chatContainer) {
-                    this.elements.chatContainer.innerHTML = '';
-                }
-            }
-            await this.loadSessionList();
-        } catch (err) {
-            console.error('[Sessions] Delete error:', err);
-        }
-    }
 }
 
 // Initialize
@@ -2198,7 +3857,47 @@ window.updateParamCount = () => {
 };
 
 // Data Mining Modal Global Accessors
+window.addDmRangeRow = (startVal = '', endVal = '') => {
+    const container = document.getElementById('dm-range-rows');
+    if (!container) return;
+    const row = document.createElement('div');
+    row.className = 'dm-range-row flex items-center gap-2';
+    row.innerHTML = `
+        <input type="number" class="dm-range-start w-24 text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400" placeholder="起始" value="${startVal}">
+        <span class="text-gray-400 text-sm">~</span>
+        <input type="number" class="dm-range-end w-24 text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400" placeholder="結束" value="${endVal}">
+        <button type="button" onclick="removeDmRangeRow(this)" class="text-gray-300 hover:text-red-500 transition-colors p-1" title="移除">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+            </svg>
+        </button>
+    `;
+    container.appendChild(row);
+};
+window.removeDmRangeRow = (btn) => {
+    const row = btn.closest('.dm-range-row');
+    if (row) row.remove();
+};
 window.openDataMiningModal = () => window.ia?.openDataMiningModal();
+window.switchDmStep = (step) => {
+    // Toggle content panels
+    document.querySelectorAll('.dm-step-content').forEach(el => el.classList.add('hidden'));
+    const target = document.getElementById(`dm-step-${step}`);
+    if (target) target.classList.remove('hidden');
+    // Toggle nav button styles
+    document.querySelectorAll('.dm-step-btn').forEach(btn => {
+        btn.className = 'dm-step-btn text-left px-3 py-3 rounded-lg transition-all text-gray-500 hover:bg-gray-100 border-l-[3px] border-transparent';
+    });
+    const activeBtn = document.getElementById(`dm-step-btn-${step}`);
+    if (activeBtn) {
+        activeBtn.className = 'dm-step-btn text-left px-3 py-3 rounded-lg transition-all text-blue-600 bg-white shadow-sm border-l-[3px] border-blue-500';
+    }
+};
+window.closeMiningPanel = () => {
+    const modal = document.getElementById('data-mining-modal');
+    if (modal) modal.classList.add('hidden');
+};
+window.openStatToolModal = () => window.ia?.openStatToolModal();
 window.closeDataMiningModal = () => {
     const modal = document.getElementById('data-mining-modal');
     if (modal) modal.classList.add('hidden');

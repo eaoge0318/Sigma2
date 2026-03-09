@@ -91,9 +91,51 @@ class FileService:
             else:
                 filename = base_filename
 
+            content = await file.read()
+
+            # === Excel 自動轉 CSV ===
+            ext = os.path.splitext(filename)[1].lower()
+            if ext in (".xlsx", ".xls"):
+                import io
+
+                try:
+                    import pandas as pd
+                except ImportError:
+                    raise HTTPException(
+                        500, detail="伺服器缺少 pandas 套件, 無法處理 Excel 檔案"
+                    )
+                try:
+                    # 嘗試載入 openpyxl (xlsx) 或 xlrd (xls)
+                    engine = "openpyxl" if ext == ".xlsx" else None
+                    xls = pd.ExcelFile(io.BytesIO(content), engine=engine)
+                    sheet_names = xls.sheet_names
+
+                    # 若有多個 sheet, 選擇行數最多的
+                    if len(sheet_names) == 1:
+                        df = pd.read_excel(xls, sheet_name=sheet_names[0])
+                    else:
+                        best_sheet = None
+                        best_rows = -1
+                        for sn in sheet_names:
+                            tmp = pd.read_excel(xls, sheet_name=sn)
+                            if len(tmp) > best_rows:
+                                best_rows = len(tmp)
+                                best_sheet = sn
+                        df = pd.read_excel(xls, sheet_name=best_sheet)
+
+                    # 轉 CSV (UTF-8 BOM 以相容 Excel 開啟)
+                    csv_buffer = io.StringIO()
+                    df.to_csv(csv_buffer, index=False, encoding="utf-8")
+                    content = csv_buffer.getvalue().encode("utf-8-sig")
+
+                    # 替換副檔名
+                    filename = os.path.splitext(filename)[0] + ".csv"
+
+                except Exception as e:
+                    raise HTTPException(500, detail=f"Excel 轉換失敗: {str(e)}")
+
             file_path = os.path.join(upload_dir, filename)
 
-            content = await file.read()
             with open(file_path, "wb") as f:
                 f.write(content)
 

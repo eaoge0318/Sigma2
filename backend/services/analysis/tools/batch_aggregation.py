@@ -1,4 +1,4 @@
-"""
+﻿"""
 批次/區域維度聚合分析工具 (Batch Aggregation Analysis)
 - BatchAggregationTool: 自動偵測或指定分群欄位,按批次聚合分析異常分佈
 """

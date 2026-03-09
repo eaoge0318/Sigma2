@@ -57,7 +57,7 @@ class CustomOllamaLLM(CustomLLM):
     def metadata(self) -> LLMMetadata:
         return LLMMetadata(
             context_window=32768,
-            num_output=4096,
+            num_output=8192,
             model_name=self.model_name,
             is_chat_model=True,
         )
@@ -81,6 +81,17 @@ class CustomOllamaLLM(CustomLLM):
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 response = await client.post(self.api_url, json=payload)
+                # 400 錯誤: 讀取 vLLM 的詳細錯誤訊息
+                if response.status_code == 400:
+                    error_body = response.text[:1000]
+                    logger.error(
+                        f"[LLM Async] 400 Bad Request: "
+                        f"prompt_len={len(prompt)}, "
+                        f"body={error_body}"
+                    )
+                    raise ConnectionError(
+                        f"LLM 400 錯誤 (prompt={len(prompt)} chars): {error_body[:500]}"
+                    )
                 response.raise_for_status()
                 result = response.json()
 
@@ -92,6 +103,8 @@ class CustomOllamaLLM(CustomLLM):
                     content = result.get("message", {}).get("content", "")
 
                 return CompletionResponse(text=content)
+        except ConnectionError:
+            raise  # 已經是我們包裝過的
         except Exception as e:
             provider = "OpenAI/VLLM" if is_openai else "Ollama"
             logger.error(f"{provider} Async 連線錯誤: {str(e)}")
@@ -108,11 +121,29 @@ class CustomOllamaLLM(CustomLLM):
             "messages": [{"role": "user", "content": prompt}],
             "stream": True,
         }
+        _finish_reason = None
+        logger.info(f"[LLM Stream] prompt_len={len(prompt)}")
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 async with client.stream(
                     "POST", self.api_url, json=payload
                 ) as response:
+                    # 400 錯誤: 讀取 vLLM 的詳細錯誤訊息
+                    if response.status_code == 400:
+                        error_body = ""
+                        async for chunk in response.aiter_text():
+                            error_body += chunk
+                            if len(error_body) > 2000:
+                                break
+                        logger.error(
+                            f"[LLM Stream] 400 Bad Request: "
+                            f"prompt_len={len(prompt)}, "
+                            f"body={error_body[:1000]}"
+                        )
+                        raise ConnectionError(
+                            f"LLM 400 錯誤 (prompt={len(prompt)} chars): "
+                            f"{error_body[:500]}"
+                        )
                     response.raise_for_status()
                     async for line in response.aiter_lines():
                         if not line:
@@ -127,7 +158,12 @@ class CustomOllamaLLM(CustomLLM):
                                 try:
                                     chunk = json.loads(data_str)
                                     if len(chunk["choices"]) > 0:
-                                        delta = chunk["choices"][0]["delta"]
+                                        choice = chunk["choices"][0]
+                                        # 記錄 finish_reason (length=截斷, stop=正常)
+                                        fr = choice.get("finish_reason")
+                                        if fr:
+                                            _finish_reason = fr
+                                        delta = choice.get("delta", {})
                                         content = delta.get("content", "")
                                         if content:
                                             yield CompletionResponse(
@@ -145,13 +181,25 @@ class CustomOllamaLLM(CustomLLM):
                                         text=content, delta=content
                                     )
                                 if chunk.get("done"):
+                                    _finish_reason = "stop"
                                     break
                             except json.JSONDecodeError:
                                 pass
+        except ConnectionError:
+            raise  # 已經是我們包裝過的, 直接 re-raise
         except Exception as e:
             provider = "OpenAI/VLLM" if is_openai else "Ollama"
             logger.error(f"{provider} Stream 連線錯誤: {str(e)}")
             raise ConnectionError(f"無法串流連線至 {provider}: {str(e)}")
+
+        # [診斷] 串流結束後記錄 finish_reason
+        if _finish_reason == "length":
+            logger.warning(
+                f"[LLM Stream] finish_reason=length → 回覆被截斷! "
+                f"model={self.model_name}, prompt_len={len(prompt)}"
+            )
+        elif _finish_reason:
+            logger.info(f"[LLM Stream] finish_reason={_finish_reason}")
 
     @llm_completion_callback()
     def complete(self, prompt: str, **kwargs: Any) -> CompletionResponse:
@@ -185,16 +233,45 @@ class CustomOllamaLLM(CustomLLM):
         """
         非阻塞異步聊天 (async chat)。
         直接使用 httpx.AsyncClient，避免阻塞 event loop。
-        這是防止分析期間其他 API 無法回應的關鍵方法。
+        支援多模態: 當 message 的 additional_kwargs 包含 images 時，
+        自動組裝 Ollama 或 OpenAI 格式的圖片 payload。
         """
         is_openai = "/v1/chat/completions" in self.api_url
 
-        # 將 ChatMessage 轉換為 dict 格式
+        # 將 ChatMessage 轉換為 dict 格式（含多模態圖片支援）
         formatted_messages = []
         for msg in messages:
             role = str(msg.role.value) if hasattr(msg.role, "value") else str(msg.role)
             content = msg.content if isinstance(msg.content, str) else str(msg.content)
-            formatted_messages.append({"role": role, "content": content})
+
+            # 檢查是否有圖片 (多模態)
+            extra = getattr(msg, "additional_kwargs", None) or {}
+            img_list = extra.get("images", [])
+
+            if img_list and is_openai:
+                # OpenAI / VLLM 多模態格式:
+                # content 改為 array: [{type: "text", text: ...}, {type: "image_url", ...}]
+                content_parts = [{"type": "text", "text": content}]
+                for img_b64 in img_list[:3]:  # 最多 3 張圖
+                    content_parts.append(
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:image/png;base64,{img_b64}"},
+                        }
+                    )
+                formatted_messages.append({"role": role, "content": content_parts})
+            elif img_list and not is_openai:
+                # Ollama 多模態格式: images 欄位 (base64 list)
+                formatted_messages.append(
+                    {
+                        "role": role,
+                        "content": content,
+                        "images": img_list[:3],
+                    }
+                )
+            else:
+                # 純文字
+                formatted_messages.append({"role": role, "content": content})
 
         payload = {
             "model": self.model_name,
@@ -236,7 +313,7 @@ class SigmaAnalysisWorkflow(Workflow):
         analysis_service: AnalysisService,
         model_name: str = config.LLM_MODEL,
         ollama_api_url: str = config.LLM_API_URL,
-        timeout: int = 600,
+        timeout: int = 1800,
     ):
         super().__init__(timeout=timeout, verbose=True)
         self.tool_executor = tool_executor
@@ -332,6 +409,23 @@ class SigmaAnalysisWorkflow(Workflow):
         file_id = getattr(ev, "file_id", None)
         session_id = getattr(ev, "session_id", None)
 
+        # [AUTO-RESOLVE] 如果 file_id 為空, 嘗試自動從 session 的 analysis 目錄中解析
+        if not file_id and session_id:
+            _analysis_dir = (
+                self.tool_executor.analysis_service.base_dir / session_id / "analysis"
+            )
+            if _analysis_dir.exists():
+                _indexed = [
+                    d.name
+                    for d in _analysis_dir.iterdir()
+                    if d.is_dir() and (d / "summary.json").exists()
+                ]
+                if len(_indexed) == 1:
+                    file_id = _indexed[0]
+                    logger.warning(
+                        f"[IntentClassifier] file_id 為空, 自動解析: {file_id} (前端應傳入此值)"
+                    )
+
         # [AUTO-RESET] 新對話開始時，強制清除殘留的停止/立即回答信號
         if session_id:
             try:
@@ -377,8 +471,82 @@ class SigmaAnalysisWorkflow(Workflow):
                 suspect_pool=getattr(ev, "suspect_pool", []),
             )
 
-        # Step 2: 所有其他情況 — 交給 LLM 判斷 (含上下文)
         has_file = bool(file_id)
+
+        # Step 1.5: 關鍵字快速短路 — 不經 LLM，避免 LLM 忙碌時追問卡住
+        # 分析類關鍵字 (明確的動作指令)
+        analysis_fast_keywords = [
+            "畫",
+            "繪製",
+            "顯示趨勢",
+            "趨勢圖",
+            "折線圖",
+            "分析",
+            "診斷",
+            "偵測",
+            "異常偵測",
+            "相關性",
+            "Z-Score",
+            "Hotelling",
+            "T2",
+            "幫我分析",
+            "深度分析",
+            "快速分析",
+            "資料探勘",
+            "資料品質",
+            "檢視資料",
+            "品質概況",
+            "參數清單",
+            "欄位清單",
+        ]
+        # chat 類關鍵字 (追問/解釋/摘要)
+        chat_fast_keywords = [
+            "什麼意思",
+            "解釋",
+            "簡單說",
+            "白話文",
+            "剛才",
+            "上次",
+            "之前說",
+            "看不懂",
+            "總結",
+            "摘要",
+            "列出重點",
+            "太複雜",
+            "為什麼這樣",
+            "代表什麼",
+        ]
+        _has_analysis_kw = any(kw in query_lower for kw in analysis_fast_keywords)
+        _has_chat_kw = any(kw in query_lower for kw in chat_fast_keywords)
+
+        if _has_analysis_kw and not _has_chat_kw and has_file:
+            intent = "analysis"
+            logger.info(
+                f"[Keyword Fast-Track] '{query[:40]}' → analysis (bypassed LLM)"
+            )
+            return IntentEvent(
+                query=query,
+                intent=intent,
+                file_id=file_id,
+                session_id=session_id,
+                history=history,
+                mode=ev.mode,
+                suspect_pool=getattr(ev, "suspect_pool", []),
+            )
+        elif _has_chat_kw and not _has_analysis_kw:
+            intent = "chat"
+            logger.info(f"[Keyword Fast-Track] '{query[:40]}' → chat (bypassed LLM)")
+            return IntentEvent(
+                query=query,
+                intent=intent,
+                file_id=file_id,
+                session_id=session_id,
+                history=history,
+                mode=ev.mode,
+                suspect_pool=getattr(ev, "suspect_pool", []),
+            )
+
+        # Step 2: 所有其他情況 — 交給 LLM 判斷 (含上下文)
         has_history = bool(history and len(history) > 50)
 
         try:
@@ -399,15 +567,22 @@ class SigmaAnalysisWorkflow(Workflow):
                 "Rules:\n"
                 "- analysis: User wants to START or RE-RUN data analysis, draw charts, "
                 "detect anomalies, check correlations, run diagnostics, or perform optimization.\n"
-                "- chat: User is asking questions, requesting explanations, "
-                "following up on previous results, greeting, or having a general conversation.\n"
-                "- chat: User wants to SIMPLIFY, SUMMARIZE, REPHRASE, or REORGANIZE previous results.\n\n"
+                "- analysis: User asks DOMAIN QUESTIONS that require data investigation to answer "
+                "(e.g. root cause, why something happened, what caused a problem).\n"
+                "- chat: User is asking about PREVIOUS RESULTS (explanations, simplifications, follow-ups).\n"
+                "- chat: User wants to SIMPLIFY, SUMMARIZE, REPHRASE, or REORGANIZE previous results.\n"
+                "- chat: User is greeting, thanking, or having general conversation.\n\n"
                 "KEY DISTINCTION:\n"
+                "- 'ASKS DOMAIN/CAUSAL QUESTION' (斷紙原因, 為什麼良率下降, 異常原因是什麼) → analysis\n"
                 "- 'REFERENCES past analysis' (剛才分析說..., 上次的異常..., 那個結果是什麼意思) → chat\n"
                 "- 'REQUESTS new action' (幫我分析, 診斷一下, 畫趨勢圖, 偵測異常) → analysis\n"
                 "- 'ASKS for simpler explanation' (簡單說明, 總結一下, 用白話文, 看不懂) → chat\n\n"
                 "Examples:\n"
                 "- '幫我分析這份數據的異常' → analysis\n"
+                "- '請問斷紙的原因' → analysis\n"
+                "- '為什麼良率下降' → analysis\n"
+                "- '異常的原因是什麼' → analysis\n"
+                "- '哪些參數影響品質' → analysis\n"
                 "- '剛才分析說 BCDRY 有異常趨勢，這是什麼意思？' → chat\n"
                 "- '畫出 A15 的趨勢圖' → analysis\n"
                 "- '為什麼上次說要檢查 A15？' → chat\n"
@@ -494,15 +669,62 @@ class SigmaAnalysisWorkflow(Workflow):
         has_chart_intent = any(kw in query_lower for kw in chart_keywords)
         has_deep_intent = any(kw in query_lower for kw in deep_analysis_keywords)
 
+        # [AUTO-RESOLVE] 如果 file_id 為空, 嘗試自動從 session 的 analysis 目錄中解析
+        _fast_file_id = ev.file_id
+        if not _fast_file_id and ev.session_id:
+            _analysis_dir = (
+                self.tool_executor.analysis_service.base_dir
+                / ev.session_id
+                / "analysis"
+            )
+            if _analysis_dir.exists():
+                _indexed = [
+                    d.name
+                    for d in _analysis_dir.iterdir()
+                    if d.is_dir() and (d / "summary.json").exists()
+                ]
+                if len(_indexed) == 1:
+                    _fast_file_id = _indexed[0]
+                    logger.warning(
+                        f"[快車道] file_id 為空, 自動解析: {_fast_file_id} (前端應傳入此值)"
+                    )
+                elif len(_indexed) > 1:
+                    logger.info(
+                        f"[快車道] 多個已索引檔案 ({len(_indexed)}), 無法自動選擇"
+                    )
+
+        logger.info(
+            f"[快車道檢查] intent={intent}, viz={has_viz_intent}, "
+            f"chart={has_chart_intent}, deep={has_deep_intent}, "
+            f"file_id={_fast_file_id}, session={ev.session_id}"
+        )
+
+        # [SCENE_SELECT:...] 格式的場景選擇必須走分析路徑, 不可被快車道攔截
+        _is_scene_select = ev.query.strip().startswith("[SCENE_SELECT:")
+
         if (
             "analysis" in intent
             and (has_viz_intent or has_chart_intent)
             and not has_deep_intent
-            and ev.file_id
+            and not _is_scene_select
+            and _fast_file_id
         ):
             summary = self.tool_executor.analysis_service.load_summary(
-                ev.session_id, ev.file_id
+                ev.session_id, _fast_file_id
             )
+            if summary:
+                # 檢查 CSV 檔案是否實際存在 (防止 stale summary)
+                _csv_filename = summary.get("filename", "")
+                _csv_path = (
+                    self.tool_executor.analysis_service.base_dir
+                    / ev.session_id
+                    / "uploads"
+                    / _csv_filename
+                )
+                if not _csv_path.exists():
+                    logger.warning(f"[快車道] CSV 不存在: {_csv_path}, 跳過快車道")
+                    summary = None  # 強制走標準流程
+
             if summary:
                 params_list = summary.get("parameters", [])
                 mappings = summary.get("mappings", {}) if summary else {}
@@ -511,8 +733,15 @@ class SigmaAnalysisWorkflow(Workflow):
                 # 從 query 中提取參數名稱 (精確匹配已知欄位名)
                 extracted_params = []
                 query_upper = ev.query.upper()
-                for p in params_list:
-                    if p.upper() in query_upper:
+                # 按名稱長度降序: 優先匹配最長的, 避免短名誤匹配
+                sorted_params = sorted(params_list, key=len, reverse=True)
+                for p in sorted_params:
+                    p_upper = p.upper()
+                    # 用 word boundary 或前後非字母數字字元做精確匹配
+                    pattern = re.escape(p_upper)
+                    if re.search(
+                        r"(?<![A-Z0-9_\-])" + pattern + r"(?![A-Z0-9_\-])", query_upper
+                    ):
                         extracted_params.append(p)
 
                 # 如果沒有精確匹配到，嘗試用 regex 提取工業感測器代碼模式
@@ -536,7 +765,7 @@ class SigmaAnalysisWorkflow(Workflow):
 
                     # 直接呼叫 get_time_series_data 工具
                     tool_params = {
-                        "file_id": ev.file_id,
+                        "file_id": _fast_file_id,
                         "parameters": extracted_params,
                     }
 
@@ -574,7 +803,7 @@ class SigmaAnalysisWorkflow(Workflow):
                             return VisualizingEvent(
                                 data=chart_data,
                                 query=ev.query,
-                                file_id=ev.file_id,
+                                file_id=_fast_file_id,
                                 session_id=ev.session_id,
                                 history=ev.history,
                                 mode=ev.mode,
@@ -585,9 +814,21 @@ class SigmaAnalysisWorkflow(Workflow):
                             )
                         else:
                             # 數據獲取失敗，回退到正常分析流程
+                            # [FIX] 增加詳細錯誤日誌
+                            error_detail = ""
+                            if isinstance(chart_data, dict):
+                                error_detail = chart_data.get(
+                                    "error", str(chart_data.keys())
+                                )
+                            else:
+                                error_detail = f"Unexpected type: {type(chart_data)}"
+                            logger.warning(
+                                f"[快車道] 數據擷取失敗: {error_detail}, "
+                                f"params={tool_params}, session={ev.session_id}"
+                            )
                             ctx.write_event_to_stream(
                                 ProgressEvent(
-                                    msg="-- [快車道] 數據擷取失敗，改走標準分析流程..."
+                                    msg=f"-- [快車道] 數據擷取失敗 ({error_detail})，改走標準分析流程..."
                                 )
                             )
                     except Exception as e:
@@ -614,7 +855,7 @@ class SigmaAnalysisWorkflow(Workflow):
                             )
                         },
                         query=ev.query,
-                        file_id=ev.file_id,
+                        file_id=_fast_file_id,
                         session_id=ev.session_id,
                         history=ev.history,
                         mode=ev.mode,
@@ -666,7 +907,7 @@ class SigmaAnalysisWorkflow(Workflow):
         has_analysis_intent = any(kw in query_lower for kw in metadata_exclude_keywords)
         if "analysis" in intent and has_metadata_intent and not has_analysis_intent:
             summary = self.tool_executor.analysis_service.load_summary(
-                ev.session_id, ev.file_id
+                ev.session_id, _fast_file_id
             )
             if summary:
                 ctx.write_event_to_stream(
@@ -749,7 +990,7 @@ class SigmaAnalysisWorkflow(Workflow):
                 return SummarizeEvent(
                     data={"direct_reply": content, "all_steps_results": []},
                     query=ev.query,
-                    file_id=ev.file_id,
+                    file_id=_fast_file_id,
                     session_id=ev.session_id,
                     history=ev.history,
                     mode=ev.mode,
@@ -762,7 +1003,7 @@ class SigmaAnalysisWorkflow(Workflow):
         if "analysis" in intent:
             return AnalysisEvent(
                 query=ev.query,
-                file_id=ev.file_id,
+                file_id=_fast_file_id,
                 session_id=ev.session_id,
                 history=ev.history,
                 mode=ev.mode,
@@ -914,8 +1155,20 @@ class SigmaAnalysisWorkflow(Workflow):
         if self.USE_NEW_ARCHITECTURE and ev.step_count == 1:
             logger.info("Starting Orchestrated Analysis Agent...")
 
-            # [RESUME] Detect "continue" intent from user query
-            continue_keywords = [
+            # [ROUTING] 統一追問類型檢測
+            _has_saved = hasattr(
+                self, "orchestrator"
+            ) and self.orchestrator.has_saved_state(ev.session_id, ev.file_id)
+
+            # [DEBUG] 路由追蹤
+            print(
+                f"[ROUTING DEBUG] query='{ev.query.strip()[:50]}', "
+                f"session_id='{ev.session_id}', file_id='{ev.file_id}', "
+                f"has_saved={_has_saved}"
+            )
+
+            # 純粹的「繼續分析」關鍵字 (無新內容)
+            _pure_resume_keywords = [
                 "繼續",
                 "繼續分析",
                 "更深入",
@@ -927,16 +1180,105 @@ class SigmaAnalysisWorkflow(Workflow):
                 "keep going",
                 "go deeper",
             ]
-            is_resume = (
-                any(kw in ev.query.lower() for kw in continue_keywords)
-                and hasattr(self, "orchestrator")
-                and self.orchestrator.has_saved_state(ev.session_id)
+            # 探索型關鍵字 (想看其他結果)
+            _explore_keywords = [
+                "其他",
+                "還有",
+                "別的",
+                "更多",
+                "其餘",
+                "另外",
+                "有沒有其他",
+                "還有沒有",
+                "還有什麼",
+                "other",
+            ]
+            _q_lower = ev.query.strip().lower()
+            _q_len = len(_q_lower)
+            _matches_pure_resume = (
+                any(kw in _q_lower for kw in _pure_resume_keywords) and _q_len < 20
+            )
+            _matches_explore = (
+                any(kw in _q_lower for kw in _explore_keywords) and _q_len < 30
             )
 
-            if is_resume:
-                logger.info(
-                    f"[RESUME] Detected continue intent, resuming from saved state"
+            # 釐清邏輯
+            _needs_clarification = False
+            _clarification_msg = ""
+
+            if _matches_pure_resume and not _has_saved:
+                # Case 1: 用戶說「繼續分析」但沒有已保存的狀態
+                _needs_clarification = True
+                _clarification_msg = (
+                    "目前沒有找到上一次的分析記錄。請問您想要：\n\n"
+                    "1. **重新分析** — 對目前的資料進行全新的異常掃描和診斷\n"
+                    "2. **指定參數分析** — 請告訴我您想分析哪些參數 "
+                    "(例如：「請分析 XX 參數的異常原因」)\n"
+                    "3. **資料概況** — 先看一下目前資料的基本統計和欄位資訊\n\n"
+                    "請選擇或直接描述您的需求。"
                 )
+            elif _matches_explore and not _has_saved:
+                # Case 1b: 用戶想看「其他結果」但沒有記錄 → 直接跑新分析
+                followup_type = None  # 走全新分析路徑
+            elif (
+                _has_saved
+                and _q_len < 15
+                and (_matches_pure_resume or _matches_explore)
+            ):
+                # Case 2: 有已保存的狀態，但查詢很短且模糊
+                if _matches_explore:
+                    # 明確的探索意圖 → 直接走 explore
+                    pass
+                else:
+                    _needs_clarification = True
+                    _clarification_msg = (
+                        "偵測到上一次的分析記錄。請問您想要：\n\n"
+                        "1. **繼續探索** — 查看其他可能的異常參數\n"
+                        "2. **摘要結果** — 總結上一次分析的主要發現\n"
+                        "3. **深入某項異常** — 針對某個發現做更深入的調查\n"
+                        "4. **全新分析** — 忽略上次結果，重新進行完整分析\n\n"
+                        "請選擇或直接描述您的需求。"
+                    )
+
+            if _needs_clarification:
+                # 直接返回釐清訊息, 使用 direct_reply 繞過 humanizer
+                return SummarizeEvent(
+                    query=ev.query,
+                    file_id=ev.file_id,
+                    session_id=ev.session_id,
+                    history=ev.history or "",
+                    data={"direct_reply": _clarification_msg},
+                )
+
+            # 分類追問類型
+            followup_type = None
+            if _has_saved and hasattr(self.orchestrator, "classify_followup"):
+                followup_type = self.orchestrator.classify_followup(
+                    ev.query, ev.session_id, ev.file_id
+                )
+                # [DEBUG] classify_followup 結果
+                print(f"[ROUTING DEBUG] classify_followup result: {followup_type}")
+            else:
+                print(
+                    f"[ROUTING DEBUG] classify_followup SKIPPED "
+                    f"(has_saved={_has_saved}, "
+                    f"has_classify={hasattr(self.orchestrator, 'classify_followup') if hasattr(self, 'orchestrator') else 'N/A'})"
+                )
+
+            # 純 resume (短查詢 + resume關鍵字) → 覆寫為 "explore"
+            if _has_saved and _matches_pure_resume and followup_type is None:
+                followup_type = "explore"
+            # 探索型關鍵字 → 覆寫為 "explore"
+            if _has_saved and _matches_explore and followup_type is None:
+                followup_type = "explore"
+
+            # 路由決策日誌
+            logger.info(
+                f"[ROUTING] has_saved={_has_saved}, "
+                f"followup_type={followup_type}, "
+                f"query_len={len(ev.query.strip())}"
+            )
+            print(f"[ROUTING DEBUG] FINAL DECISION: followup_type={followup_type}")
 
             # Re-wrap start info with enriched query
             state_query = ev.query
@@ -959,44 +1301,57 @@ class SigmaAnalysisWorkflow(Workflow):
             final_resp = {"response": "Analysis failed or was interrupted."}
 
             try:
-                # [NEW] Pure chat detection: conversational requests that don't need tools
-                is_chat_only = (
-                    not is_resume
-                    and hasattr(self.orchestrator, "_is_chat_only")
-                    and self.orchestrator._is_chat_only(state_query)
-                )
-
-                # Follow-up detection: if not explicit resume but has cached state and looks like followup
-                is_followup = (
-                    not is_resume
-                    and not is_chat_only
-                    and hasattr(self.orchestrator, "_is_followup")
-                    and self.orchestrator.has_saved_state(ev.session_id)
-                    and self.orchestrator._is_followup(state_query)
-                )
-
-                if is_chat_only:
-                    logger.info(
-                        "[CHAT_ONLY] Detected pure chat request, bypassing analysis pipeline"
-                    )
+                if followup_type == "summary":
+                    # ── 摘要型: 不做新分析, 直接用 LLM 生成摘要 ──
+                    logger.info("[ROUTING] → summary (chat_only path)")
                     async for event in self.orchestrator.run_chat_only(start_data):
                         if isinstance(event, dict):
                             final_resp = event
                         else:
                             ctx.write_event_to_stream(event)
                         await asyncio.sleep(0)
-                elif is_followup:
-                    async for event in self.orchestrator.run_followup(
-                        start_data, sum_data
+
+                elif followup_type == "explore":
+                    # ── 探索型: Resume + 排除記憶 ──
+                    logger.info("[ROUTING] → explore (resume with exclusion)")
+                    async for event in self.orchestrator.run_analysis(
+                        start_data, sum_data, resume=True
                     ):
                         if isinstance(event, dict):
                             final_resp = event
                         else:
                             ctx.write_event_to_stream(event)
                         await asyncio.sleep(0)
+
+                elif followup_type == "scene_select":
+                    # -- 場景選擇型: 用戶在 interactive 選單選了場景 --
+                    logger.info("[ROUTING] → scene_select (activate selected scene)")
+                    async for event in self.orchestrator.run_scene_select(
+                        start_data, sum_data, ev.query.strip()
+                    ):
+                        if isinstance(event, dict):
+                            final_resp = event
+                        else:
+                            ctx.write_event_to_stream(event)
+                        await asyncio.sleep(0)
+
+                elif followup_type in ("drilldown", "supplement"):
+                    # ── 深入型/補充型: 繼承狀態 + 針對性實驗 ──
+                    logger.info(f"[ROUTING] → {followup_type} (targeted followup)")
+                    async for event in self.orchestrator.run_followup(
+                        start_data, sum_data, followup_type=followup_type
+                    ):
+                        if isinstance(event, dict):
+                            final_resp = event
+                        else:
+                            ctx.write_event_to_stream(event)
+                        await asyncio.sleep(0)
+
                 else:
+                    # ── 全新分析 ──
+                    logger.info("[ROUTING] → fresh analysis")
                     async for event in self.orchestrator.run_analysis(
-                        start_data, sum_data, resume=is_resume
+                        start_data, sum_data, resume=False
                     ):
                         if isinstance(event, dict):
                             final_resp = event
@@ -1032,16 +1387,25 @@ class SigmaAnalysisWorkflow(Workflow):
             # [FIX] Pass through V2's structured step history instead of hardcoding empty
             v2_steps = []
             v2_final_decision = final_decision_text
+            v2_scene_summary = []
+            v2_follow_up = []
+            v2_analysis_context = {}
             if isinstance(final_resp, dict):
                 v2_steps = final_resp.get("all_steps_results", [])
                 v2_final_decision = final_resp.get(
                     "final_decision", final_decision_text
                 )
+                v2_scene_summary = final_resp.get("scene_summary", [])
+                v2_follow_up = final_resp.get("follow_up_items", [])
+                v2_analysis_context = final_resp.get("analysis_context", {})
 
             return SummarizeEvent(
                 data={
                     "final_decision": v2_final_decision,
                     "all_steps_results": v2_steps,
+                    "scene_summary": v2_scene_summary,
+                    "follow_up_items": v2_follow_up,
+                    "analysis_context": v2_analysis_context,
                 },
                 query=ev.query,
                 file_id=ev.file_id,
@@ -2106,7 +2470,7 @@ class SigmaAnalysisWorkflow(Workflow):
     @step
     async def execute_translation(
         self, ctx: Context, ev: TranslationEvent
-    ) -> SummarizeEvent:
+    ) -> Union[SummarizeEvent, AnalysisEvent]:
         """
         [Local Step] 執行對話或簡單翻譯，並注入參數背景資訊
         """
@@ -2126,8 +2490,13 @@ class SigmaAnalysisWorkflow(Workflow):
         context_data = {"available_parameters": params_list}
 
         # [NEW] 注入上一次分析的結論，讓 humanizer 能回答追問
+        has_previous_analysis = False
         if hasattr(self, "orchestrator") and ev.session_id:
-            cached = self.orchestrator._last_states.get(ev.session_id)
+            _sk = self.orchestrator._state_key(ev.session_id, ev.file_id)
+            # [PERSIST] 嘗試從磁碟載入 (若記憶體中沒有)
+            if _sk not in self.orchestrator._last_states:
+                self.orchestrator._load_state_from_disk(ev.session_id, ev.file_id)
+            cached = self.orchestrator._last_states.get(_sk)
             if cached:
                 state = cached.get("state")
                 if (
@@ -2136,9 +2505,121 @@ class SigmaAnalysisWorkflow(Workflow):
                     and state.current_knowledge
                 ):
                     context_data["previous_analysis"] = state.current_knowledge
+                    has_previous_analysis = True
                     logger.info(
                         f"[Chat Context] Injected {len(state.current_knowledge)} chars of previous analysis"
                     )
+
+        # [CHAT→ANALYSIS] 確認偵測: 若有待確認的領域問題且用戶確認 → 轉為分析
+        if hasattr(self, "orchestrator") and ev.session_id:
+            _pdq_key = self.orchestrator._state_key(ev.session_id, ev.file_id)
+            _pending_query = self.orchestrator._pending_domain_queries.get(_pdq_key)
+            if _pending_query:
+                _confirm_keywords = [
+                    "確認",
+                    "好",
+                    "好的",
+                    "是",
+                    "可以",
+                    "開始",
+                    "沒問題",
+                    "ok",
+                    "yes",
+                    "start",
+                    "go",
+                    "確定",
+                    "執行",
+                    "分析",
+                ]
+                _deny_keywords = [
+                    "不用",
+                    "不要",
+                    "取消",
+                    "算了",
+                    "不了",
+                    "no",
+                    "cancel",
+                ]
+                q_lower = ev.query.strip().lower()
+                _is_confirm = any(kw in q_lower for kw in _confirm_keywords)
+                _is_deny = any(kw in q_lower for kw in _deny_keywords)
+
+                if _is_confirm and not _is_deny:
+                    # 用戶確認 → 清除 pending, 轉為分析
+                    del self.orchestrator._pending_domain_queries[_pdq_key]
+                    logger.info(
+                        f"[CHAT→ANALYSIS] User confirmed, routing to analysis: "
+                        f"'{_pending_query[:50]}'"
+                    )
+                    return AnalysisEvent(
+                        query=_pending_query,
+                        file_id=ev.file_id,
+                        session_id=ev.session_id,
+                        history=ev.history,
+                        mode="deep",
+                        suspect_pool=ev.suspect_pool,
+                    )
+                elif _is_deny:
+                    # 用戶拒絕 → 清除 pending, 正常走 chat
+                    del self.orchestrator._pending_domain_queries[_pdq_key]
+                    logger.info("[CHAT→ANALYSIS] User denied, proceeding as chat")
+                else:
+                    # 用戶說了其他東西 → 清除 pending, 正常走 chat
+                    del self.orchestrator._pending_domain_queries[_pdq_key]
+
+        # [GUARD] 有數據檔案但沒有前次分析結果 → 主動提議啟動分析
+        if ev.file_id and summary and not has_previous_analysis:
+            query_lower = ev.query.lower()
+            # 偵測是否為需要數據分析才能回答的領域問題
+            domain_keywords = [
+                "原因",
+                "為什麼",
+                "影響",
+                "關聯",
+                "異常",
+                "問題",
+                "下降",
+                "上升",
+                "變化",
+                "趨勢",
+                "品質",
+                "良率",
+                "因素",
+                "what",
+                "why",
+                "cause",
+                "reason",
+            ]
+            is_domain_question = any(kw in query_lower for kw in domain_keywords)
+            if is_domain_question:
+                # 保存待確認的領域問題
+                if hasattr(self, "orchestrator") and ev.session_id:
+                    _pdq_key = self.orchestrator._state_key(ev.session_id, ev.file_id)
+                    self.orchestrator._pending_domain_queries[_pdq_key] = ev.query
+                    logger.info(
+                        f"[CHAT→ANALYSIS] Stored pending domain query: "
+                        f"'{ev.query[:50]}'"
+                    )
+
+                direct_msg = (
+                    f"這看起來是一個需要數據分析才能回答的問題。\n\n"
+                    f"目前已載入的數據包含 **{total_rows}** 筆資料、**{total_cols}** 個欄位，"
+                    f"但尚未執行過相關分析。\n\n"
+                    f"**我可以直接為您啟動「{ev.query}」的分析，請回覆「確認」即可開始。**"
+                )
+                context_data["direct_reply"] = direct_msg
+                return SummarizeEvent(
+                    data=context_data,
+                    query=ev.query,
+                    file_id=ev.file_id,
+                    session_id=ev.session_id,
+                    history=ev.history,
+                    mode=ev.mode,
+                    row_count=total_rows,
+                    col_count=total_cols,
+                    mappings=full_display_mappings,
+                    suspect_pool=ev.suspect_pool,
+                )
 
         return SummarizeEvent(
             data=context_data,
@@ -2363,9 +2844,8 @@ class SigmaAnalysisWorkflow(Workflow):
             f"## 任務 ##\n"
             f"1. 用因果推理鏈的方式總結根因：『因為 A → 所以 B → 導致 C』。每一層 Why 的結論必須邏輯銜接。\n"
             f"2. 只報告 |Z-Score| > 6 或與平均差異極大的參數。若全場 |Z-Score| < 6，應明確告知『本次分析未發現極端異常』。\n"
-            f"3. 行動建議僅限 1-2 條：若 Z<6 僅能建議「持續監控」；若 Z>6 才能建議具體設備檢查。\n"
-            f"4. 使用繁體中文，禁止分隔線\n"
-            f"5. 直接輸出內容，不要重複以上的診斷鏈\n"
+            f"3. 使用繁體中文，禁止分隔線\n"
+            f"4. 直接輸出內容，不要重複以上的診斷鏈\n"
         )
         if not has_mapping:
             final_prompt += (
@@ -2490,8 +2970,20 @@ class SigmaAnalysisWorkflow(Workflow):
 
     @step
     async def humanizer(self, ctx: Context, ev: SummarizeEvent) -> StopEvent:
+        # 從 orchestrator response 中提取最終 Turn 編號
+        _final_turn = 0
+        if isinstance(ev.data, dict):
+            _resp = ev.data.get("response", "")
+            # "V2 Analysis Completed (Steps: 4)." → 4
+            import re as _re_turn
+
+            _m = _re_turn.search(r"Steps:\s*(\d+)", _resp)
+            if _m:
+                _final_turn = int(_m.group(1))
         ctx.write_event_to_stream(
-            ProgressEvent(msg="(Humanizing...) 正在生成最終分析報告...")
+            ProgressEvent(
+                msg="(Humanizing...) 正在生成最終分析報告...", turn=_final_turn
+            )
         )
 
         # [DIRECT REPLY CHECK]
@@ -2542,69 +3034,128 @@ class SigmaAnalysisWorkflow(Workflow):
         tool_history = []
         # [FIX] Extract V2 final_decision dashboard context
         v2_dashboard = ""
+        scene_summary = []
+        follow_up_items = []
+        analysis_context = {}
         if isinstance(ev.data, dict):
             tool_history = ev.data.get("full_tool_history", []) or ev.data.get(
                 "all_steps_results", []
             )
             v2_dashboard = ev.data.get("final_decision", "")
+            scene_summary = ev.data.get("scene_summary", []) or []
+            follow_up_items = ev.data.get("follow_up_items", []) or []
+            analysis_context = ev.data.get("analysis_context", {}) or {}
 
         if tool_history:
             chain_parts = []
-            # [FIX] Prepend V2 dashboard context if available
+            # [FIX] Prepend V2 dashboard context if available (size-limited)
             if v2_dashboard:
-                chain_parts.append(f"### 分析儀表板總覽\n{v2_dashboard}\n")
+                # 限制 dashboard 大小，避免 JSON 重的 dashboard 文字淹沒 LLM
+                _dashboard_text = str(v2_dashboard)[:2000]
+                if len(str(v2_dashboard)) > 2000:
+                    _dashboard_text += "\n... (儀表板內容已截斷)"
+                chain_parts.append(f"### 分析儀表板總覽\n{_dashboard_text}\n")
+
+            # [SCENE] 注入場景摘要, 讓 LLM 按場景組織報告
+            if scene_summary:
+                scene_outline_parts = ["### 調查場景清單"]
+                for sc in scene_summary:
+                    sid = sc.get("scene_id", "?")
+                    label = sc.get("label", "")
+                    status = sc.get("status", "PENDING")
+                    targets = ", ".join(sc.get("targets", [])[:5]) or "全域"
+                    findings = sc.get("findings", [])
+                    status_icon = "completed" if status == "DONE" else status
+                    scene_outline_parts.append(
+                        f"**{sid}: {label}** [{status_icon}] (targets: {targets})"
+                    )
+                    if findings:
+                        for f in findings[:5]:
+                            scene_outline_parts.append(f"  - {f}")
+                    else:
+                        scene_outline_parts.append("  - (無具體發現)")
+                chain_parts.append("\n".join(scene_outline_parts) + "\n")
+
+            # [FIX] 注入 analysis_context 結構化摘要 (autotarget + Z 值 + T2)
+            if analysis_context and isinstance(analysis_context, dict):
+                ctx_parts = ["### Turn 1 掃描結果摘要"]
+
+                # Auto Targets (異常參數排名)
+                _auto_targets = analysis_context.get("auto_targets", [])
+                if _auto_targets:
+                    ctx_parts.append(
+                        f"**自動鎖定的異常參數** (共 {len(_auto_targets)} 個): "
+                        + ", ".join(_auto_targets[:10])
+                    )
+
+                # T2 Summary
+                _t2 = analysis_context.get("t2_summary", {})
+                if _t2 and isinstance(_t2, dict):
+                    n_comp = _t2.get("n_components", 0)
+                    var_exp = _t2.get("variance_explained", "")
+                    threshold = _t2.get("t2_threshold", 0)
+                    zones = _t2.get("anomaly_zones", [])
+                    if n_comp:
+                        ctx_parts.append(
+                            f"**T2 分析**: {n_comp} 主成分, "
+                            f"解釋力={var_exp}, 閾值={threshold}, "
+                            f"{len(zones)} 個異常區段"
+                        )
+
+                # Anomaly Type Groups
+                _atg = analysis_context.get("anomaly_type_groups", [])
+                if _atg:
+                    type_strs = []
+                    for tg in _atg[:6]:
+                        if isinstance(tg, dict):
+                            type_cn = tg.get("type_cn", tg.get("type", "?"))
+                            count = tg.get("param_count", len(tg.get("parameters", [])))
+                            type_strs.append(f"{type_cn}({count}個)")
+                    if type_strs:
+                        ctx_parts.append(f"**異常類型分布**: {', '.join(type_strs)}")
+
+                # Key Findings
+                _kf = analysis_context.get("key_findings", [])
+                if _kf:
+                    findings_text = "\n".join(f"  - {f}" for f in _kf[:8])
+                    ctx_parts.append(f"**關鍵發現**:\n{findings_text}")
+
+                # Follow-up Items (場景選單)
+                if follow_up_items:
+                    fu_parts = []
+                    for fi in follow_up_items[:8]:
+                        if isinstance(fi, dict):
+                            sid = fi.get("scene_id", "?")
+                            label = fi.get("label", "")
+                            targets = ", ".join(fi.get("targets", [])[:3])
+                            fu_parts.append(f"  - {sid}: {label} ({targets})")
+                    if fu_parts:
+                        ctx_parts.append(
+                            f"**後續追蹤場景** (供使用者選擇):\n" + "\n".join(fu_parts)
+                        )
+
+                if len(ctx_parts) > 1:
+                    chain_parts.append("\n".join(ctx_parts) + "\n")
+
             for step_data in tool_history:
                 step_num = step_data.get("step", "?")
                 tool_used = step_data.get("tool", "unknown")
-                mono = step_data.get("monologue", "")
-                result = step_data.get("result", {})
 
-                # 提取結果文本 (核心字段禁止截斷)
-                result_text = ""
-                if isinstance(result, dict):
-                    key_fields = {}
-                    for rk, rv in result.items():
-                        # 核心診斷欄位如 contribution/top_3 等，絕對禁止截斷
-                        if rk in [
-                            "top_3_contributors",
-                            "top_3_summary",
-                            "top_deviations",
-                            "correlations",
-                            "p_value",
-                            "t2_value",
-                        ]:
-                            key_fields[rk] = rv
-                        else:
-                            rv_str = str(rv)
-                            key_fields[rk] = (
-                                rv_str[:800] + "..." if len(rv_str) > 800 else rv_str
-                            )
-
-                    result_text = json.dumps(
-                        key_fields, ensure_ascii=False, default=str
-                    )
-                else:
-                    result_text = str(result)[:1000]
-
-                chain_parts.append(
-                    f"### Step {step_num} (工具: {tool_used})\n"
-                    f"**AI 思考**: {mono}\n"
-                    f"**完整數據結果**: {result_text}\n"
-                )
-                # [FIX] Also append V2 key_findings if present
+                # [模組化] 優先使用 Synthesizer 產出的結構化摘要
                 kf = step_data.get("key_findings", [])
+                cc = step_data.get("causal_chain", [])
+                rh = step_data.get("rejected_hypotheses", [])
+                ns = step_data.get("next_step_suggestion", "")
+                iso = step_data.get("isolated_observations", [])
+
+                step_parts = [f"### Turn {step_num} (工具: {tool_used})"]
+
+                # key_findings 是最重要的（Synthesizer 已精煉）
                 if kf:
                     findings_text = "\n".join(f"  - {f}" for f in kf)
-                    chain_parts.append(f"**關鍵發現**:\n{findings_text}\n")
-                rh = step_data.get("rejected_hypotheses", [])
-                if rh:
-                    rejected_text = "\n".join(f"  - {r}" for r in rh)
-                    chain_parts.append(f"**排除假說**:\n{rejected_text}\n")
-                ns = step_data.get("next_step_suggestion", "")
-                if ns:
-                    chain_parts.append(f"**下步建議**: {ns}\n")
-                # Append structured causal data if available
-                cc = step_data.get("causal_chain", [])
+                    step_parts.append(f"**關鍵發現**:\n{findings_text}")
+
+                # 因果鏈
                 if cc:
                     cc_text = []
                     for link in cc:
@@ -2615,14 +3166,103 @@ class SigmaAnalysisWorkflow(Workflow):
                                 f"(信心: {link.get('confidence', '?')})"
                             )
                     if cc_text:
-                        chain_parts.append(
-                            f"**因果鏈 (Causal Chain)**:\n" + "\n".join(cc_text) + "\n"
-                        )
-                iso = step_data.get("isolated_observations", [])
+                        step_parts.append(f"**因果鏈**:\n" + "\n".join(cc_text))
+
+                # 排除假說
+                if rh:
+                    rejected_text = "\n".join(f"  - {r}" for r in rh)
+                    step_parts.append(f"**排除假說**:\n{rejected_text}")
+
+                # 獨立觀察
                 if iso:
                     iso_text = "\n".join(f"  - {o}" for o in iso if o)
                     if iso_text:
-                        chain_parts.append(f"**獨立觀察 (Independent)**:\n{iso_text}\n")
+                        step_parts.append(f"**獨立觀察**:\n{iso_text}")
+
+                # 下步建議
+                if ns:
+                    step_parts.append(f"**下步建議**: {ns}")
+
+                # [降級] 如無 key_findings，才取原始 result 做摘要
+                if not kf:
+                    result = step_data.get("result", {})
+                    if isinstance(result, dict):
+                        # 只取最重要的診斷欄位
+                        brief_fields = {}
+                        for rk in [
+                            "top_3_contributors",
+                            "top_3_summary",
+                            "top_deviations",
+                            "correlations",
+                            "p_value",
+                            "t2_value",
+                            "summary",
+                            "anomaly_type",
+                            "classification",
+                        ]:
+                            if rk in result:
+                                rv_str = str(result[rk])
+                                brief_fields[rk] = (
+                                    rv_str[:300] + "..."
+                                    if len(rv_str) > 300
+                                    else rv_str
+                                )
+                        if brief_fields:
+                            result_text = json.dumps(
+                                brief_fields, ensure_ascii=False, default=str
+                            )
+                            step_parts.append(f"**數據摘要**: {result_text}")
+                    else:
+                        step_parts.append(f"**數據摘要**: {str(result)[:300]}")
+
+                # [FIX] 直接從原始工具結果提取 Z 值 (不依賴 LLM key_findings)
+                _raw_result = step_data.get("result", {})
+                if isinstance(_raw_result, dict):
+                    _z_entries = []
+                    for _tool_name, _tool_data in _raw_result.items():
+                        if not isinstance(_tool_data, dict):
+                            continue
+                        _td = _tool_data.get("data", _tool_data)
+                        if not isinstance(_td, dict):
+                            continue
+                        # detect_outliers: top_abnormal_parameters
+                        _tap = _td.get("top_abnormal_parameters", {})
+                        if isinstance(_tap, dict):
+                            for _p_name, _p_data in list(_tap.items())[:5]:
+                                if isinstance(_p_data, dict):
+                                    _st = _p_data.get("stats", {})
+                                    _mz = _st.get("max_z", 0)
+                                    _ms = _st.get("max_sigma", 0)
+                                    _mins = _st.get("min_sigma", 0)
+                                    _worst = max(
+                                        abs(_ms) if _ms else 0,
+                                        abs(_mins) if _mins else 0,
+                                        _mz if _mz else 0,
+                                    )
+                                    if _worst > 0:
+                                        _sev = (
+                                            "極端異常"
+                                            if _worst > 6
+                                            else ("顯著異常" if _worst > 3 else "正常")
+                                        )
+                                        _z_entries.append(
+                                            f"{_p_name}(Z={_worst:.1f}, {_sev})"
+                                        )
+                        # detect_outliers single-param: stats.max_z
+                        _st_direct = _td.get("stats", {})
+                        if isinstance(_st_direct, dict) and _st_direct.get("max_z"):
+                            _param = _td.get("parameter", _tool_name)
+                            _mz = _st_direct["max_z"]
+                            _sev = (
+                                "極端異常"
+                                if _mz > 6
+                                else ("顯著異常" if _mz > 3 else "正常")
+                            )
+                            _z_entries.append(f"{_param}(Z={_mz:.1f}, {_sev})")
+                    if _z_entries:
+                        step_parts.append(f"**Z 值排名**: {', '.join(_z_entries[:8])}")
+
+                chain_parts.append("\n".join(step_parts) + "\n")
             diagnostic_chain = "\n".join(chain_parts)
         elif isinstance(ev.data, dict) and ev.data.get("previous_analysis"):
             # [Chat Path] 用戶在聊天中追問上次分析結果
@@ -2634,8 +3274,26 @@ class SigmaAnalysisWorkflow(Workflow):
                 "不要重新分析或生成新的數據。"
             )
         else:
-            # 如果沒有工具歷史，直接使用 data_json
-            diagnostic_chain = json.dumps(ev.data, ensure_ascii=False)[:5000]
+            # 如果沒有工具歷史，提取摘要而非 dump 原始 JSON
+            # (直接 dump 會導致 LLM 將 JSON 原封不動地輸出)
+            if isinstance(ev.data, dict):
+                _fallback_parts = []
+                _fb_resp = ev.data.get("response", "")
+                if _fb_resp:
+                    _fallback_parts.append(f"分析回應: {str(_fb_resp)[:500]}")
+                _fb_fd = ev.data.get("final_decision", "")
+                if _fb_fd:
+                    _fallback_parts.append(f"分析結論: {str(_fb_fd)[:1000]}")
+                _fb_chart = ev.data.get("chart", [])
+                if _fb_chart:
+                    _fallback_parts.append(f"圖表數量: {len(_fb_chart)}")
+                diagnostic_chain = (
+                    "\n".join(_fallback_parts)
+                    if _fallback_parts
+                    else "無可用的分析數據"
+                )
+            else:
+                diagnostic_chain = str(ev.data)[:2000]
 
         # 嫌疑參數池
         suspect_info = ""
@@ -2652,6 +3310,44 @@ class SigmaAnalysisWorkflow(Workflow):
                 suspect_display
             )
 
+        # [SCENE MENU DETECTION]
+        # 區分「純場景選單」vs「分析完成 + 後續場景」
+        is_scene_menu = False
+        is_analysis_with_followup = False
+
+        # 檢測是否有已完成的分析發現
+        # 方式 A: scene_summary 中有已完成場景且有 findings (場景模式)
+        # 方式 B: tool_history 有內容 (快速模式: 做了分析但發現不在 scene_summary)
+        _has_analysis_findings = bool(tool_history)
+        if not _has_analysis_findings and scene_summary:
+            _has_analysis_findings = any(
+                sc.get("status") in ("DONE", "ACTIVE") and sc.get("findings")
+                for sc in scene_summary
+            )
+
+        # 提取 follow_up 場景
+        _fu_scenes = [
+            item
+            for item in follow_up_items
+            if isinstance(item, dict) and item.get("scene_id")
+        ]
+
+        # 方式 1: scene_summary 中有 PENDING 場景且無工具歷史 (舊路徑)
+        if (
+            scene_summary
+            and all(sc.get("status") == "PENDING" for sc in scene_summary)
+            and not tool_history
+        ):
+            is_scene_menu = True
+        # 方式 2: follow_up 場景存在, 但沒有分析發現 → 純選單
+        elif _fu_scenes and not _has_analysis_findings:
+            is_scene_menu = True
+        # 方式 3: 有分析發現 + 有後續場景 → 分析報告 + 場景按鈕
+        elif _has_analysis_findings and _fu_scenes:
+            is_analysis_with_followup = True
+        # 方式 4: 有分析發現但無後續場景 → 走正常分析報告
+        # (不設任何 flag, 走 else 分支)
+
         # [VISUALIZATION FAST-TRACK CHECK]
         # 如果是純繪圖請求 (tool_history 僅含 get_time_series_data 或為空) 且有圖表
         # 強制切換為極簡模式，只輸出一句話，不寫分析報告
@@ -2664,9 +3360,136 @@ class SigmaAnalysisWorkflow(Workflow):
 
         # [CHAT PATH DETECTION]
         # 如果沒有工具歷史且不是分析結果，說明這是聊天/追問路徑
-        is_chat_path = not tool_history and not v2_dashboard
+        is_chat_path = (
+            not tool_history
+            and not v2_dashboard
+            and not is_scene_menu
+            and not is_analysis_with_followup
+        )
 
-        if is_pure_viz:
+        # [DEBUG] Humanizer 路徑追蹤
+        _path_label = (
+            "ANALYSIS_WITH_FOLLOWUP"
+            if is_analysis_with_followup
+            else "SCENE_MENU"
+            if is_scene_menu
+            else "PURE_VIZ"
+            if is_pure_viz
+            else "CHAT_PATH"
+            if is_chat_path
+            else "FULL_ANALYSIS"
+        )
+        print(
+            f"[HUMANIZER] Path={_path_label}, has_findings={_has_analysis_findings}, "
+            f"fu_scenes={len(_fu_scenes)}, tool_history={len(tool_history)}"
+        )
+
+        if is_analysis_with_followup:
+            # [分析結果 + 後續場景] 按場景分組輸出分析結論
+            # diagnostic_chain 已在 L3048-3066 注入 scene_summary
+
+            # 構建場景發現摘要 (結構化, 供 LLM 參考)
+            _scene_findings_text = ""
+            _done_scenes = [
+                sc
+                for sc in scene_summary
+                if sc.get("status") in ("DONE", "ACTIVE") and sc.get("findings")
+            ]
+            if _done_scenes:
+                _sf_parts = []
+                for sc in _done_scenes:
+                    sid = sc.get("scene_id", "?")
+                    label = sc.get("label", "")
+                    findings = sc.get("findings", [])
+                    _sf_parts.append(f"### {sid}: {label}")
+                    for f in findings[:8]:  # 每場景最多 8 條
+                        _sf_parts.append(f"  - {f}")
+                _scene_findings_text = "\n".join(_sf_parts)
+
+            # mapping 規則
+            if has_mapping:
+                _awf_mapping_rule = f"參數對照: {json.dumps(ev.mappings, ensure_ascii=False)}\n若有對照，參數名稱後附上物理名稱。"
+            else:
+                _awf_mapping_rule = "目前無參數對照表，嚴禁編造欄位的物理意義描述。"
+
+            # 根據有無場景分組，切換報告結構模板
+            if _done_scenes:
+                # 場景模式 — 按場景分組寫結論
+                _section2_instruction = (
+                    "### 2. 各場景分析結論\n"
+                    "按上方「各場景分析發現」中的每個已完成場景，逐一撰寫結論：\n"
+                    "- 用 **場景編號 + 標題** 作為小標題 (例如: #### S3.2 網部真空參數區段比較)\n"
+                    "- 列出該場景的關鍵發現，標注 [已驗證] 或 [待驗證]\n"
+                    "- 用白話文描述異常類型和嚴重程度\n"
+                    "- 附上關鍵數值 (相關係數、Z-Score 等) 作為括號參考\n"
+                    "- 若某場景無具體發現，用一句話說明「未發現顯著異常」\n\n"
+                )
+            else:
+                # 快速掃描模式 — 無場景分組，從 diagnostic_chain 萃取結論
+                _section2_instruction = (
+                    "### 2. 關鍵發現\n"
+                    "從上方「診斷過程記錄」中萃取最重要的發現，按重要性排序：\n"
+                    "- 標注異常參數名稱和異常類型 (漂移/跳變/震盪)\n"
+                    "- 用白話文描述異常嚴重程度\n"
+                    "- 附上關鍵數值 (Z-Score、T2 等) 作為括號參考\n"
+                    "- 若發現可分為多個面向 (如: 參數異常、區段異常)，用小標題分組\n\n"
+                )
+
+            prompt = (
+                "你是一位資深的工業數據顧問，正在替現場工程師撰寫分析報告。\n"
+                "讀者是現場工程師，不是統計學家。報告必須讓不懂統計的人也能看懂。\n\n"
+                f"用戶提問: {ev.query}\n"
+                f"數據概況: 包含 {row_count} 行與 {col_count} 個欄位。\n"
+                f"{_awf_mapping_rule}\n\n"
+                f"## 各場景分析發現 (Ground Truth) ##\n"
+                f"{_scene_findings_text if _scene_findings_text else '(本次為快速掃描模式, 無場景分組資料, 請從診斷過程記錄中萃取結論)'}\n\n"
+                f"## 診斷過程記錄 ##\n"
+                f"{diagnostic_chain[:20000]}\n"
+                f"{suspect_info}\n\n"
+                "## 報告結構要求 ##\n"
+                "你必須嚴格按照以下結構撰寫報告：\n\n"
+                "### 1. 分析概要\n"
+                "一段話說明分析了什麼問題、涵蓋了哪些分析面向、最重要的結論。\n\n"
+                f"{_section2_instruction}"
+                "## 報告撰寫準則 ##\n"
+                "1. **白話文優先**: 統計術語翻譯成白話文，數值可在括號內附註。\n"
+                "2. **嚴禁編造**: 所有數值必須來自上方記錄，嚴禁捏造。\n"
+                "3. **嚴禁列出場景按鈕或場景清單**: 後續可分析的場景按鈕會由系統自動生成，你不需要列出。\n"
+                "4. **嚴禁分隔線**: 禁止使用 ===、---、*** 等分隔線。\n"
+                "5. **繁體中文**: 使用台灣繁體中文。\n"
+                "6. **禁止佔位符**: 絕對禁止出現 [需要插入] 等模板文字。\n"
+            )
+        elif is_scene_menu:
+            # [SCENE MENU 專用 Prompt] 純選單：尚未做任何分析
+            # 從 _fu_scenes 或 scene_summary 構建場景清單 (給 LLM 參考, 不要求輸出)
+            _menu_source = _fu_scenes if _fu_scenes else scene_summary
+            scene_lines = []
+            for sc in _menu_source:
+                sid = sc.get("scene_id", "?")
+                label = sc.get("label", "")
+                scene_lines.append(f"  {sid}. {label}")
+            scene_text = "\n".join(scene_lines)
+            _scene_count = len(_menu_source)
+
+            prompt = (
+                "你是一位工業數據分析助理。\n"
+                f"用戶提問: {ev.query}\n\n"
+                f"系統已將問題拆解為 {_scene_count} 個可深入分析的方向:\n"
+                f"{scene_text}\n\n"
+                "## 任務 ##\n"
+                "請用 2-3 句話簡短回應:\n"
+                "1. 說明你已理解用戶的問題 (不超過一句話)\n"
+                "2. 告知用戶系統已規劃了上述分析方向\n"
+                "3. 提示用戶可以點選下方按鈕選擇要深入分析的方向, 也可以回覆「全部執行」\n\n"
+                "## 嚴禁 ##\n"
+                "- 嚴禁編造任何分析數據、異常參數、Z-Score 或分析結果\n"
+                "- 嚴禁撰寫完整分析報告\n"
+                "- 嚴禁列出場景清單 (按鈕會由系統自動生成)\n"
+                "- 你還沒有執行任何分析, 不要假裝已經分析過\n"
+                "- 你的回覆不超過 100 字\n"
+                "請使用繁體中文。"
+            )
+        elif is_pure_viz:
             prompt = (
                 "你是一個數據視覺化助理。\n"
                 f"用戶提問: {ev.query}\n"
@@ -2719,8 +3542,11 @@ class SigmaAnalysisWorkflow(Workflow):
                 "## 核心規則 ##\n"
                 "1. 你只能基於【對話歷史】和【上次分析結論】中的真實內容來回答。\n"
                 "2. **嚴禁編造**任何數據、Z-Score、異常報告或分析結果。\n"
-                "3. 如果對話歷史或分析結論中沒有相關資訊，請明確告知用戶：\n"
-                "   「目前沒有相關的分析記錄，建議您先執行分析後再查詢。」\n"
+                "3. 如果對話歷史或分析結論中沒有相關資訊，請提供 2-3 個具體的建議方案讓用戶選擇，例如：\n"
+                "   - 「執行完整數據分析，找出異常參數」\n"
+                "   - 「繪製相關參數的趨勢圖，觀察變化」\n"
+                "   - 「進行參數相關性分析，找出關聯因素」\n"
+                "   用這種方式引導用戶，而不是只說「沒有記錄」。\n"
                 "4. 若用戶要求整合或總結多次對話，只能總結對話歷史中實際出現的內容。\n"
                 "5. **嚴禁**自行生成工業數據診斷報告或異常分析報告。\n"
                 "6. 使用繁體中文回答。\n\n"
@@ -2755,8 +3581,6 @@ class SigmaAnalysisWorkflow(Workflow):
                         "   說明各驅動因子之間的因果方向 (誰影響誰)。\n"
                         "   - 僅在有直接因果證據時才寫因果關係。\n"
                         "   - 無因果證據時標註為『統計關聯』。\n\n"
-                        "5. **行動建議**: 按優先順序列出 1-3 條具體參數調整建議。\n"
-                        "   每條建議必須包含: 參數名稱 + 調整方向 + 預期效果。\n"
                     )
                 elif is_segment:
                     structure_instruction = (
@@ -2766,53 +3590,74 @@ class SigmaAnalysisWorkflow(Workflow):
                         "2. **區段差異排名**: 按差異程度列出參數：\n"
                         "   | 排名 | 參數名稱 | 區段A均值 | 區段B均值 | 差異 | 顯著性 |\n\n"
                         "3. **差異原因**: 如有因果證據,說明差異的可能原因。\n\n"
-                        "4. **行動建議**: 1-3 條具體建議。\n"
                     )
                 else:
-                    # 預設: 異常檢測模式
+                    # 標準異常分析報告 (適用於快速掃描和深度分析)
                     structure_instruction = (
-                        "## 報告結構要求 (深度分析報告) ##\n"
-                        "你必須嚴格按照以下結構撰寫最終報告：\n\n"
-                        "1. **分析概要**: 一段話總結本次分析的範圍、使用方法和核心發現。\n\n"
-                        "2. **異常發現排名**: 按嚴重程度列出所有 |Z-Score| > 3 的異常：\n"
-                        "   | 排名 | 參數名稱 | Z-Score | 異常類型 | 嚴重程度 |\n"
-                        "   所有數值必須從診斷記錄中直接引用,嚴禁編造。\n\n"
-                        "3. **因果推理鏈 (Causal Chain)** [嚴格規則]:\n"
-                        "   - **只有**當診斷記錄中存在明確的『因果鏈 (Causal Chain)』標注時,才寫 Why 鏈。\n"
-                        "   - Why 鏈格式: Why #N 必須以前一個 Why 的結論作為起點。\n"
-                        "     - Why #1: 描述初始異常現象 (Discovery) → 第一層原因 (Cause)\n"
-                        "     - Why #2: 以 Why #1 的原因作為新起點 → 推導下一層原因\n"
-                        "   - **每個 Why 之間必須有因果銜接**: '因為 A (上一層結論),所以我們調查 B,發現...'\n"
-                        "   - **如果沒有因果證據** (如 cross-correlation lag 或 Hotelling T2 貢獻度),\n"
-                        "     則不要寫 Why 鏈,改用下方的『獨立異常觀察』呈現。\n"
-                        "   - **絕對禁止**把獨立的發現強行編號為 Why #1, #2, #3。\n\n"
-                        "4. **獨立異常觀察**: 與因果鏈無關的其他異常發現。\n"
-                        "   - 每一項獨立列出,用加粗標題 + 簡述格式。\n"
-                        "   - 例如: **BCDRY-ABB_B19 系統凍結**: Row 33-129 標準差極低 (≈0.0001),研判為傳感器未更新。\n\n"
-                        "5. **行動建議**: 按優先順序列出 1-3 條具體建議。\n"
+                        "## 報告結構要求 (標準異常分析報告) ##\n"
+                        "你必須嚴格按照以下結構撰寫報告。\n"
+                        "**嚴禁**出現「Step 1 詳情」、「Step 2 (工具: xxx)」等系統內部術語。\n"
+                        "**嚴禁**在多個章節重複描述同一筆異常。每個發現只在最適合的章節出現一次。\n\n"
+                        "### 1. 分析概要\n"
+                        "一段話說明本次掃描的範圍（多少筆數據、多少個參數）和最重要的結論。\n\n"
+                        "### 2. 異常參數排名\n"
+                        "按嚴重程度（|Z-Score| 高到低）列出所有顯著異常參數：\n"
+                        "- 每個參數一行，格式: **參數名稱** — 偏離程度描述 (Z=數值)，異常類型描述\n"
+                        "- 異常類型必須用白話文: 震盪不穩、持續漂移、階梯跳變、凍結/卡值、急跌恢復 等\n"
+                        "- 若有 Mapping，參數名稱後附上物理名稱\n"
+                        "- |Z| > 5 標為「極端異常」，3 < |Z| ≤ 5 標為「顯著異常」\n\n"
+                        "### 3. 異常類型分布\n"
+                        "如果診斷記錄中有異常類型分組資料，按類型列出：\n"
+                        "- **持續漂移** (N 個參數): 列出主要參數\n"
+                        "- **階梯跳變** (N 個參數): 列出主要參數\n"
+                        "- 以此類推\n"
+                        "若無分組資料則省略本章節。\n\n"
+                        "### 4. 關鍵異常區段\n"
+                        "如果診斷記錄中有 T2 異常區段或行範圍資料：\n"
+                        "- 每個區段一行: Row 範圍、嚴重程度、涉及的主要參數\n"
+                        "- 用白話文描述區段意義 (例如「第240-243筆數據出現多參數同時異常」)\n"
+                        "若無區段資料則省略本章節。\n\n"
+                        "### 5. 後續追蹤建議\n"
+                        "根據本次分析結果，列出 2-4 條值得進一步調查的方向：\n"
+                        "- 格式: 「調查方向描述 (涉及的參數名稱)」\n"
+                        "- 必須基於本次分析的**新發現**提出新角度，例如:\n"
+                        "  - 發現相關性 → 建議「深入調查 X 與 Y 的因果關係」\n"
+                        "  - 發現異常區段 → 建議「Row X-Y 異常根因調查」\n"
+                        "  - 發現其他異常參數 → 建議「Z 參數異常驗證」\n"
+                        "- **嚴禁**重複已經分析過的內容。如果本次已深入分析了某參數，不要再建議分析它\n"
                     )
+
             else:
+                # 非 deep 模式
                 if is_optimization:
                     structure_instruction = (
                         "## 報告結構要求 (快速優化摘要) ##\n"
                         "簡明地提供：\n"
                         "1. **關鍵驅動因子**: 列出 Top 3 影響目標的參數 (含影響力和調整方向)。\n"
-                        "2. **建議操作**: 1-2 條具體的參數調整建議。\n"
+                    )
+                elif is_segment:
+                    structure_instruction = (
+                        "## 報告結構要求 (區段比較摘要) ##\n"
+                        "簡明地提供：\n"
+                        "1. **區段差異**: 列出差異最大的參數。\n"
                     )
                 else:
+                    # 與 deep 模式相同的標準報告結構
                     structure_instruction = (
-                        "## 報告結構要求 (快速摘要) ##\n"
-                        "簡明地提供：\n"
-                        "1. **核心發現**: 報告所有重要發現,包括但不限於:\n"
-                        "   - |Z-Score| > 3 的顯著異常 (含參數名和實際 Z-Score 數值)\n"
-                        "   - 殘差分析異常 (如特定 Row 的異常殘差)\n"
-                        "   - 特徵重要性排名 (Top 3 驅動因子)\n"
-                        "   - 好壞批次分割結果 (閾值、關鍵差異參數)\n"
-                        "   - CV 波動性排名中最不穩定的參數\n"
-                        "   若無任何異常,告知『未發現顯著異常』。\n"
-                        "   **重要**: 診斷記錄中每一個 Turn 的「關鍵發現」都必須在報告中呈現,禁止遺漏。\n"
-                        "2. **關聯性**: 若有因果證據 (cross_correlation_lag, causal_chain),簡述因果方向。\n"
-                        "3. **行動建議**: 1-3 條,按嚴重程度排序。若無異常僅建議持續監控。\n"
+                        "## 報告結構要求 (標準異常分析報告) ##\n"
+                        "你必須嚴格按照以下結構撰寫報告。\n"
+                        "**嚴禁**出現「Step 1 詳情」、「Step 2 (工具: xxx)」等系統內部術語。\n"
+                        "**嚴禁**在多個章節重複描述同一筆異常。每個發現只在最適合的章節出現一次。\n\n"
+                        "### 1. 分析概要\n"
+                        "一段話說明本次掃描的範圍和最重要的結論。\n\n"
+                        "### 2. 異常參數排名\n"
+                        "按嚴重程度列出所有顯著異常參數。\n\n"
+                        "### 3. 異常類型分布\n"
+                        "如有異常類型分組資料，按類型列出。若無則省略。\n\n"
+                        "### 4. 關鍵異常區段\n"
+                        "如有 T2 異常區段或行範圍資料，列出。若無則省略。\n\n"
+                        "### 5. 後續追蹤建議\n"
+                        "根據分析結果列出 2-4 條新的調查方向，嚴禁重複已分析內容。\n"
                     )
 
             data_limit = 25000 if ev.mode in ("deep", "full") else 8000
@@ -2841,51 +3686,58 @@ class SigmaAnalysisWorkflow(Workflow):
                 params_anchor = ""
 
             prompt = (
-                "你是一位極度嚴謹的工業數據專家。\n"
-                "## 核心安全準則 - 違反將導致系統崩潰 ##\n"
+                "你是一位資深的工業數據顧問，正在替現場工程師撰寫分析報告。\n"
+                "讀者是現場工程師，不是統計學家。報告必須讓不懂統計的人也能看懂。\n\n"
+                "## 核心安全準則 ##\n"
                 f"{mapping_rule}\n"
                 "**客觀判斷原則**：根據數據說話，不預設異常。正常就說是正常。\n"
-                "4. **【數據真實性絕對命令 (Anti-Hallucination)】**: \n"
-                "   - 報告中引用的每一個數值 (如 Z-Score, 相關係數) **必須** 直接來自上方提供的【完整診斷過程記錄】。\n"
-                "   - **嚴禁編造**記錄中不存在的數據。如果記錄顯示 Z-Score 為 3.53，你**絕對禁止**將其寫成 6.19 或其他數值。\n"
-                "   - 若發現數據與你的預期不符，請如實報告數據，不要修改數據。\n"
-                "**【統計判定標準 (修正版)】**：\n"
-                "- **顯著異常 (Anomaly)**: 當 |Z-Score| > 3 時，即可判定為『異常』並在報告中重點報告。\n"
-                "- **極端異常 (Critical)**: 當 |Z-Score| > 6 時，稱為『極端異常』，需強烈建議檢查。\n"
-                "- **正常 (Normal)**: 若 |Z-Score| <= 3，視為「正常範圍」，可視情況略過。\n\n"
+                "**數據真實性**：報告中的數值必須直接來自下方的診斷記錄，嚴禁編造。\n\n"
                 f"用戶提問: {ev.query}\n"
                 f"數據概況: 包含 {row_count} 行與 {col_count} 個欄位。\n"
                 f"{mapping_status}\n"
                 f"{params_anchor}"
                 f"\n"
-                f"## 完整診斷過程記錄 (包含所有原始數據) ##\n"
+                f"## 診斷過程記錄 ##\n"
                 f"{diagnostic_chain[:data_limit]}\n"
                 f"{suspect_info}\n"
                 f"\n"
                 f"{structure_instruction}\n"
-                "## 生成準則 ##\n"
-                "1. **禁止佔位符**: 絕對禁止出現 [需要插入] 等模板文字。數值必須從記錄中直接引用。\n"
-                "2. **因果推理鏈**: 報告的核心價值是呈現『A 導致 B，B 引發 C』的推理過程。每一層 Why 之間必須有明確的因果銜接，禁止平鋪式列點。\n"
-                "3. **精簡報告**: 重點報告 |Z-Score| > 3 的參數。若無，則報告觀察到的最大偏差值與參數。\n"
-                "4. **邏輯連貫**: Why #1 的結論必須自然引出 Why #2 的假設，形成一條無斷裂的推理鏈。\n"
-                "5. **STRICT CHINESE (強制繁體中文)**: 你必須使用台灣繁體中文撰寫報告。絕對禁止使用英文或簡體中文。\n"
-                "6. **判定嚴謹**: 若全場 |Z-Score| 均 < 3，應直接告知『本次分析未發現顯著異常，各參數均在正常波動範圍內』。\n"
-                "7. **禁止重複**: 每層 Why 必須有新的發現。\n"
-                "8. **禁止臆測**: 再次強調，若無 Mapping，報告中嚴禁出現任何代碼以外的描述性術語。\n"
-                "9. **行動建議分級**: \n"
-                "   - 若 |Z-Score| < 3：建議「持續監控」。\n"
-                "   - 若 |Z-Score| > 3：建議「檢查相關參數變異」。\n"
-                "   - 若 |Z-Score| > 6：強烈建議「立即停機檢查」或「校準設備」。\n"
-                "10. **輸出純文字**: 最終報告必須是乾淨的 Markdown 格式。絕對禁止輸出原始的 JSON 物件或字典代碼。\n"
-                "11. **禁止分隔線**: 絕對禁止使用 ===、---、*** 等連續符號作為分隔線。段落之間只用空行或 Markdown 標題分隔。"
+                "## 報告撰寫準則 ##\n"
+                "1. **白話文優先**: 把統計術語翻譯成白話文。範例:\n"
+                "   - Z-Score = 7.9 → 「偏離正常值非常遠，屬於極端異常」\n"
+                "   - r = -0.47 → 「兩者有中等程度的反向關聯（一個升高，另一個傾向下降）」\n"
+                "   - 方差比 5.6x → 「波動幅度是正常時期的 5.6 倍」\n"
+                "   - OSCILLATION → 「數值來回劇烈震盪」\n"
+                "   - DRIFT → 「數值持續緩慢偏移」\n"
+                "   - LEVEL_SHIFT → 「數值突然跳到另一個水平」\n"
+                "   統計數值可在括號內附註做參考，例如: 「偏離正常值非常遠 (Z=7.9)」\n\n"
+                "2. **清晰排版**: 使用以下排版風格:\n"
+                "   - 用 Markdown 標題 (##, ###) 分隔段落\n"
+                "   - 用粗體標出關鍵參數名稱和發現\n"
+                "   - 行動建議用編號列表，每條建議要具體說明「到哪裡、檢查什麼、怎麼做」\n"
+                "   - 每段開頭用一句話總結重點，再展開細節\n\n"
+                "3. **故事線敘述**: 報告要像「說故事」一樣，讓讀者理解:\n"
+                "   - 我們發現了什麼問題？（現象）\n"
+                "   - 問題有多嚴重？（用白話文描述嚴重程度）\n"
+                "   - 可能的原因是什麼？（因果推理）\n"
+                "   - 接下來該怎麼做？（具體行動）\n\n"
+                "4. **禁止佔位符**: 絕對禁止出現 [需要插入] 等模板文字。\n"
+                "5. **STRICT CHINESE (強制繁體中文)**: 使用台灣繁體中文。禁止英文或簡體中文。\n"
+                "6. **禁止臆測**: 若無 Mapping，嚴禁編造欄位的物理意義描述。\n"
+                "7. **輸出純文字**: 乾淨的 Markdown 格式，禁止輸出 JSON 或字典。\n"
+                "8. **禁止分隔線**: 禁止使用 ===、---、*** 等分隔線。\n"
             )
 
         full_text = ""
         suffix = f"\n\n```json\n{ev.chart_json}\n```\n" if ev.chart_json else ""
 
         # --- 真串流開始 ---
+        _chunk_count = 0
+        _prompt_len = len(prompt)
+        logger.info(f"[Humanizer] 串流開始, prompt 長度={_prompt_len} chars")
         async for chunk in self.llm.astream_complete(prompt):
             if chunk.delta:
+                _chunk_count += 1
                 # 清理 LLM 輸出中的各種垃圾字元
                 cleaned = chunk.delta
                 # 1. 移除分隔線符號 (===, ---, *** 等連續 3 個以上)
@@ -2899,18 +3751,79 @@ class SigmaAnalysisWorkflow(Workflow):
                     full_text += cleaned
                     ctx.write_event_to_stream(TextChunkEvent(content=cleaned))
 
+        # [診斷 LOG] 串流結束統計 — 下次截斷時貼這段 log 即可
+        logger.info(
+            f"[Humanizer] 串流結束: "
+            f"chunks={_chunk_count}, "
+            f"prompt_len={_prompt_len}, "
+            f"raw_text_len={len(full_text)}, "
+            f"mode={ev.mode}"
+        )
+        if len(full_text) < 500:
+            logger.warning(
+                f"[Humanizer] 報告文字過短 ({len(full_text)} chars)! "
+                f"可能被截斷。full_text 前 200 字: {full_text[:200]!r}"
+            )
+
         # 最終整體清理：移除報告開頭可能殘留的 JSON 碎片
         full_text = re.sub(r'^[\s@",{}\[\]\\:;`]*\n*', "", full_text)
+
+        # [Safety Fix] 檢測 LLM 是否從頭輸出了完整 JSON 結構
+        _stripped = full_text.strip()
+        if _stripped.startswith("{") and '"response"' in _stripped[:200]:
+            logger.warning(
+                f"[Humanizer] 偵測到 LLM 輸出了 JSON 結構! 嘗試提取 response 欄位..."
+            )
+            try:
+                _parsed = json.loads(_stripped)
+                if isinstance(_parsed, dict):
+                    _extracted = (
+                        _parsed.get("response")
+                        or _parsed.get("content")
+                        or _parsed.get("summary")
+                    )
+                    if (
+                        _extracted
+                        and isinstance(_extracted, str)
+                        and len(_extracted) > 50
+                    ):
+                        full_text = _extracted
+                        logger.info(
+                            f"[Humanizer] 成功從 JSON 中提取 response, 長度={len(full_text)}"
+                        )
+            except (json.JSONDecodeError, TypeError):
+                # 不是合法 JSON, 嘗試移除開頭的 JSON 殼
+                _match = re.match(r'^\s*\{\s*"response"\s*:\s*"', _stripped)
+                if _match:
+                    # 去掉 {"response": " 前綴和尾部的 "} 結尾
+                    full_text = _stripped[_match.end() :]
+                    # 移除可能的尾部 JSON 結構
+                    full_text = re.sub(
+                        r'"\s*,\s*"data"\s*:\s*\{.*$', "", full_text, flags=re.DOTALL
+                    )
+                    full_text = full_text.rstrip('"} \n')
+                    logger.info(
+                        f"[Humanizer] 用 regex 移除了 JSON 外殼, 長度={len(full_text)}"
+                    )
 
         # [Safety Fix] 移除報告結尾的 JSON 幻覺 (LLM 錯誤續寫了外層 JSON 結構)
         # 當 Context 含有大量 JSON 時，LLM 容易產生幻覺，以為自己還在寫 JSON，導致輸出類似 ", "data": {...} 的內容
         # 這裡強制切斷這種錯誤的續寫
+        _pre_safety_len = len(full_text)
         full_text = re.sub(
             r'",\s*"(?:data|monologue_history|latest_analysis_results|full_tool_history)":\s*[\{\[].*$',
             "",
             full_text,
             flags=re.DOTALL,
         )
+        if len(full_text) < _pre_safety_len:
+            logger.warning(
+                f"[Humanizer] Safety regex 截掉了 {_pre_safety_len - len(full_text)} chars! "
+                f"清理後長度={len(full_text)}"
+            )
+
+        # follow_up_items 已改為由 LLM 在報告結構「後續追蹤建議」章節中生成
+        # 不再程式化注入固定場景列表，避免深入分析後重複建議同一目標
 
         if suffix:
             ctx.write_event_to_stream(TextChunkEvent(content=suffix))

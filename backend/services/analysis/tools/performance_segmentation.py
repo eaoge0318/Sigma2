@@ -1,4 +1,4 @@
-"""
+﻿"""
 效能分割與操作窗口工具 (Performance Segmentation & Operating Window)
 - PerformanceSegmentationTool: 依目標變數分割好批/壞批,比較參數差異
 - OperatingWindowTool: 從好批次統計生成 SOP 建議表
@@ -73,22 +73,22 @@ class PerformanceSegmentationTool(AnalysisTool):
                 q75 = target_series.quantile(0.75)
                 good_mask = numeric_df[target] <= q25  # Lower is better (default)
                 bad_mask = numeric_df[target] >= q75
-                split_desc = f"Good: <= {q25:.4f} (Q25), Bad: >= {q75:.4f} (Q75)"
+                split_desc = f"Target={target}, Good: <= {q25:.4f} (Q25), Bad: >= {q75:.4f} (Q75)"
             elif split_method == "median":
                 median = target_series.median()
                 good_mask = numeric_df[target] <= median
                 bad_mask = numeric_df[target] > median
-                split_desc = f"Good: <= {median:.4f} (Median), Bad: > {median:.4f}"
+                split_desc = f"Target={target}, Good: <= {median:.4f} (Median), Bad: > {median:.4f}"
             elif split_method == "threshold" and threshold_value is not None:
                 good_mask = numeric_df[target] <= float(threshold_value)
                 bad_mask = numeric_df[target] > float(threshold_value)
-                split_desc = f"Good: <= {threshold_value}, Bad: > {threshold_value}"
+                split_desc = f"Target={target}, Good: <= {threshold_value}, Bad: > {threshold_value}"
             else:
                 q25 = target_series.quantile(0.25)
                 q75 = target_series.quantile(0.75)
                 good_mask = numeric_df[target] <= q25
                 bad_mask = numeric_df[target] >= q75
-                split_desc = f"Good: <= {q25:.4f} (Q25), Bad: >= {q75:.4f} (Q75)"
+                split_desc = f"Target={target}, Good: <= {q25:.4f} (Q25), Bad: >= {q75:.4f} (Q75)"
 
             good_df = numeric_df[good_mask]
             bad_df = numeric_df[bad_mask]
@@ -137,9 +137,17 @@ class PerformanceSegmentationTool(AnalysisTool):
             comparisons.sort(key=lambda x: x["effect_size"], reverse=True)
             top_comparisons = comparisons[:top_k]
 
+            # 增加明確的文字解讀, 防止 LLM 將 target 與 discriminating parameters 混淆
+            interpretation = (
+                f"以 {target} 為分組依據 (split_description: {split_desc})。"
+                f" 下列 top_discriminating_parameters 是【其他參數】在好壞批次間的差異,"
+                f" 不是 {target} 本身的數值。"
+            )
+
             return {
                 "status": "OK",
                 "target": target,
+                "interpretation": interpretation,
                 "split_method": split_method,
                 "split_description": split_desc,
                 "good_batch_count": int(good_mask.sum()),

@@ -377,7 +377,7 @@ class AnalyzeResidualsTool(AnalysisTool):
                         residual_correlations.append(
                             {
                                 "parameter": col,
-                                "correlation": round(corr_val, 4),
+                                "correlation": round(corr_val, 3),
                                 "abs_correlation": round(abs(corr_val), 4),
                             }
                         )

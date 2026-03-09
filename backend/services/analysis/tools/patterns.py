@@ -1,4 +1,4 @@
-from typing import Dict, Any, List
+﻿from typing import Dict, Any, List
 import pandas as pd
 import numpy as np
 from .base import AnalysisTool
@@ -201,6 +201,13 @@ class FindTemporalPatternsTool(AnalysisTool):
             "cusum_change_points": change_points[:10],
             "cusum_total_shifts": len(change_points),
             "conclusion": " ".join(conclusion_parts),
+            # --- Chart data (for evidence_chart_generator) ---
+            "raw_values": data.tolist(),
+            "cusum_pos": cusum_pos.tolist(),
+            "cusum_neg": cusum_neg.tolist(),
+            "rolling_std": rolling_std.tolist(),
+            "rolling_std_start_idx": n - len(rolling_std),
+            "slope_intercept": intercept,
         }
 
 

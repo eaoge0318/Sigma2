@@ -1,4 +1,4 @@
-"""
+﻿"""
 小波/時頻分析工具 (Wavelet / Time-Frequency Analysis)
 - WaveletAnalysisTool: CWT 連續小波變換,產出時頻圖譜與動態頻率特徵
 
@@ -41,8 +41,6 @@ class WaveletAnalysisTool(AnalysisTool):
 
     def execute(self, params: Dict, session_id: str) -> Dict[str, Any]:
         try:
-            from scipy import signal as sig
-
             file_id = params.get("file_id")
             parameter = params.get("parameter")
             n_scales = int(params.get("n_scales", 32))
@@ -98,8 +96,18 @@ class WaveletAnalysisTool(AnalysisTool):
             max_scale = min(len(normalized) // 2, 128)
             scales = np.geomspace(min_scale, max_scale, num=n_scales)
 
-            # CWT
-            cwt_matrix = sig.cwt(normalized, sig.morlet2, scales, w=5.0)
+            # Manual Morlet CWT (replaces deprecated scipy.signal.cwt)
+            n = len(normalized)
+            cwt_matrix = np.zeros((len(scales), n), dtype=complex)
+            sig_fft = np.fft.fft(normalized, n=2 * n)  # zero-padded FFT
+            angular_freqs = 2 * np.pi * np.fft.fftfreq(2 * n)
+            w0 = 5.0  # Morlet central frequency
+            for i, scale in enumerate(scales):
+                # Morlet wavelet in frequency domain
+                norm = (np.pi**-0.25) * np.sqrt(2 * np.pi * scale)
+                wavelet_fft = norm * np.exp(-0.5 * (scale * angular_freqs - w0) ** 2)
+                conv = np.fft.ifft(sig_fft * wavelet_fft)
+                cwt_matrix[i] = conv[:n]
             power = np.abs(cwt_matrix) ** 2
 
             # Convert scales to approximate frequencies

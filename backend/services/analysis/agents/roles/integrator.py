@@ -39,7 +39,7 @@ class IntegratorRole(BaseRole):
         {state.strategy_plan}
         
         [累積發現摘要] (所有 Turn 的關鍵發現,不可遺漏任何一項)
-        {state.rolling_summary if state.rolling_summary else "（無累積摘要）"}
+        {state.current_knowledge if state.current_knowledge else "（無累積摘要）"}
         
         [詳細分析歷程] (每一步的工具執行結果)
         {history_text}

@@ -1,4 +1,4 @@
-"""
+﻿"""
 交叉相關 Lag 分析 (Cross-Correlation Lag Analysis)
 
 計算兩個時間序列之間的交叉相關，找出最佳延遲 (Lag)。
@@ -100,7 +100,7 @@ class CrossCorrelationLagTool(AnalysisTool):
                     corr = np.corrcoef(ts_target, ts_ref)[0, 1]
 
                 if not np.isnan(corr):
-                    correlations[lag] = round(float(corr), 4)
+                    correlations[lag] = round(float(corr), 3)
 
             if not correlations:
                 return {"status": "ERROR", "message": "Could not compute correlations"}

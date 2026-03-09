@@ -1,4 +1,4 @@
-"""
+﻿"""
 操作模式識別工具 (Operating Regime Detection)
 - RegimeDetectionTool: 用 K-Means/DBSCAN 將數據分群,識別不同操作模式
 """

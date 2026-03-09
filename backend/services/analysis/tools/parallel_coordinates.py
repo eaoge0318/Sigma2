@@ -1,4 +1,4 @@
-"""
+﻿"""
 平行座標圖工具 (Parallel Coordinates)
 - 多參數歸一化比較,用於跨批次/好壞批差異視覺化
 - 使用 Z-Score 歸一化,使不同量綱的參數可以在同一尺度上比較
@@ -81,6 +81,7 @@ class ParallelCoordinatesTool(AnalysisTool):
 
             # Determine grouping (good/bad) based on color_param
             has_groups = False
+            auto_segmented = False
             if color_param and color_param in numeric_df.columns:
                 has_groups = True
                 target_series = numeric_df[color_param].dropna()
@@ -89,9 +90,31 @@ class ParallelCoordinatesTool(AnalysisTool):
                 good_mask = numeric_df[color_param] <= q25
                 bad_mask = numeric_df[color_param] >= q75
             else:
-                # No grouping — just show all data
-                good_mask = pd.Series([True] * len(numeric_df), index=numeric_df.index)
-                bad_mask = pd.Series([False] * len(numeric_df), index=numeric_df.index)
+                # Auto-segment: use multivariate distance (Mahalanobis-like)
+                # to color top 25% anomalous rows as red, bottom 25% as green
+                try:
+                    seg_df = numeric_df[selected_cols].dropna()
+                    seg_means = seg_df.mean()
+                    seg_stds = seg_df.std().replace(0, 1)
+                    z_scores = ((seg_df - seg_means) / seg_stds) ** 2
+                    row_distance = z_scores.sum(axis=1)
+                    q25_dist = row_distance.quantile(0.25)
+                    q75_dist = row_distance.quantile(0.75)
+                    good_mask = row_distance <= q25_dist
+                    bad_mask = row_distance >= q75_dist
+                    # Reindex to match numeric_df
+                    good_mask = good_mask.reindex(numeric_df.index, fill_value=False)
+                    bad_mask = bad_mask.reindex(numeric_df.index, fill_value=False)
+                    has_groups = True
+                    auto_segmented = True
+                    color_param = "auto (multivariate distance)"
+                except Exception:
+                    good_mask = pd.Series(
+                        [True] * len(numeric_df), index=numeric_df.index
+                    )
+                    bad_mask = pd.Series(
+                        [False] * len(numeric_df), index=numeric_df.index
+                    )
 
             # Z-Score normalize for parallel coordinates
             work_df = numeric_df[selected_cols].dropna()
@@ -111,6 +134,9 @@ class ParallelCoordinatesTool(AnalysisTool):
                     bad_mask.reindex(normalized.index, fill_value=False)
                 ]
 
+                good_label = "Normal" if auto_segmented else "Good"
+                bad_label = "Anomalous" if auto_segmented else "Bad"
+
                 # Sample good batch lines
                 n_good = min(max_lines // 2, len(good_normalized))
                 if n_good > 0:
@@ -118,7 +144,7 @@ class ParallelCoordinatesTool(AnalysisTool):
                     for i, (_, row) in enumerate(good_sample.iterrows()):
                         chart_datasets.append(
                             {
-                                "label": f"Good-{i + 1}" if i == 0 else "",
+                                "label": f"{good_label}-{i + 1}" if i == 0 else "",
                                 "data": [round(float(v), 3) for v in row.values],
                                 "borderColor": "rgba(46, 204, 113, 0.4)",
                                 "backgroundColor": "transparent",
@@ -134,7 +160,7 @@ class ParallelCoordinatesTool(AnalysisTool):
                     for i, (_, row) in enumerate(bad_sample.iterrows()):
                         chart_datasets.append(
                             {
-                                "label": f"Bad-{i + 1}" if i == 0 else "",
+                                "label": f"{bad_label}-{i + 1}" if i == 0 else "",
                                 "data": [round(float(v), 3) for v in row.values],
                                 "borderColor": "rgba(231, 76, 60, 0.4)",
                                 "backgroundColor": "transparent",
@@ -148,7 +174,7 @@ class ParallelCoordinatesTool(AnalysisTool):
                     good_mean = good_normalized.mean()
                     chart_datasets.append(
                         {
-                            "label": f"Good Mean (n={len(good_normalized)})",
+                            "label": f"{good_label} Mean (n={len(good_normalized)})",
                             "data": [round(float(v), 3) for v in good_mean.values],
                             "borderColor": "rgba(46, 204, 113, 1)",
                             "backgroundColor": "transparent",
@@ -160,7 +186,7 @@ class ParallelCoordinatesTool(AnalysisTool):
                     bad_mean = bad_normalized.mean()
                     chart_datasets.append(
                         {
-                            "label": f"Bad Mean (n={len(bad_normalized)})",
+                            "label": f"{bad_label} Mean (n={len(bad_normalized)})",
                             "data": [round(float(v), 3) for v in bad_mean.values],
                             "borderColor": "rgba(231, 76, 60, 1)",
                             "backgroundColor": "transparent",

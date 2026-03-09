@@ -1247,12 +1247,17 @@
                                 <h3 style="margin-top: 0; margin-bottom: 20px; color: #1e293b;">上傳檔案</h3>
 
                                 <div class="upload-area" id="upload-dropzone"
-                                    onclick="document.getElementById('file-input-main').click()">
-                                    <div style="font-size: 40px; margin-bottom: 10px;">☁️</div>
+                                    onclick="document.getElementById('file-input-main').click()"
+                                    ondragover="event.preventDefault(); event.stopPropagation(); this.style.borderColor='#3b82f6'; this.style.background='#eff6ff';"
+                                    ondragenter="event.preventDefault(); event.stopPropagation(); this.style.borderColor='#3b82f6'; this.style.background='#eff6ff';"
+                                    ondragleave="event.preventDefault(); event.stopPropagation(); this.style.borderColor=''; this.style.background='';"
+                                    ondrop="event.preventDefault(); event.stopPropagation(); this.style.borderColor=''; this.style.background=''; if(event.dataTransfer.files.length>0) window.handleDroppedFiles(event.dataTransfer.files);">
+                                    <div style="font-size: 40px; margin-bottom: 10px;">&#9729;&#65039;</div>
                                     <div style="font-size: 18px; font-weight: bold;">點擊或拖曳檔案至此處上傳</div>
-                                    <div style="font-size: 14px; margin-top: 5px;">僅支援 CSV, XML 格式</div>
-                                    <input type="file" id="file-input-main" style="display: none;" accept=".csv,.xml"
-                                        onchange="handleMainFileUpload(this)">
+                                    <div style="font-size: 14px; margin-top: 5px;">支援 CSV, XML, Excel (.xlsx, .xls) 格式
+                                    </div>
+                                    <input type="file" id="file-input-main" style="display: none;"
+                                        accept=".csv,.xml,.xlsx,.xls" onchange="handleMainFileUpload(this)">
                                 </div>
                                 <div id="upload-status"
                                     style="margin-bottom: 10px; font-weight: bold; text-align: center;"></div>

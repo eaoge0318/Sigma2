@@ -34,7 +34,7 @@ from .deep_diagnostics import (
     AnalyzeResidualsTool,
 )
 from .helpers import SuggestNextAnalysisTool, ExplainResultTool
-from .anomaly_classifier import AnomalyClassifierTool
+from .anomaly_classifier import AnomalyClassifierTool, GlobalAnomalySegmentScanner
 from .cross_correlation import CrossCorrelationLagTool
 from .frequency_analysis import FrequencyAnalysisTool
 from .control_assessment import ControlLoopAssessmentTool
@@ -42,6 +42,7 @@ from .performance_segmentation import PerformanceSegmentationTool, OperatingWind
 from .interaction_analysis import InteractionScatterTool, InteractionEffectTestTool
 from .partial_dependence import PartialDependenceTool
 from .correlation_network import CorrelationNetworkTool
+from .correlation_stability import CorrelationBreakdownTool
 from .cv_ranking import CVRankingTool
 from .regime_detection import RegimeDetectionTool
 from .multi_objective import MultiObjectiveTool
@@ -51,6 +52,16 @@ from .parallel_coordinates import ParallelCoordinatesTool
 from .radar_chart import RadarChartTool
 from .event_sequence_analysis import EventSequenceAnalysisTool
 from .stratified_interaction import StratifiedInteractionTool
+from .trend_prediction import TrendPredictionTool
+from .zone_diagnosis import ZoneDiagnosisTool
+from .cluster_trend import ClusterTrendTool
+from .pca_trend import PCATrendTool
+from .combo_tools import (
+    ComboParameterProfilingTool,
+    ComboAnomalyDiagnosisTool,
+    ComboOptimizationTool,
+    ComboCausalTracingTool,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +98,7 @@ class ToolExecutor:
         "get_time_series": "get_time_series_data",
         "time_series_data": "get_time_series_data",
         "plot_trend": "get_time_series_data",
+        "draw_trend": "get_time_series_data",
         # PCA 系列
         "pca_analysis": "systemic_pca_analysis",
         "principal_component_analysis": "systemic_pca_analysis",
@@ -113,6 +125,9 @@ class ToolExecutor:
         "anomaly_classification": "classify_anomaly_type",
         "classify_anomaly": "classify_anomaly_type",
         "anomaly_type": "classify_anomaly_type",
+        "anomaly_segment_scan": "scan_anomaly_segments",
+        "global_anomaly_scan": "scan_anomaly_segments",
+        "scan_segments": "scan_anomaly_segments",
         "cross_correlation_analysis": "cross_correlation_lag",
         "lag_analysis": "cross_correlation_lag",
         "lead_lag": "cross_correlation_lag",
@@ -140,6 +155,11 @@ class ToolExecutor:
         "pdp_analysis": "partial_dependence",
         "marginal_effect": "partial_dependence",
         "partial_dependence_plot": "partial_dependence",
+        # Correlation Stability
+        "correlation_breakdown": "detect_correlation_breakdown",
+        "correlation_stability": "detect_correlation_breakdown",
+        "collinearity_breakdown": "detect_correlation_breakdown",
+        "correlation_change": "detect_correlation_breakdown",
         # 系統級分析系列
         "network_analysis": "correlation_network",
         "hub_analysis": "correlation_network",
@@ -182,6 +202,26 @@ class ToolExecutor:
         "batch_interaction": "stratified_interaction",
         "stratified_anova": "stratified_interaction",
         "segment_interaction": "stratified_interaction",
+        # 趨勢預測系列
+        "drift_prediction": "trend_prediction",
+        "trend_forecast": "trend_prediction",
+        "breach_forecast": "trend_prediction",
+        "drift_forecasting": "trend_prediction",
+        # 多變量區段診斷系列
+        "multivariate_zone_analysis": "zone_diagnosis",
+        "event_zone_diagnosis": "zone_diagnosis",
+        "multi_param_anomaly": "zone_diagnosis",
+        "zone_root_cause": "zone_diagnosis",
+        # Combo Tools 別名
+        "parameter_profiling": "combo_parameter_profiling",
+        "quad_analysis": "combo_parameter_profiling",
+        "four_in_one": "combo_parameter_profiling",
+        "anomaly_diagnosis": "combo_anomaly_diagnosis",
+        "deep_diagnosis": "combo_anomaly_diagnosis",
+        "optimization_flow": "combo_optimization",
+        "optimization_suite": "combo_optimization",
+        "causal_tracing": "combo_causal_tracing",
+        "root_cause_tracing": "combo_causal_tracing",
     }
 
     def __init__(self, analysis_service):
@@ -219,6 +259,7 @@ class ToolExecutor:
             AnalyzeResidualsTool,
             # Advanced Diagnostics
             AnomalyClassifierTool,
+            GlobalAnomalySegmentScanner,
             CrossCorrelationLagTool,
             FrequencyAnalysisTool,
             ControlLoopAssessmentTool,
@@ -228,6 +269,8 @@ class ToolExecutor:
             InteractionScatterTool,
             InteractionEffectTestTool,
             PartialDependenceTool,
+            # Correlation Stability
+            CorrelationBreakdownTool,
             # System-Level Analysis
             CorrelationNetworkTool,
             CVRankingTool,
@@ -244,9 +287,21 @@ class ToolExecutor:
             # Event Sequence + Stratified Interaction
             EventSequenceAnalysisTool,
             StratifiedInteractionTool,
+            # Trend Prediction
+            TrendPredictionTool,
+            # Multivariate Zone Diagnosis
+            ZoneDiagnosisTool,
             # Helpers
             SuggestNextAnalysisTool,
             ExplainResultTool,
+            # Parameter Reduction
+            ClusterTrendTool,
+            PCATrendTool,
+            # Combo Tools
+            ComboParameterProfilingTool,
+            ComboAnomalyDiagnosisTool,
+            ComboOptimizationTool,
+            ComboCausalTracingTool,
         ]
 
         for tool_cls in tool_classes:

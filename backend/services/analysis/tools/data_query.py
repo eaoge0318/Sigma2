@@ -149,11 +149,11 @@ class GetTimeSeriesDataTool(AnalysisTool):
 
     @property
     def required_params(self) -> List[str]:
-        return ["file_id", "parameters"]
+        return ["file_id"]
 
     def execute(self, params: Dict, session_id: str) -> Dict[str, Any]:
         file_id = params.get("file_id")
-        target_params = params.get("parameters", [])
+        target_params = params.get("parameters") or params.get("parameter", [])
         target_segments_str = params.get("target_segments")
         limit = params.get("limit", 2000)  # 預設限制 2000 點以防前端卡死
 
@@ -181,24 +181,14 @@ class GetTimeSeriesDataTool(AnalysisTool):
                         matched_columns.append(csv_col)
                         break
 
-            # 強制包含時間欄位 (僅限標準時間格式)
-            time_axis_keywords = ["TIME", "TIMESTAMP", "DATE"]
-            time_cols = [
-                c
-                for c in all_csv_columns
-                if any(kw in c.upper() for kw in time_axis_keywords)
-            ]
-
-            cols_to_read = list(set(matched_columns + time_cols))
-
             if not matched_columns:
                 return {
                     "error": f"找不到指定的參數: {', '.join(target_params)}。請確認參數名稱是否正確。",
                     "available_columns_preview": all_csv_columns[:10],
                 }
 
-            # 讀取匹配到的欄位 (先讀全量以便後續按索引過濾)
-            df = pd.read_csv(csv_path, usecols=cols_to_read)
+            # 只讀取用戶指定的欄位 (不拉入額外欄位)
+            df = pd.read_csv(csv_path, usecols=matched_columns)
 
             # 區間篩選
             if target_segments_str:
@@ -214,24 +204,17 @@ class GetTimeSeriesDataTool(AnalysisTool):
                 step = len(df) // limit
                 df = df.iloc[::step]
 
-            # 確保返回的是對齊後的數據
-            if not time_cols:
-                # 注入行號作為 fallback 時間軸，確保 AI 敢畫圖
-                # 注意：如果經過過濾，INDEX_AXIS 應保持原始行號
-                df["INDEX_AXIS"] = df.index.tolist()
-                time_cols = ["INDEX_AXIS"]
+            # X 軸一律使用行號 INDEX_AXIS
+            df["INDEX_AXIS"] = df.index.tolist()
 
             result = df.to_dict(orient="list")
             return {
                 "data": result,
                 "parameters": matched_columns,
-                "time_column": time_cols[0],
+                "time_column": "INDEX_AXIS",
                 "total_points": total_points_after_filter,
                 "sampled_points": len(df),
                 "target_range": target_segments_str or "full",
-                "note": "使用 INDEX_AXIS 或 CONTEXTID 作為序列參考"
-                if "TIME" not in str(time_cols).upper()
-                else "",
             }
         except Exception as e:
             return {"error": f"Failed to load data: {str(e)}"}

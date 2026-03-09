@@ -136,9 +136,10 @@
 <body class="bg-gray-50 h-screen flex overflow-hidden">
 
     <!-- Sidebar -->
-    <aside class="w-64 flex-shrink-0 flex flex-col p-3 gap-3 bg-white border-r border-slate-200">
+    <aside
+        class="w-64 flex-shrink-0 flex flex-col p-3 gap-3 bg-white border-r border-slate-200 h-screen overflow-hidden">
         <!-- App Header -->
-        <div class="px-2 mb-2">
+        <div class="px-2 mb-2 flex-shrink-0">
             <div class="flex items-center gap-3 mb-1">
                 <div class="w-8 h-8 rounded-lg bg-yellow-400 flex items-center justify-center text-white shadow-sm">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
@@ -152,98 +153,116 @@
             <p class="text-xs text-slate-500 pl-11">用自然語言提問，AI 幫您深入分析資料</p>
         </div>
 
-        <!-- File Selection Card -->
-        <div class="bg-gray-50 rounded-lg border border-slate-200 p-3 flex flex-col gap-3">
-            <div class="flex justify-between items-center">
-                <div class="flex items-center gap-2 text-yellow-500 font-bold text-sm">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24"
-                        stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-                    </svg>
-                    1. 選擇資料檔案
-                </div>
-            </div>
-
-            <!-- File Select Dropdown -->
-            <div class="relative">
-                <select id="file-select"
-                    class="w-full appearance-none bg-gray-50 border border-gray-300 text-gray-700 py-2.5 px-3 pr-8 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer">
-                    <option value="" disabled selected>-- 請選擇檔案 --</option>
-                </select>
-                <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-500">
-                    <svg class="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
-                        <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
-                    </svg>
-                </div>
-            </div>
-
-            <!-- File Info -->
-            <div id="file-info-panel" class="space-y-3 pt-2 border-t border-gray-100 hidden">
-                <div class="flex justify-between text-sm">
-                    <span class="text-gray-400">總行數:</span>
-                    <span id="info-rows" class="font-medium text-gray-700">--</span>
-                </div>
-                <div class="flex justify-between text-sm">
-                    <span class="text-gray-400">欄位數:</span>
-                    <span id="info-cols" class="font-medium text-gray-700">--</span>
-                </div>
-                <div class="flex justify-between text-center items-center text-sm pt-2">
-                    <span class="text-gray-400">數據狀態:</span>
-                    <span id="info-status"
-                        class="px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-600">已準備</span>
-                </div>
-
-                <!-- Integrated Mapping Status -->
-                <div class="flex justify-between items-center text-sm pt-1 pb-1">
-                    <span class="text-gray-400">術語對應:</span>
-                    <div class="flex items-center gap-2">
-                        <span id="mapping-file-name"
-                            class="text-xs text-gray-500 font-medium truncate max-w-[80px]">尚未設定</span>
-                        <input type="file" id="mapping-upload-input" accept=".csv" class="hidden">
-                        <button onclick="document.getElementById('mapping-upload-input').click()"
-                            class="p-1 text-blue-500 hover:bg-blue-50 rounded transition-colors" title="上傳對應表 (CSV)">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24"
-                                stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                            </svg>
-                        </button>
+        <!-- File Selection Card (Collapsible) -->
+        <div class="bg-gray-50 rounded-lg border border-slate-200 p-2.5 flex flex-col gap-2 flex-shrink-0">
+            <!-- Header row: icon + label + dropdown inline -->
+            <div class="flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-yellow-500 flex-shrink-0" fill="none"
+                    viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                </svg>
+                <div class="relative flex-1">
+                    <select id="file-select"
+                        class="w-full appearance-none bg-white border border-gray-300 text-gray-700 py-1.5 px-2.5 pr-7 rounded-md text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer">
+                        <option value="" disabled selected>-- 請選擇檔案 --</option>
+                    </select>
+                    <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-1.5 text-gray-500">
+                        <svg class="fill-current h-3 w-3" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
+                            <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
+                        </svg>
                     </div>
                 </div>
+                <!-- Toggle button for file info -->
+                <button id="file-info-toggle"
+                    class="p-1 text-gray-400 hover:text-gray-600 rounded transition-colors hidden"
+                    onclick="const p=document.getElementById('file-info-panel'); p.classList.toggle('hidden'); this.querySelector('.fi-arrow').classList.toggle('rotate-180');"
+                    title="顯示/隱藏檔案資訊">
+                    <svg class="fi-arrow h-3.5 w-3.5 transition-transform duration-200"
+                        xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                    </svg>
+                </button>
+            </div>
+
+            <!-- File Info (collapsed by default, shown after file select) -->
+            <div id="file-info-panel" class="hidden space-y-1 pt-1.5 border-t border-gray-100">
+                <div class="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+                    <div class="flex justify-between">
+                        <span class="text-gray-400">總行數:</span>
+                        <span id="info-rows" class="font-medium text-gray-700">--</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-400">欄位數:</span>
+                        <span id="info-cols" class="font-medium text-gray-700">--</span>
+                    </div>
+                </div>
+                <div class="flex justify-between items-center text-xs">
+                    <span class="text-gray-400">數據狀態:</span>
+                    <span id="info-status"
+                        class="px-1.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-600">已準備</span>
+                </div>
+                <div class="flex justify-between items-center text-xs">
+                    <span class="text-gray-400">術語對應:</span>
+                    <span id="mapping-badge"
+                        class="px-1.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-400 cursor-pointer hover:opacity-80 transition-opacity"
+                        onclick="window.ia && window.ia.openMappingModal()">未設定</span>
+                </div>
+                <div class="flex justify-between items-center text-xs">
+                    <span class="text-gray-400">資料描述:</span>
+                    <span id="description-badge"
+                        class="px-1.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-400 cursor-pointer hover:opacity-80 transition-opacity"
+                        onclick="window.ia && window.ia.openDescriptionModal()">未設定</span>
+                </div>
+                <!-- Hidden elements for backward compatibility -->
+                <input type="file" id="mapping-upload-input" accept=".csv" class="hidden">
+                <span id="mapping-file-name" class="hidden"></span>
+                <textarea id="data-description-input" class="hidden" maxlength="500"></textarea>
+                <span id="data-desc-status" class="hidden"></span>
+                <span id="data-desc-count" class="hidden"></span>
             </div>
 
             <!-- Loading State for Info -->
-            <div id="file-loading-indicator" class="hidden py-4 flex justify-center">
-                <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500"></div>
+            <div id="file-loading-indicator" class="hidden py-2 flex justify-center">
+                <div class="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-500"></div>
             </div>
         </div>
 
-        <!-- Suggested Actions Card (Moved here) -->
-        <div class="bg-gray-50 rounded-lg border border-slate-200 p-3 flex flex-col gap-2">
-            <div class="flex items-center gap-2 text-slate-400 font-bold text-sm">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24"
+        <!-- Suggested Actions Card (Collapsible) -->
+        <div class="bg-gray-50 rounded-lg border border-slate-200 p-2.5 flex flex-col gap-1.5 flex-shrink-0">
+            <div class="flex items-center gap-1.5 text-slate-400 font-bold text-xs cursor-pointer select-none"
+                onclick="const c=this.nextElementSibling; c.classList.toggle('hidden'); this.querySelector('.collapse-arrow').classList.toggle('rotate-180');">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24"
                     stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                         d="M13 10V3L4 14h7v7l9-11h-7z" />
                 </svg>
                 常用指令
+                <svg class="collapse-arrow h-3.5 w-3.5 ml-auto transition-transform duration-200 rotate-180"
+                    xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd"
+                        d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
+                        clip-rule="evenodd" />
+                </svg>
             </div>
-            <div class="flex flex-col gap-2">
-                <button
-                    class="suggested-query w-full text-left px-3 py-2 bg-white border border-gray-200 rounded-md hover:bg-blue-500 hover:text-white hover:border-blue-500 transition-all text-sm text-gray-600">檢視資料品質概況</button>
-                <button id="btn-open-mining-modal" onclick="openDataMiningModal()"
-                    class="suggested-query w-full text-left px-3 py-2 bg-white border border-gray-200 rounded-md hover:bg-blue-500 hover:text-white hover:border-blue-500 transition-all text-sm text-gray-600">資料探勘</button>
-                <button
-                    class="suggested-query w-full text-left px-3 py-2 bg-white border border-gray-200 rounded-md hover:bg-blue-500 hover:text-white hover:border-blue-500 transition-all text-sm text-gray-600">繪製趨勢圖</button>
-                <button
-                    class="suggested-query w-full text-left px-3 py-2 bg-white border border-gray-200 rounded-md hover:bg-blue-500 hover:text-white hover:border-blue-500 transition-all text-sm text-gray-600">相關性分析</button>
+            <div class="space-y-2 hidden">
+                <div class="text-[10px] text-slate-400 font-medium px-0.5">快捷分析</div>
+                <div class="grid grid-cols-2 gap-1.5">
+                    <button
+                        class="suggested-query text-center px-1.5 py-1.5 bg-white border border-gray-200 rounded-md hover:bg-blue-500 hover:text-white hover:border-blue-500 transition-all text-xs text-gray-600">品質概況</button>
+                    <button id="btn-open-mining-modal" onclick="openDataMiningModal()"
+                        class="suggested-query text-center px-1.5 py-1.5 bg-white border border-gray-200 rounded-md hover:bg-blue-500 hover:text-white hover:border-blue-500 transition-all text-xs text-gray-600">資料探勘</button>
+                    <button
+                        class="suggested-query text-center px-1.5 py-1.5 bg-white border border-gray-200 rounded-md hover:bg-blue-500 hover:text-white hover:border-blue-500 transition-all text-xs text-gray-600">趨勢圖</button>
+                    <button id="btn-open-stat-tool" onclick="openStatToolModal()"
+                        class="suggested-query text-center px-1.5 py-1.5 bg-white border border-gray-200 rounded-md hover:bg-purple-500 hover:text-white hover:border-purple-500 transition-all text-xs text-gray-600">統計工具</button>
+                </div>
             </div>
         </div>
 
         <!-- Chat Room Management Card -->
-        <div class="bg-gray-50 rounded-lg border border-slate-200 p-3 flex-1 flex flex-col min-h-0">
-            <div class="flex items-center justify-between mb-3">
+        <div class="bg-gray-50 rounded-lg border border-slate-200 p-2.5 flex-1 flex flex-col min-h-0">
+            <div class="flex items-center justify-between mb-2">
                 <div class="flex items-center gap-2 text-slate-400 font-bold text-sm">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24"
                         stroke="currentColor">
@@ -263,7 +282,7 @@
                 </button>
             </div>
 
-            <div id="session-list" class="flex-1 overflow-y-auto space-y-1.5 pr-1 custom-scrollbar">
+            <div id="session-list" class="flex-1 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
                 <!-- Session items loaded dynamically -->
                 <div class="text-xs text-gray-300 text-center py-4">載入中...</div>
             </div>
@@ -333,7 +352,8 @@
                         <span>發送</span>
                     </button>
                     <!-- Hidden File Input for Paperclip -->
-                    <input type="file" id="file-attachment" class="hidden" />
+                    <input type="file" id="file-attachment" class="hidden" multiple
+                        accept="image/*,.csv,.txt,.log,.xlsx,.xls,.pdf" />
                 </div>
             </div>
 
@@ -608,8 +628,8 @@
     <div id="data-mining-modal"
         class="hidden fixed inset-0 bg-black bg-opacity-50 z-[200] flex items-start justify-center p-4 pt-8 backdrop-blur-sm transition-opacity duration-300 overflow-y-auto">
         <div
-            class="bg-white rounded-xl shadow-2xl w-full max-w-4xl flex flex-col overflow-hidden transform transition-all scale-100 my-auto">
-            <!-- Header (Sticky) -->
+            class="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col overflow-hidden transform transition-all scale-100 my-auto">
+            <!-- Header -->
             <div
                 class="sticky top-0 z-10 px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gradient-to-r from-blue-50 to-indigo-50">
                 <div class="flex items-center gap-3">
@@ -624,15 +644,16 @@
                 </div>
                 <div class="flex items-center gap-3">
                     <button id="btn-confirm-mining"
-                        class="px-6 py-2.5 text-sm font-bold text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 rounded-lg shadow-md hover:shadow-lg transform active:scale-95 transition-all flex items-center gap-2">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                        class="px-5 py-2 text-sm font-bold text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 rounded-lg shadow-md hover:shadow-lg active:scale-95 transition-all flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
                             <path fill-rule="evenodd"
                                 d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-8.707l-3-3a1 1 0 00-1.414 1.414L10.586 9H7a1 1 0 100 2h3.586l-1.293 1.293a1 1 0 101.414 1.414l3-3a1 1 0 000-1.414z"
                                 clip-rule="evenodd" />
                         </svg>
-                        <span>開始探勘分析</span>
+                        探勘分析
                     </button>
-                    <button onclick="document.getElementById('data-mining-modal').classList.add('hidden')"
+
+                    <button onclick="closeMiningPanel()"
                         class="text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg p-1 transition">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24"
                             stroke="currentColor">
@@ -643,166 +664,270 @@
                 </div>
             </div>
 
-            <!-- Body: Content -->
-            <div class="p-6 overflow-y-auto flex-1 flex flex-col gap-4 bg-white">
-
-                <!-- Quick Start Info -->
-                <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-start gap-3">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-blue-600 mt-0.5 shrink-0"
-                        viewBox="0 0 20 20" fill="currentColor">
-                        <path fill-rule="evenodd"
-                            d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
-                            clip-rule="evenodd" />
-                    </svg>
-                    <div class="flex-1">
-                        <h4 class="font-semibold text-blue-900 text-sm mb-1">快速開始</h4>
-                        <p class="text-blue-700 text-xs leading-relaxed">
-                            直接點擊「開始探勘分析」即可對全部數據進行智能分析。<br>
-                            如需指定分析範圍或目標欄位，請展開下方的進階設定。
-                        </p>
-                    </div>
+            <!-- Body: Wizard Layout -->
+            <div class="flex-1 flex overflow-hidden">
+                <!-- Left: Step Navigation -->
+                <div class="w-[140px] shrink-0 bg-gray-50 border-r border-gray-100 py-6 px-3 flex flex-col gap-1">
+                    <button onclick="switchDmStep(1)" id="dm-step-btn-1"
+                        class="dm-step-btn text-left px-3 py-3 rounded-lg transition-all text-blue-600 bg-white shadow-sm border-l-[3px] border-blue-500">
+                        <div class="text-[10px] font-bold text-blue-400 uppercase tracking-wider">Step 01</div>
+                        <div class="text-sm font-bold mt-0.5">分析範圍</div>
+                    </button>
+                    <button onclick="switchDmStep(2)" id="dm-step-btn-2"
+                        class="dm-step-btn text-left px-3 py-3 rounded-lg transition-all text-gray-500 hover:bg-gray-100 border-l-[3px] border-transparent">
+                        <div class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Step 02</div>
+                        <div class="text-sm font-bold mt-0.5">目標因子</div>
+                    </button>
                 </div>
 
-                <!-- Collapsible Section 1: Analysis Range -->
-                <div class="border border-gray-200 rounded-lg overflow-hidden bg-white shadow-sm">
-                    <button
-                        onclick="this.parentElement.querySelector('.collapse-content').classList.toggle('hidden'); this.querySelector('.collapse-icon').classList.toggle('rotate-180');"
-                        class="w-full px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors flex items-center justify-between group">
-                        <div class="flex items-center gap-2">
-                            <span
-                                class="bg-gray-200 text-gray-600 rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold">1</span>
-                            <span class="font-semibold text-gray-700 text-sm">分析範圍設定（選填）</span>
-                            <span class="text-xs text-gray-500 ml-2">- 留空則分析全部數據</span>
-                        </div>
-                        <svg class="collapse-icon h-5 w-5 text-gray-500 transition-transform duration-200"
-                            xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                            <path fill-rule="evenodd"
-                                d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
-                                clip-rule="evenodd" />
-                        </svg>
-                    </button>
-                    <div class="collapse-content hidden p-4 bg-white border-t border-gray-100">
-                        <div class="flex items-center gap-3">
-                            <div class="flex-1">
-                                <label class="block text-xs font-medium text-gray-600 mb-1">起始 (如 0)</label>
-                                <input type="text" id="dm-range-start" placeholder="0"
-                                    class="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                <!-- Right: Step Content -->
+                <div class="flex-1 overflow-y-auto p-6">
+                    <!-- Step 1: 分析範圍 -->
+                    <div id="dm-step-1" class="dm-step-content">
+                        <h4 class="text-base font-bold text-gray-800 mb-5 flex items-center gap-2">
+                            <span class="text-blue-500">📊</span> 分析範圍設定
+                        </h4>
+                        <div class="space-y-5 max-w-md">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1.5">目標區間</label>
+                                <div id="dm-range-rows" class="space-y-2"></div>
+                                <button type="button" onclick="addDmRangeRow()"
+                                    class="mt-2 text-xs text-blue-500 hover:text-blue-700 flex items-center gap-1 transition-colors">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20"
+                                        fill="currentColor">
+                                        <path fill-rule="evenodd"
+                                            d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"
+                                            clip-rule="evenodd" />
+                                    </svg>
+                                    新增區間
+                                </button>
+                                <p class="text-xs text-gray-400 mt-1">留空 = 全域分析</p>
                             </div>
-                            <div class="flex items-center justify-center pt-5">
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-400"
-                                    viewBox="0 0 20 20" fill="currentColor">
-                                    <path fill-rule="evenodd"
-                                        d="M12.293 5.293a1 1 0 011.414 0l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-2.293-2.293a1 1 0 010-1.414z"
-                                        clip-rule="evenodd" />
-                                </svg>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">對照基準</label>
+                                <div class="space-y-2.5 pl-1">
+                                    <label
+                                        class="flex items-center gap-2.5 text-sm text-gray-600 cursor-pointer hover:text-gray-800">
+                                        <input type="radio" name="dm-baseline-mode" value="auto" checked
+                                            class="text-blue-500 focus:ring-blue-400 w-4 h-4"
+                                            onchange="document.getElementById('dm-baseline-custom').classList.add('hidden')">
+                                        自動 <span class="text-xs text-gray-400">（目標區間以外 = 對照）</span>
+                                    </label>
+                                    <label
+                                        class="flex items-center gap-2.5 text-sm text-gray-600 cursor-pointer hover:text-gray-800">
+                                        <input type="radio" name="dm-baseline-mode" value="specify"
+                                            class="text-blue-500 focus:ring-blue-400 w-4 h-4"
+                                            onchange="document.getElementById('dm-baseline-custom').classList.remove('hidden')">
+                                        指定區間
+                                    </label>
+                                    <div id="dm-baseline-custom" class="hidden ml-7">
+                                        <div class="flex items-center gap-2">
+                                            <input type="number" id="dm-baseline-start" placeholder="起始"
+                                                class="w-24 text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400">
+                                            <span class="text-gray-400">~</span>
+                                            <input type="number" id="dm-baseline-end" placeholder="結束"
+                                                class="w-24 text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400">
+                                        </div>
+                                    </div>
+                                    <label
+                                        class="flex items-center gap-2.5 text-sm text-gray-600 cursor-pointer hover:text-gray-800">
+                                        <input type="radio" name="dm-baseline-mode" value="none"
+                                            class="text-blue-500 focus:ring-blue-400 w-4 h-4"
+                                            onchange="document.getElementById('dm-baseline-custom').classList.add('hidden')">
+                                        不使用對照 <span class="text-xs text-gray-400">（全域分析）</span>
+                                    </label>
+                                </div>
                             </div>
-                            <div class="flex-1">
-                                <label class="block text-xs font-medium text-gray-600 mb-1">結束 (如 100)</label>
-                                <input type="text" id="dm-range-end" placeholder="100"
-                                    class="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-                            </div>
-                            <button
-                                onclick="document.getElementById('dm-range-start').value=''; document.getElementById('dm-range-end').value='';"
-                                class="px-3 py-2 mt-5 text-xs text-gray-600 hover:text-gray-800 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors whitespace-nowrap">
-                                留空 = 全域
-                            </button>
                         </div>
                     </div>
-                </div>
 
-                <!-- Collapsible Section 2: Target Selection -->
-                <div class="border border-gray-200 rounded-lg overflow-hidden bg-white shadow-sm">
-                    <button
-                        onclick="this.parentElement.querySelector('.collapse-content').classList.toggle('hidden'); this.querySelector('.collapse-icon').classList.toggle('rotate-180');"
-                        class="w-full px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors flex items-center justify-between group">
-                        <div class="flex items-center gap-2">
-                            <span
-                                class="bg-gray-200 text-gray-600 rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold">2</span>
-                            <span class="font-semibold text-gray-700 text-sm">目標因子選取（選填）</span>
-                            <span class="text-xs text-gray-500 ml-2">- 不選擇則自動分析所有欄位</span>
-                        </div>
-                        <svg class="collapse-icon h-5 w-5 text-gray-500 transition-transform duration-200"
-                            xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                            <path fill-rule="evenodd"
-                                d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
-                                clip-rule="evenodd" />
-                        </svg>
-                    </button>
-                    <div class="collapse-content hidden p-4 bg-white border-t border-gray-100">
-                        <div class="flex gap-3 items-stretch select-none" style="height: 280px;">
-
-                            <!-- Left: Available Parameters -->
+                    <!-- Step 2: 目標因子 -->
+                    <div id="dm-step-2" class="dm-step-content hidden">
+                        <h4 class="text-base font-bold text-gray-800 mb-4 flex items-center gap-2">
+                            <span class="text-blue-500">🎯</span> 目標因子選取
+                            <span class="text-xs text-gray-400 font-normal">（選填，不選 = 全部欄位）</span>
+                        </h4>
+                        <input type="text" id="dm-source-search" placeholder="搜尋參數..."
+                            class="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 mb-3 focus:outline-none focus:ring-2 focus:ring-blue-400">
+                        <!-- Transfer List -->
+                        <div class="flex gap-2 items-stretch select-none" style="height: 320px;">
+                            <!-- Available -->
                             <div
-                                class="flex-1 flex flex-col rounded-lg border border-gray-300 overflow-hidden bg-white shadow-sm">
+                                class="flex-1 flex flex-col rounded-lg border border-gray-300 overflow-hidden bg-white">
                                 <div
-                                    class="bg-slate-700 text-white text-sm font-bold py-2 px-3 flex justify-between items-center shrink-0">
+                                    class="bg-slate-700 text-white text-xs font-bold py-2 px-3 flex justify-between items-center shrink-0">
                                     <span>可用參數</span>
-                                    <span class="text-xs bg-slate-600 px-2 py-0.5 rounded-full"
+                                    <span class="text-[10px] bg-slate-600 px-1.5 py-0.5 rounded-full"
                                         id="dm-source-count">0</span>
                                 </div>
-                                <div class="p-2 border-b border-gray-200 bg-gray-50 shrink-0">
-                                    <input type="text" id="dm-source-search" placeholder="搜尋參數..."
-                                        class="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-                                </div>
-                                <div id="dm-source-list" class="flex-1 overflow-y-auto p-2 space-y-1 bg-white">
-                                    <!-- Items injected by JS -->
+                                <div id="dm-source-list" class="flex-1 overflow-y-auto p-1.5 space-y-0.5 bg-white">
                                 </div>
                             </div>
-
-                            <!-- Middle: Transfer Buttons -->
-                            <div class="flex flex-col justify-center gap-3 items-center w-12 shrink-0">
+                            <!-- Transfer Buttons -->
+                            <div class="flex flex-col justify-center gap-2 items-center w-10 shrink-0">
                                 <button id="btn-to-y"
-                                    class="w-10 h-10 rounded-lg bg-blue-600 hover:bg-blue-700 text-white border-0 flex items-center justify-center shadow-md transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-gray-300"
+                                    class="w-9 h-9 rounded-lg bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center shadow transition-all active:scale-95 disabled:opacity-50 disabled:bg-gray-300"
                                     title="加入目標">
-                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none"
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none"
                                         viewBox="0 0 24 24" stroke="currentColor">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"
                                             d="M14 5l7 7m0 0l-7 7m7-7H3" />
                                     </svg>
                                 </button>
                                 <button id="btn-return"
-                                    class="w-10 h-10 rounded-lg bg-gray-400 hover:bg-gray-500 text-white border-0 flex items-center justify-center shadow-md transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-gray-200"
+                                    class="w-9 h-9 rounded-lg bg-gray-400 hover:bg-gray-500 text-white flex items-center justify-center shadow transition-all active:scale-95 disabled:opacity-50 disabled:bg-gray-200"
                                     title="移回">
-                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none"
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none"
                                         viewBox="0 0 24 24" stroke="currentColor">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"
                                             d="M10 19l-7-7m0 0l7-7m-7 7h18" />
                                     </svg>
                                 </button>
                             </div>
-
-                            <!-- Right: Selected Targets -->
+                            <!-- Selected -->
                             <div
-                                class="flex-1 flex flex-col rounded-lg border border-blue-300 overflow-hidden bg-white shadow-sm">
+                                class="flex-1 flex flex-col rounded-lg border border-blue-300 overflow-hidden bg-white">
                                 <div
-                                    class="bg-blue-600 text-white text-sm font-bold py-2 px-3 flex justify-between items-center shrink-0">
+                                    class="bg-blue-600 text-white text-xs font-bold py-2 px-3 flex justify-between items-center shrink-0">
                                     <span>已選目標</span>
-                                    <span class="text-xs bg-blue-500 px-2 py-0.5 rounded-full" id="dm-y-count">0</span>
+                                    <span class="text-[10px] bg-blue-500 px-1.5 py-0.5 rounded-full"
+                                        id="dm-y-count">0</span>
                                 </div>
-                                <div id="dm-y-list" class="flex-1 overflow-y-auto p-2 space-y-1 bg-blue-50/30 relative">
+                                <div id="dm-y-list"
+                                    class="flex-1 overflow-y-auto p-1.5 space-y-0.5 bg-blue-50/30 relative">
                                     <div id="dm-y-placeholder"
                                         class="absolute inset-0 flex items-center justify-center text-gray-400 text-sm pointer-events-none select-none">
                                         無選取</div>
                                 </div>
                             </div>
-
                         </div>
                     </div>
                 </div>
-
-                <!-- Hint Text -->
-                <div class="text-xs text-gray-500 text-center py-2">
-                    💡 提示：不選擇任何目標 = 自動分析所有欄位
-                </div>
-
-            </div>
-
-            <!-- Footer (Optional Info) -->
-            <div class="px-6 py-3 border-t border-gray-100 bg-gray-50 text-center">
-                <p class="text-xs text-gray-500">💡 提示：所有設定皆為選填，直接點擊「開始探勘分析」即可快速開始</p>
             </div>
 
         </div>
     </div>
+    <!-- Mapping Modal -->
+    <div id="mapping-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/40"
+        onclick="if(event.target===this)window.ia&&window.ia.closeMappingModal()">
+        <div class="bg-white rounded-xl shadow-xl w-80 p-5">
+            <h3 class="text-sm font-bold text-gray-800 mb-3">術語對應表管理</h3>
+            <div id="mapping-modal-status" class="text-xs text-gray-500 mb-4">
+                <span class="text-gray-400">目前狀態:</span>
+                <span id="mapping-modal-name" class="font-medium ml-1">尚未設定</span>
+            </div>
+            <div class="flex flex-col gap-2">
+                <button id="btn-mapping-upload" onclick="document.getElementById('mapping-upload-input').click()"
+                    class="w-full px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white text-xs font-medium rounded-lg transition-colors">
+                    上傳 / 更換對應表 (.csv)
+                </button>
+                <button id="btn-mapping-delete" onclick="window.ia && window.ia.deleteMapping()"
+                    class="w-full px-3 py-2 bg-white border border-red-200 text-red-500 hover:bg-red-50 text-xs font-medium rounded-lg transition-colors hidden">
+                    移除對應表
+                </button>
+                <button onclick="window.ia && window.ia.closeMappingModal()"
+                    class="w-full px-3 py-1.5 text-xs text-gray-400 hover:text-gray-600 transition-colors">
+                    關閉
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Description Modal -->
+    <div id="description-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/40"
+        onclick="if(event.target===this)window.ia&&window.ia.closeDescriptionModal()">
+        <div class="bg-white rounded-xl shadow-xl w-80 p-5">
+            <h3 class="text-sm font-bold text-gray-800 mb-3">資料描述</h3>
+            <textarea id="description-modal-input"
+                class="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400 bg-gray-50 text-gray-700 placeholder-gray-300"
+                rows="4" placeholder="描述此份資料的場景 (選填)&#10;例: 某設備的製程數據, 含溫度/壓力/速度等" maxlength="500"></textarea>
+            <div class="flex justify-between items-center mt-1 mb-3">
+                <span id="description-modal-status" class="text-[10px] text-gray-300"></span>
+                <span id="description-modal-count" class="text-[10px] text-gray-300">0/500</span>
+            </div>
+            <div class="flex gap-2">
+                <button onclick="window.ia && window.ia.saveDescriptionFromModal()"
+                    class="flex-1 px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white text-xs font-medium rounded-lg transition-colors">
+                    儲存
+                </button>
+                <button onclick="window.ia && window.ia.clearDescriptionFromModal()"
+                    class="px-3 py-2 bg-white border border-gray-200 text-gray-500 hover:bg-gray-50 text-xs font-medium rounded-lg transition-colors">
+                    清除
+                </button>
+                <button onclick="window.ia && window.ia.closeDescriptionModal()"
+                    class="px-3 py-2 text-xs text-gray-400 hover:text-gray-600 transition-colors">
+                    取消
+                </button>
+            </div>
+        </div>
+    </div>
+    <!-- STAT TOOL MODAL -->
+    <div id="stat-tool-modal"
+        class="hidden fixed inset-0 bg-black bg-opacity-50 z-[200] flex items-start justify-center p-4 pt-8 backdrop-blur-sm transition-opacity duration-300 overflow-y-auto">
+        <div
+            class="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[80vh] flex flex-col overflow-hidden transform transition-all scale-100 my-auto">
+            <!-- Header -->
+            <div
+                class="sticky top-0 z-10 px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gradient-to-r from-purple-50 to-indigo-50">
+                <div class="flex items-center gap-3">
+                    <div class="p-2 bg-purple-100 rounded-lg text-purple-600">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                            <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z" />
+                            <path fill-rule="evenodd"
+                                d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3z"
+                                clip-rule="evenodd" />
+                        </svg>
+                    </div>
+                    <h3 class="font-bold text-gray-800 text-lg">統計工具</h3>
+                </div>
+                <button onclick="document.getElementById('stat-tool-modal').classList.add('hidden')"
+                    class="text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg p-1 transition">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24"
+                        stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Body -->
+            <div class="p-6 overflow-y-auto flex-1 flex flex-col gap-4 bg-white">
+                <!-- Tool Selector -->
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 mb-2">選擇分析工具</label>
+                    <select id="st-tool-select"
+                        class="w-full appearance-none bg-white border border-gray-300 text-gray-700 py-2.5 px-4 pr-10 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 cursor-pointer">
+                        <option value="" disabled selected>-- 請選擇工具 --</option>
+                    </select>
+                </div>
+
+                <!-- Tool Description -->
+                <div id="st-tool-desc"
+                    class="hidden text-xs text-gray-500 bg-gray-50 rounded-lg p-3 border border-gray-100"></div>
+
+                <!-- Dynamic Parameters Area -->
+                <div id="st-params-area" class="hidden flex flex-col gap-3">
+                    <label class="block text-xs font-bold text-gray-500">參數設定</label>
+                    <div id="st-params-container" class="flex flex-col gap-3"></div>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="px-6 py-4 border-t border-gray-100 bg-gray-50 flex justify-end items-center gap-3">
+                <button onclick="document.getElementById('stat-tool-modal').classList.add('hidden')"
+                    class="px-4 py-2 text-sm text-gray-500 hover:bg-gray-100 rounded-lg transition">取消</button>
+                <button id="btn-confirm-stat-tool"
+                    class="px-6 py-2.5 text-sm font-bold text-white bg-purple-600 hover:bg-purple-700 rounded-lg shadow-md hover:shadow-lg transform active:scale-95 transition-all flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd"
+                            d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-8.707l-3-3a1 1 0 00-1.414 1.414L10.586 9H7a1 1 0 100 2h3.586l-1.293 1.293a1 1 0 101.414 1.414l3-3a1 1 0 000-1.414z"
+                            clip-rule="evenodd" />
+                    </svg>
+                    <span>執行</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
     <script src="/static/js/analysis.js"></script>
 </body>

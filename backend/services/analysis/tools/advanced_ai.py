@@ -668,6 +668,9 @@ class PrincipalComponentAnalysisTool(AnalysisTool):
                 "transition_zones": transition_zones,
                 "secondary_anomalies": secondary_anomalies,
             },
+            # --- [NEW] PCA 偏離度趨勢圖數據 ---
+            "pc_distance_trend": [round(float(v), 4) for v in pc_dist],
+            "pc_anomaly_threshold": round(float(threshold_anomaly), 4),
             "conclusion": (
                 f"PCA 分析顯示數據解釋力為 {total_explained * 100:.2f}%{range_suffix}。"
                 f"【系統狀態診斷】：{state_analysis_text}。"
@@ -858,23 +861,26 @@ class HotellingT2AnalysisTool(AnalysisTool):
         anomaly_indices = np.where(t2_values > threshold_anomaly)[0]
 
         # [Fallback Mechanism]
-        # 如果嚴格閾值找不到任何異常點，為了維持 "Drill-Down" 分析流，
-        # 我們退而求其次，抓取 T2 分數最高的 3% 作為 "相對異常"
+        # 如果嚴格閾值找到的異常點太少 (<3% 的數據)，
+        # 退而求其次，抓取 T2 分數最高的 5% 作為 "相對異常"
         is_fallback_mode = False
-        if len(anomaly_indices) == 0:
+        anomaly_ratio = (
+            len(anomaly_indices) / len(t2_values) if len(t2_values) > 0 else 0
+        )
+        if anomaly_ratio < 0.03:
             is_fallback_mode = True
-            # Fallback to Top 3%
-            threshold_anomaly = np.percentile(t2_values, 97)
+            # Fallback to Top 5%
+            threshold_anomaly = np.percentile(t2_values, 95)
             anomaly_indices = np.where(t2_values > threshold_anomaly)[0]
 
-        # 2. 將異常點合併為區間
+        # 2. 將異常點合併為區間 (容許 gap <= 5 的間隔)
         anomaly_ranges = []
         if len(anomaly_indices) > 0:
             current_start = anomaly_indices[0]
             current_end = anomaly_indices[0]
 
             for i in range(1, len(anomaly_indices)):
-                if anomaly_indices[i] == current_end + 1:
+                if anomaly_indices[i] <= current_end + 6:  # gap <= 5
                     current_end = anomaly_indices[i]
                 else:
                     anomaly_ranges.append((current_start, current_end))
@@ -882,19 +888,145 @@ class HotellingT2AnalysisTool(AnalysisTool):
                     current_end = anomaly_indices[i]
             anomaly_ranges.append((current_start, current_end))
 
-        # 3. 格式化異常區間報告
+        # 3. 構建結構化異常區段 (anomaly_zones)
         anomaly_report = []
-        primary_anomaly_range = None  # Store tuple (start, end) for machine reading
+        anomaly_zones = []
+        primary_anomaly_range = None
         primary_anomaly_text = None
 
         for start, end in anomaly_ranges:
             length = end - start + 1
-            if length >= 3:  # 至少連續 3 筆才算區間
+            # 超過閾值的點/區段都保留 (含單點突波)
+            if length >= 1:
                 range_str = f"第 {start}-{end} 筆 (持續 {length} 筆)"
                 anomaly_report.append(range_str)
                 if not primary_anomaly_range:
                     primary_anomaly_range = (int(start), int(end))
                     primary_anomaly_text = range_str
+
+                # --- 每個 zone 獨立計算 top contributions ---
+                zone_indices = list(range(int(start), int(end) + 1))
+                zone_t2_mean = float(np.mean(t2_values[zone_indices]))
+                zone_t2_max = float(np.max(t2_values[zone_indices]))
+
+                zone_scores = scores[zone_indices]
+                zone_scaled = data_scaled[zone_indices]
+                zone_weights = zone_scores / eigenvalues
+                zone_cont_matrix = np.matmul(zone_weights, loadings) * zone_scaled
+                zone_avg_cont = np.mean(zone_cont_matrix, axis=0)
+
+                zone_contributions = []
+                for j in range(len(active_params)):
+                    zone_contributions.append(
+                        {
+                            "parameter": active_params[j],
+                            "contribution": float(zone_avg_cont[j]),
+                        }
+                    )
+                zone_contributions.sort(
+                    key=lambda x: abs(x["contribution"]), reverse=True
+                )
+
+                anomaly_zones.append(
+                    {
+                        "zone_range": f"Row {start}-{end}",
+                        "zone_start": int(start),
+                        "zone_end": int(end),
+                        "length": length,
+                        "t2_mean": round(zone_t2_mean, 2),
+                        "t2_max": round(zone_t2_max, 2),
+                        "top_contributors": [
+                            {
+                                "parameter": c["parameter"],
+                                "contribution": round(c["contribution"], 4),
+                                "rank": i + 1,
+                            }
+                            for i, c in enumerate(zone_contributions[:6])
+                        ],
+                        "is_fallback": is_fallback_mode,
+                    }
+                )
+
+        # --- 過大 zone 拆分: 覆蓋 >50% 時用 T2 75th percentile 做二次切割 ---
+        total_data = len(t2_values)
+        if anomaly_zones:
+            refined_zones = []
+            for az in anomaly_zones:
+                coverage = az["length"] / total_data if total_data > 0 else 0
+                if coverage > 0.5:
+                    z_start, z_end = az["zone_start"], az["zone_end"]
+                    zone_t2 = t2_values[z_start : z_end + 1]
+                    secondary_threshold = float(np.percentile(zone_t2, 75))
+
+                    above = np.where(zone_t2 > secondary_threshold)[0]
+                    if len(above) > 0:
+                        sub_ranges = []
+                        s_start = above[0]
+                        s_end = above[0]
+                        for k in range(1, len(above)):
+                            if above[k] <= s_end + 3:  # 容許 gap <= 2
+                                s_end = above[k]
+                            else:
+                                sub_ranges.append((s_start, s_end))
+                                s_start = above[k]
+                                s_end = above[k]
+                        sub_ranges.append((s_start, s_end))
+
+                        for sr_s, sr_e in sub_ranges:
+                            abs_start = z_start + int(sr_s)
+                            abs_end = z_start + int(sr_e)
+                            sr_len = abs_end - abs_start + 1
+                            if sr_len >= 3:
+                                sr_indices = list(range(abs_start, abs_end + 1))
+                                sr_t2_mean = float(np.mean(t2_values[sr_indices]))
+                                sr_t2_max = float(np.max(t2_values[sr_indices]))
+
+                                sr_scores = scores[sr_indices]
+                                sr_scaled = data_scaled[sr_indices]
+                                sr_weights = sr_scores / eigenvalues
+                                sr_cont_matrix = (
+                                    np.matmul(sr_weights, loadings) * sr_scaled
+                                )
+                                sr_avg_cont = np.mean(sr_cont_matrix, axis=0)
+
+                                sr_contributions = [
+                                    {
+                                        "parameter": active_params[j],
+                                        "contribution": float(sr_avg_cont[j]),
+                                    }
+                                    for j in range(len(active_params))
+                                ]
+                                sr_contributions.sort(
+                                    key=lambda x: abs(x["contribution"]), reverse=True
+                                )
+
+                                refined_zones.append(
+                                    {
+                                        "zone_range": f"Row {abs_start}-{abs_end}",
+                                        "zone_start": abs_start,
+                                        "zone_end": abs_end,
+                                        "length": sr_len,
+                                        "t2_mean": round(sr_t2_mean, 2),
+                                        "t2_max": round(sr_t2_max, 2),
+                                        "top_contributors": [
+                                            {
+                                                "parameter": c["parameter"],
+                                                "contribution": round(
+                                                    c["contribution"], 4
+                                                ),
+                                                "rank": i + 1,
+                                            }
+                                            for i, c in enumerate(sr_contributions[:6])
+                                        ],
+                                        "is_fallback": az.get("is_fallback", False),
+                                        "is_refined": True,
+                                    }
+                                )
+                    if not refined_zones:
+                        refined_zones.append(az)
+                else:
+                    refined_zones.append(az)
+            anomaly_zones = refined_zones
 
         # 5. 貢獻度分析 (Decomposition to original variables)
         # 決定要診斷的範圍或數據
@@ -998,14 +1130,17 @@ class HotellingT2AnalysisTool(AnalysisTool):
             "variance_explained": f"{np.sum(pca.explained_variance_ratio_) * 100:.2f}%",
             "is_range_analysis": is_range_mode,
             "diagnosed_index": int(diag_idx),
-            "primary_anomaly_range": primary_anomaly_range,  # [NEW] For Designer (Row Focus)
+            "primary_anomaly_range": primary_anomaly_range,
             "anomaly_clusters_text": anomaly_report,
             "max_t2_value": float(t2_values[diag_idx]),
             "top_contributions": contributions[:15],
             "top_3_summary": display_title + " | ".join(top_3),
             "top_10_anomalies": top_10_anomalies,
+            # --- [NEW] T2 趨勢圖數據 + 結構化異常區段 ---
+            "t2_trend": [round(float(v), 4) for v in t2_values],
+            "t2_threshold": round(float(threshold_anomaly), 4),
+            "anomaly_zones": anomaly_zones,
             "conclusion": final_conclusion,
-            # [SafeGuard] Explicitly state the top suspect parameter for Agent logic
             "top_suspect_parameter": contributions[0]["parameter"],
         }
 

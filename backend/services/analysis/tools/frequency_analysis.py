@@ -1,4 +1,4 @@
-"""
+﻿"""
 PSD 頻域分析 (Power Spectral Density / Frequency Analysis)
 
 分析時間序列的頻域特徵:
@@ -91,6 +91,16 @@ class FrequencyAnalysisTool(AnalysisTool):
             # --- Anomaly detection based on spectral features ---
             spectral_anomalies = self._detect_spectral_anomalies(full_psd)
 
+            # --- 計算主頻週期對應的 row 位置 (用於趨勢圖標記) ---
+            dominant_period_rows = []
+            if full_psd["dominant_period"] not in (float("inf"), 0):
+                period = full_psd["dominant_period"]
+                # 標記每個週期的起點
+                idx = 0.0
+                while idx < len(series):
+                    dominant_period_rows.append(int(round(idx)))
+                    idx += period
+
             return {
                 "status": "SUCCESS",
                 "parameter": parameter,
@@ -101,7 +111,11 @@ class FrequencyAnalysisTool(AnalysisTool):
                     "low_freq_ratio": round(float(full_psd["low_freq_ratio"]), 4),
                     "high_freq_ratio": round(float(full_psd["high_freq_ratio"]), 4),
                     "spectral_entropy": round(float(full_psd["spectral_entropy"]), 4),
+                    "psd_values": [round(float(v), 8) for v in full_psd["psd"]],
+                    "frequencies": [round(float(v), 6) for v in full_psd["freqs"]],
                 },
+                "raw_values": series.values.tolist(),
+                "dominant_period_rows": dominant_period_rows,
                 "comparison": comparison,
                 "spectral_anomalies": spectral_anomalies,
                 "data_points": len(series),

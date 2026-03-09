@@ -36,9 +36,12 @@ class AnalysisService:
         """檢查是否收到停止信號"""
         return self.stop_events.get(session_id, False)
 
-    def get_file_id(self, filename: str) -> str:
-        """生成文件 ID（基於文件名的 hash）"""
-        return hashlib.md5(filename.encode()).hexdigest()[:12]
+    def get_file_id(self, filename: str, conversation_id: str = "default") -> str:
+        """生成文件 ID（基於文件名的 hash）, 非 default 對話時加上 conversation 後綴"""
+        base_id = hashlib.md5(filename.encode()).hexdigest()[:12]
+        if conversation_id and conversation_id != "default":
+            return f"{base_id}_{conversation_id}"
+        return base_id
 
     def get_analysis_path(
         self, session_id: str, file_id: str, create: bool = False
@@ -54,7 +57,7 @@ class AnalysisService:
         return analysis_dir
 
     async def prepare_file(
-        self, session_id: str, filename: str
+        self, session_id: str, filename: str, conversation_id: str = "default"
     ) -> tuple[bool, str, dict]:
         """預處理檔案的門面方法"""
         csv_path = self.base_dir / session_id / "uploads" / filename
@@ -63,7 +66,10 @@ class AnalysisService:
 
         try:
             summary = await self.build_analysis_index(
-                str(csv_path), session_id, filename
+                str(csv_path),
+                session_id,
+                filename,
+                conversation_id=conversation_id,
             )
             return True, "檔案預處理成功", summary
         except Exception as e:
@@ -113,13 +119,17 @@ class AnalysisService:
             logger.info("Cleared all dataframe cache")
 
     async def build_analysis_index(
-        self, csv_path: str, session_id: str, filename: str
+        self,
+        csv_path: str,
+        session_id: str,
+        filename: str,
+        conversation_id: str = "default",
     ) -> Dict:
         """為 CSV 文件建立分析索引 (非阻塞: 在獨立 thread 中執行)"""
         import asyncio
 
         def _build_index_sync():
-            file_id = self.get_file_id(filename)
+            file_id = self.get_file_id(filename, conversation_id=conversation_id)
             analysis_path = self.get_analysis_path(session_id, file_id, create=True)
 
             import os
@@ -127,22 +137,7 @@ class AnalysisService:
             current_size = os.path.getsize(csv_path)
             current_mtime = os.path.getmtime(csv_path)
 
-            summary_file = analysis_path / "summary.json"
-            if summary_file.exists():
-                try:
-                    with open(summary_file, "r", encoding="utf-8") as f:
-                        cached_summary = json.load(f)
-
-                    if (
-                        cached_summary.get("file_size") == current_size
-                        and cached_summary.get("last_modified") == current_mtime
-                    ):
-                        logger.info(f"Index already exists and is valid for {filename}")
-                        return cached_summary
-                    else:
-                        logger.info(f"Index out of date for {filename}, rebuilding...")
-                except Exception as e:
-                    logger.warning(f"Failed to read cached summary: {e}, will rebuild")
+            # [ALWAYS REBUILD] 每次 prepare 都重新計算, 確保數據最新
 
             logger.info(f"Building index for {filename}")
 
@@ -203,7 +198,7 @@ class AnalysisService:
                 summary["mappings"] = {
                     col: mapping[col] for col in df.columns if col in mapping
                 }
-                self._save_json(summary_file, summary)
+                self._save_json(analysis_path / "summary.json", summary)
 
                 logger.info(f"Index built successfully for {filename}")
                 return summary
@@ -420,6 +415,28 @@ class AnalysisService:
                 except Exception as e:
                     logger.error(f"Failed to force refresh quality_stats: {e}")
 
+            # [FIX] 每次載入 summary 時, 動態刷新 mappings (而不是只在建索引時)
+            # 這樣即使用戶在建索引後才上傳 mapping CSV, 也能正確載入
+            try:
+                fresh_mapping = self._load_mapping_table(session_id, file_id)
+                if fresh_mapping:
+                    all_params = set(summary.get("parameters", []))
+                    relevant = {
+                        k: v for k, v in fresh_mapping.items() if k in all_params
+                    }
+                    if relevant != summary.get("mappings", {}):
+                        summary["mappings"] = relevant
+                        self._save_json(
+                            self.get_analysis_path(session_id, file_id)
+                            / "summary.json",
+                            summary,
+                        )
+                        logger.info(
+                            f"[Mapping] 動態刷新 mappings: {len(relevant)} 個映射已更新到 summary"
+                        )
+            except Exception as e:
+                logger.warning(f"[Mapping] 刷新 mappings 失敗: {e}")
+
         return summary
 
     def load_statistics(self, session_id: str, file_id: str) -> Dict:
@@ -431,9 +448,20 @@ class AnalysisService:
     def load_semantic_index(self, session_id: str, file_id: str) -> Dict:
         return self._load_json(session_id, file_id, "semantic_index.json") or {}
 
-    def _get_mapping_file_name(self, session_id: str) -> Optional[str]:
+    def _get_mapping_file_name(
+        self, session_id: str, file_id: str = None
+    ) -> Optional[str]:
         """獲取當前會話生效的對應表檔名"""
         try:
+            # 1. 優先檢查 bound mapping (綁定到特定檔案)
+            if file_id:
+                bound_path = (
+                    self.base_dir / session_id / "analysis" / file_id / "mapping.csv"
+                )
+                if bound_path.exists():
+                    return bound_path.name
+
+            # 2. 查找全域對應表 (帶前綴)
             uploads_dir = self.base_dir / session_id / "uploads"
             mapping_files = (
                 list(uploads_dir.glob("*(參數對應表)*.csv"))
@@ -451,12 +479,39 @@ class AnalysisService:
             logger.warning(f"Failed to get mapping file name: {e}")
             return None
 
-    def get_active_mapping(self, session_id: str) -> tuple[Optional[str], str]:
+    def get_active_mapping(
+        self, session_id: str, file_id: str = None
+    ) -> tuple[Optional[str], str]:
         """Expose mapping status to router."""
-        mapping_file = self._get_mapping_file_name(session_id)
+        mapping_file = self._get_mapping_file_name(session_id, file_id)
         if mapping_file:
             return mapping_file, "active"
         return None, "inactive"
+
+    def delete_mapping(self, session_id: str, file_id: str = None) -> int:
+        """刪除 mapping 檔案。回傳刪除的檔案數量。"""
+        deleted = 0
+        try:
+            # 1. 刪除綁定到特定檔案的 mapping
+            if file_id:
+                bound_path = (
+                    self.base_dir / session_id / "analysis" / file_id / "mapping.csv"
+                )
+                if bound_path.exists():
+                    bound_path.unlink()
+                    deleted += 1
+                    logger.info(f"Deleted bound mapping: {bound_path}")
+
+            # 2. 刪除全域對應表
+            uploads_dir = self.base_dir / session_id / "uploads"
+            if uploads_dir.exists():
+                for f in uploads_dir.glob("*(參數對應表)*.csv"):
+                    f.unlink()
+                    deleted += 1
+                    logger.info(f"Deleted global mapping: {f}")
+        except Exception as e:
+            logger.error(f"Failed to delete mapping: {e}", exc_info=True)
+        return deleted
 
     async def manual_reindex(self, session_id: str, file_id: str) -> bool:
         """強制重新建立特定檔案的索引"""

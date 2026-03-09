@@ -111,5 +111,5 @@ def get_llm_agent() -> SigmaAnalysisWorkflow:
     return SigmaAnalysisWorkflow(
         tool_executor=executor,
         analysis_service=service,
-        timeout=600,  # 設定為 10 分鐘
+        timeout=1800,  # 設定為 30 分鐘 (深度分析需要更多時間)
     )

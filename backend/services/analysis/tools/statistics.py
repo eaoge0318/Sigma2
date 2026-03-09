@@ -109,8 +109,8 @@ class AnalyzeDistributionTool(AnalysisTool):
                         "min": min_val,
                         "max": max_val,
                         "std": std_val,
-                        "max_sigma": round(max_sigma, 2),
-                        "min_sigma": round(min_sigma, 2),
+                        "max_sigma": round(max_sigma, 1),
+                        "min_sigma": round(min_sigma, 1),
                         "has_extreme_outlier": has_extreme_outlier,
                     }
 
@@ -277,7 +277,7 @@ class CompareSegmentsTool(AnalysisTool):
             diff_results, key=lambda x: abs(x["z_score_diff"]), reverse=True
         )
         top_3 = [
-            f"{d['parameter']} ({'偏高' if d['z_score_diff'] > 0 else '偏低'} {abs(d['z_score_diff']):.2f}σ)"
+            f"{d['parameter']} ({'偏高' if d['z_score_diff'] > 0 else '偏低'} {abs(d['z_score_diff']):.1f}σ)"
             for d in sorted_diffs[:3]
         ]
 
@@ -371,6 +371,17 @@ class DetectOutliersTool(AnalysisTool):
                     # Default: Z-Score (支援用戶要求的 |Z|>3 與 |Z|>6)
                     mean = series.mean()
                     std = series.std()  # ddof=1 (pandas default)
+
+                    # [FIX] Low-variance filter: 如果 CV < 0.001 (std/|mean| < 0.1%),
+                    # 該參數幾乎是常數, Z-Score 因分母趨近零而虛高,不是真正的異常。
+                    # 但仍保留原始 Z 值，僅標記 low_variance 供下游判斷。
+                    cv = (
+                        abs(std / mean)
+                        if mean != 0
+                        else (0.0 if std == 0 else float("inf"))
+                    )
+                    is_low_variance = cv < 0.001 and std > 0
+
                     if std == 0:
                         z_scores = series * 0
                     else:
@@ -379,33 +390,45 @@ class DetectOutliersTool(AnalysisTool):
                     abs_z = z_scores.abs()
                     outliers = series[abs_z > 3]
                     extreme_outliers = series[abs_z > 6]
-                    max_z = float(abs_z.max()) if not abs_z.empty else 0
+                    max_z = round(float(abs_z.max()), 1) if not abs_z.empty else 0
 
                     # [FIX] 計算 max_sigma / min_sigma,與 analyze_distribution 格式一致
                     min_val = float(series.min())
                     max_val = float(series.max())
                     max_sigma = (
-                        round((max_val - float(mean)) / float(std), 2)
+                        round((max_val - float(mean)) / float(std), 1)
                         if std > 0
                         else 0.0
                     )
                     min_sigma = (
-                        round((min_val - float(mean)) / float(std), 2)
+                        round((min_val - float(mean)) / float(std), 1)
                         if std > 0
                         else 0.0
                     )
-                    has_extreme_outlier = abs(max_sigma) > 6 or abs(min_sigma) > 6
 
-                    interpretation = f"使用 Z-Score 方法，偵測到 {len(outliers)} 筆顯著異常 (|Z|>3) 與 {len(extreme_outliers)} 筆極端異常 (|Z|>6)。最大 Z 值為 {max_z:.2f}。"
+                    # [FIX] Low-variance parameters: 標記但保留原始 Z 值
+                    has_extreme_outlier = abs(max_sigma) > 6 or abs(min_sigma) > 6
+                    if is_low_variance:
+                        interpretation = (
+                            f"[低變異提示] {col} 的 CV={cv:.6f} (<0.001),"
+                            f" 標準差={std:.6f}, 均值={mean:.4f}。"
+                            f" 此參數變異極低, Z-Score={max_z:.1f} 可能虛高,"
+                            f" 請結合工程經驗判斷。"
+                        )
+                    else:
+                        interpretation = f"使用 Z-Score 方法，偵測到 {len(outliers)} 筆顯著異常 (|Z|>3) 與 {len(extreme_outliers)} 筆極端異常 (|Z|>6)。最大 Z 值為 {max_z:.1f}。"
+
                     stats_data = {
                         "mean": float(mean),
                         "std": float(std),
+                        "cv": round(cv, 6),
                         "max_z": max_z,
                         "max_sigma": max_sigma,
                         "min_sigma": min_sigma,
                         "has_extreme_outlier": has_extreme_outlier,
                         "significant_count": len(outliers),
                         "extreme_count": len(extreme_outliers),
+                        "low_variance_false_positive": is_low_variance,
                     }
 
                 outlier_count = len(outliers)
@@ -440,17 +463,31 @@ class DetectOutliersTool(AnalysisTool):
 
         # 如果是全域掃描，回傳異常程度最嚴重的 Top 5 (Severity > Count)
         if hasattr(self, "name") and is_global_scan:
+            # [FIX] 低方差假陽性過濾: CV < 0.001 的參數 Z-Score 因分母趨近零而虛高,
+            # 不應佔據 Top 5 位置。排序時將其權重歸零。
+            def sort_key(item):
+                stats = item[1].get("stats", {})
+                if not isinstance(stats, dict):
+                    return 0
+                # 低方差假陽性:權重歸零
+                if stats.get("low_variance_false_positive", False):
+                    return 0
+                return stats.get("max_z", 0)
+
             sorted_cols = sorted(
                 results_map.items(),
-                # Sort Key: Max Abs Z-Score (Severity) -> Count -> Parameters with Error (last)
-                key=lambda x: (
-                    x[1].get("stats", {}).get("max_z", 0)
-                    if isinstance(x[1].get("stats"), dict)
-                    else 0
-                ),
+                key=sort_key,
                 reverse=True,
             )
             top_5 = dict(sorted_cols[:5])
+
+            # 統計被降權的低方差參數數量
+            low_var_count = sum(
+                1
+                for _, v in results_map.items()
+                if isinstance(v.get("stats"), dict)
+                and v["stats"].get("low_variance_false_positive", False)
+            )
 
             # [Debug Info] Print top 1 to log to confirm Z > 6 exists
             if top_5:
@@ -460,11 +497,16 @@ class DetectOutliersTool(AnalysisTool):
                     f"[DetectOutliers] Top 1 Anomaly: {first_key} with Max Z={first_max_z}"
                 )
 
+            note = "系統自動掃描並選取了 Z-Score (異常程度) 最高的前 5 個欄位。"
+            if low_var_count > 0:
+                note += f" (已排除 {low_var_count} 個低變異假陽性參數)"
+
             return {
                 "scan_mode": "global_outlier_detection",
                 "scanned_columns_count": len(columns),
                 "top_abnormal_parameters": top_5,
-                "note": "系統自動掃描並選取了 Z-Score (異常程度) 最高的前 5 個欄位。",
+                "low_variance_excluded_count": low_var_count,
+                "note": note,
             }
 
         return {"parameters": columns, "multi_results": results_map}
@@ -551,7 +593,7 @@ class GetTopCorrelationsTool(AnalysisTool):
                 results.append(
                     {
                         "parameter": k,
-                        "correlation": v,
+                        "correlation": round(v, 3),
                     }
                 )
             results = results[:top_n]
@@ -586,7 +628,7 @@ class GetTopCorrelationsTool(AnalysisTool):
                             {
                                 "param_a": p_a,
                                 "param_b": p_b,
-                                "correlation": round(corr_val, 4),
+                                "correlation": round(corr_val, 3),
                                 "warning": "高度共線 (|r|>0.9)，可能是同一物理量，調整其一即可",
                             }
                         )
@@ -650,7 +692,11 @@ class AnalyzeCategoryCorrelationTool(AnalysisTool):
             for b in cols_b:
                 if b in a_corrs and a_corrs[b] is not None:
                     cross_pairs.append(
-                        {"param_a": a, "param_b": b, "correlation": a_corrs[b]}
+                        {
+                            "param_a": a,
+                            "param_b": b,
+                            "correlation": round(a_corrs[b], 3),
+                        }
                     )
 
         # 排序

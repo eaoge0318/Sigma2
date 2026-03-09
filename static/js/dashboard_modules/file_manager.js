@@ -16,6 +16,22 @@ export function handleMainFileUpload(input) {
     }
 }
 
+export function handleDroppedFiles(files) {
+    const allowed = ['.csv', '.xml', '.xlsx', '.xls'];
+    const file = files[0];
+    if (!file) return;
+    const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+    if (!allowed.includes(ext)) {
+        const statusDiv = DOM.get('upload-status');
+        if (statusDiv) {
+            statusDiv.innerText = `不支援的格式: ${ext}，僅支援 CSV, XML, Excel`;
+            statusDiv.style.color = '#ef4444';
+        }
+        return;
+    }
+    uploadFile(file);
+}
+
 export async function uploadFile(file) {
     const statusDiv = DOM.get('upload-status');
     if (!statusDiv) return;
