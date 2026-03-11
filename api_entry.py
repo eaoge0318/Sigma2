@@ -50,6 +50,7 @@ from backend.routers import (
     ai_router,
     chart_ai_router,
     draft_router,
+    data_preparation_router,
 )
 
 
@@ -153,6 +154,12 @@ app.include_router(
     draft_router.router,
     prefix="/api/draft",
     tags=["Draft - 建模暫存"],
+)
+
+app.include_router(
+    data_preparation_router.router,
+    prefix="/api/data-prep",
+    tags=["DataPrep - 資料整理"],
 )
 
 

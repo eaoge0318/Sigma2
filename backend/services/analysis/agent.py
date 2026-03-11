@@ -495,7 +495,7 @@ class SigmaAnalysisWorkflow(Workflow):
             "資料探勘",
             "資料品質",
             "檢視資料",
-            "品質概況",
+            "優化控制",
             "參數清單",
             "欄位清單",
         ]
@@ -876,11 +876,11 @@ class SigmaAnalysisWorkflow(Workflow):
             "檔案概況",
             "資料概況",
             "資料品質",
-            "品質概況",
+            "優化控制",
             "檢視資料品質概況",
             "資料概況",
             "資料品質",
-            "品質概況",
+            "優化控制",
         ]
         # 排除深度分析意圖 (避免「分析摘要」「數據概況分析」被誤攔截)
         metadata_exclude_keywords = [

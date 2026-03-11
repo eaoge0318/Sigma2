@@ -1,4 +1,4 @@
-// === 全域 Lightbox (ESC 關閉 / 左右箭頭切換同組圖片) ===
+﻿// === 全域 Lightbox (ESC 關閉 / 左右箭頭切換同組圖片) ===
 window._openLightbox = function (srcs, startIdx = 0) {
     let current = startIdx;
     const overlay = document.createElement('div');
@@ -292,6 +292,14 @@ class IntelligentAnalysis {
             if (btn) {
                 const query = (btn.getAttribute('data-query') || btn.innerText).trim();
 
+                // Intercept "優化控制" Button
+                if (btn.id === 'btn-open-optim-modal' || query === '優化控制') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    this.openOptimModal();
+                    return;
+                }
+
                 // Intercept "Data Mining" Button (Check ID or Text)
                 if (btn.id === 'btn-open-mining-modal' || query === '資料探勘') {
                     e.preventDefault();
@@ -478,8 +486,8 @@ class IntelligentAnalysis {
             strip.appendChild(chip);
         });
     }
-    async sendMessage() {
-        const message = this.elements.userInput.value.trim();
+    async sendMessage(overrideMessage = null, displayLabel = null) {
+        const message = overrideMessage || this.elements.userInput.value.trim();
         const attachments = [...this.pendingAttachments];
         if ((!message && attachments.length === 0) || this.isLoading) return;
 
@@ -491,10 +499,10 @@ class IntelligentAnalysis {
         }
 
         // 1. Show User Message (with attachment previews)
-        let displayMsg = message;
+        let displayMsg = displayLabel || message;
         if (attachments.length > 0) {
             const names = attachments.map(a => `📎 ${a.name}`).join('\n');
-            displayMsg = (message ? message + '\n' : '') + names;
+            displayMsg = (displayMsg ? displayMsg + '\n' : '') + names;
         }
         this.addMessage('user', displayMsg, null, null, false, attachments);
         this.elements.userInput.value = '';
@@ -523,6 +531,9 @@ class IntelligentAnalysis {
 
             // Add mining metadata if available
             if (this.miningMetadata) {
+                if (this.miningMetadata.optimization_targets) {
+                    requestBody.optimization_targets = this.miningMetadata.optimization_targets;
+                }
                 if (this.miningMetadata.suspect_params) {
                     requestBody.suspect_params = this.miningMetadata.suspect_params;
                 }
@@ -3232,51 +3243,136 @@ class IntelligentAnalysis {
         }
     }
 
+    // ========== Optimization Control (Single-Page) ==========
+
+    openOptimModal() {
+        if (!this.currentFileParams || this.currentFileParams.length === 0) {
+            alert('請先選擇檔案，才能使用優化控制。');
+            return;
+        }
+        const modal = document.getElementById('optim-control-modal');
+        if (!modal) return;
+        modal.classList.remove('hidden');
+
+        const list = document.getElementById('optim-params-list');
+        if (list) list.innerHTML = '';
+
+        this.addOptimParamRow();
+
+        const btnAdd = document.getElementById('btn-add-optim-param');
+        if (btnAdd) btnAdd.onclick = () => this.addOptimParamRow();
+
+        const btnConfirm = document.getElementById('btn-confirm-optim');
+        if (btnConfirm) btnConfirm.onclick = () => this.confirmOptimization();
+    }
+
+    addOptimParamRow() {
+        const list = document.getElementById('optim-params-list');
+        if (!list) return;
+        const params = this.currentFileParams || [];
+        const optionsHtml = params.map(p => `<option value="${p}">${p}</option>`).join('');
+
+        const card = document.createElement('div');
+        card.className = 'optim-param-row bg-gray-50 border border-gray-200 rounded-xl p-4 relative group';
+        card.innerHTML = `
+            <button type="button" onclick="removeOptimRow(this)"
+                class="absolute top-2 right-2 text-gray-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+                </svg>
+            </button>
+            <div class="grid grid-cols-12 gap-3 items-end">
+                <div class="col-span-4">
+                    <label class="block text-[11px] text-gray-500 mb-1 font-medium">參數</label>
+                    <select class="optim-param-select w-full text-sm border border-gray-300 rounded-lg py-2 px-2 focus:ring-2 focus:ring-emerald-400 focus:border-emerald-400 bg-white">
+                        <option value="">-- 選擇 --</option>
+                        ${optionsHtml}
+                    </select>
+                </div>
+                <div class="col-span-2">
+                    <label class="block text-[11px] text-gray-500 mb-1 font-medium">方向</label>
+                    <select class="optim-direction w-full text-sm border border-gray-300 rounded-lg py-2 px-2 focus:ring-2 focus:ring-emerald-400 bg-white">
+                        <option value="minimize">最小化</option>
+                        <option value="maximize">最大化</option>
+                        <option value="target">目標值</option>
+                    </select>
+                </div>
+                <div class="col-span-2">
+                    <label class="block text-[11px] text-gray-500 mb-1 font-medium">Target</label>
+                    <input type="number" class="optim-target-val w-full text-sm border border-gray-300 rounded-lg py-2 px-2 focus:ring-2 focus:ring-emerald-400 bg-gray-100 text-gray-400" placeholder="—" disabled>
+                </div>
+                <div class="col-span-2">
+                    <label class="block text-[11px] text-gray-500 mb-1 font-medium">LSL</label>
+                    <input type="number" class="optim-lsl w-full text-sm border border-gray-300 rounded-lg py-2 px-2 focus:ring-2 focus:ring-emerald-400 bg-white" placeholder="選填">
+                </div>
+                <div class="col-span-2">
+                    <label class="block text-[11px] text-gray-500 mb-1 font-medium">USL</label>
+                    <input type="number" class="optim-usl w-full text-sm border border-gray-300 rounded-lg py-2 px-2 focus:ring-2 focus:ring-emerald-400 bg-white" placeholder="選填">
+                </div>
+            </div>
+        `;
+        list.appendChild(card);
+
+        const dirSelect = card.querySelector('.optim-direction');
+        const tvInput = card.querySelector('.optim-target-val');
+        if (dirSelect && tvInput) {
+            dirSelect.addEventListener('change', () => {
+                const isTarget = dirSelect.value === 'target';
+                tvInput.disabled = !isTarget;
+                tvInput.className = tvInput.className.replace(/bg-(gray-100|white)/g, '');
+                tvInput.classList.add(isTarget ? 'bg-white' : 'bg-gray-100');
+                if (!isTarget) tvInput.classList.add('text-gray-400');
+                else tvInput.classList.remove('text-gray-400');
+            });
+        }
+    }
+
     confirmOptimization() {
-        console.log('[DEBUG] confirmOptimization called');
-        const targets = Array.from(this.miningState.y);
-        console.log('[DEBUG] optimization targets:', targets);
+        const rows = document.querySelectorAll('#optim-params-list .optim-param-row');
+        const optimTargets = [];
 
-        const start = document.getElementById('dm-range-start').value.trim();
-        const end = document.getElementById('dm-range-end').value.trim();
+        rows.forEach(row => {
+            const param = row.querySelector('.optim-param-select')?.value;
+            if (!param) return;
+            const direction = row.querySelector('.optim-direction')?.value || 'minimize';
+            const targetVal = row.querySelector('.optim-target-val')?.value;
+            const lsl = row.querySelector('.optim-lsl')?.value;
+            const usl = row.querySelector('.optim-usl')?.value;
 
-        let query = '';
-        let targetRange = null;
+            const entry = { param, direction };
+            if (direction === 'target' && targetVal) entry.target_value = parseFloat(targetVal);
+            if (lsl) entry.lsl = parseFloat(lsl);
+            if (usl) entry.usl = parseFloat(usl);
+            optimTargets.push(entry);
+        });
 
-        if (start && end) {
-            targetRange = `${start}-${end}`;
-        } else if (start) {
-            targetRange = `${start}-`;
-        } else if (end) {
-            targetRange = `-${end}`;
+        if (optimTargets.length === 0) {
+            alert('請至少設定一個參數');
+            return;
         }
 
-        if (targets.length === 0) {
-            query = `請進行全域參數最佳化分析，找出影響品質的關鍵可控參數，並給出最佳操作建議`;
-        } else {
-            query = `請針對 ${targets.join(', ')} 進行最佳化分析，找出哪些可控參數對其影響最大，以及最佳操作區間`;
-        }
+        const paramDescs = optimTargets.map(t => {
+            let desc = t.param;
+            if (t.direction === 'minimize') desc += '(最小化)';
+            else if (t.direction === 'maximize') desc += '(最大化)';
+            else if (t.direction === 'target') desc += `(目標=${t.target_value ?? '?'})`;
+            if (t.lsl !== undefined || t.usl !== undefined) desc += ` [${t.lsl ?? ''}～${t.usl ?? ''}]`;
+            return desc;
+        });
 
-        if (targetRange) {
-            query += `，分析區間為第 ${targetRange} 筆`;
-        } else {
-            query += `，分析全域數據`;
-        }
-
-        query += `。找出關鍵影響因子與最佳操作條件。`;
+        const targets = optimTargets.map(t => t.param);
+        let query = `請針對 ${paramDescs.join(', ')} 進行最佳化分析，找出哪些可控參數對其影響最大，以及最佳操作區間，分析全域數據。找出關鍵影響因子與最佳操作條件。`;
 
         this.miningMetadata = {
-            suspect_params: targets.length > 0 ? targets : null,
-            target_range: targetRange
+            optimization_targets: optimTargets,
+            suspect_params: targets,
+            target_range: null
         };
 
-        this.elements.userInput.value = query;
-        this.elements.userInput.style.height = 'auto';
-        this.elements.userInput.style.height = this.elements.userInput.scrollHeight + 'px';
-        this.elements.btnSend.disabled = false;
-        this.sendMessage();
+        // 直接送出，聊天室只顯示簡短標籤
+        this.sendMessage(query, '🔧 開始優化分析: ' + targets.join(', '));
 
-        closeMiningPanel();
+        closeOptimPanel();
     }
 
     // ========== Statistical Tool Methods ==========
@@ -3907,4 +4003,15 @@ window.updateParamCount = () => {
     const checkboxes = document.querySelectorAll('input[name="trend-param"]:checked');
     const countEl = document.getElementById('param-selected-count');
     if (countEl) countEl.textContent = checkboxes.length;
+};
+
+// ========== Optimization Control Window Functions ==========
+window.openOptimModal = () => window.ia?.openOptimModal();
+window.closeOptimPanel = () => {
+    const modal = document.getElementById('optim-control-modal');
+    if (modal) modal.classList.add('hidden');
+};
+window.removeOptimRow = (btn) => {
+    const row = btn.closest('.optim-param-row');
+    if (row) row.remove();
 };

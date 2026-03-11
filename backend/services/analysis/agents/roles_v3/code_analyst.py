@@ -60,6 +60,7 @@ EXECUTION_CONTRACT = """你是一位有 30 年經驗的製程資料科學家。
 - 圖表優先用 `sigma.plot_*()` 系列工具
 - sigma 結果存入變數，不要重複呼叫同一工具
 - **使用者指定的目標參數必須全部使用，不得自行截斷 (例如 [:3])**
+- ⛔ **禁止對 Series/DataFrame 呼叫 `.drift()` — 不存在！漂移偵測用 `sigma.detect_drift(df, columns)`**
 
 ### 欄位存在性檢查 (最高優先硬規則)
 使用者給的欄位名可能拼錯。**所有欄位在使用前必須先確認存在**：
@@ -146,31 +147,91 @@ for key, df_seg in df_intervals.items():
 
 POLICY_OPTIMIZATION = """## 分析策略: 製程最佳化
 
-你的目標: 找驅動因子 → 量化影響 → 建議操作窗口
+你的目標: 分佈評估 → 敏感度 → 驅動因子 → 等高線圖 + 交互效應 → 操作窗口
 
-### Round 1 範例 (最佳化場景)
-**Round 1 目標**: 讀取 data_summary 的 feature importance → 用 sigma 畫圖
+⚠️ 嚴禁行為:
+- ❌ 禁止做「高變異欄位探索」— 這不是最佳化
+- ❌ 禁止用 top_correlations 找因子 — 弱相關會回傳 0 結果
+- ❌ 禁止放棄 — 即使相關性弱也必須完成以下步驟
+- ❌ 禁止忽略 data_summary 中的 Top 相關參數 — 如果 data_summary 有「Top 相關」必須在結論中提及
+- ❌ ⚠️ Round 2 禁止重複 Round 1 已做的步驟 (process_capability, sensitivity_analysis, feature_importance)
+
+✅ 必做步驟 (Round 1):
+1. `sigma.process_capability(df_active[target_col])` — 即使沒有 USL/LSL 也必須跑
+2. `sigma.sensitivity_analysis(df_active, target=target_col)` — 敏感度排名
+3. `sigma.feature_importance(df_active, target=target_col)` — 非線性驅動因子排名
+4. ⚠️ 必須用 STATE 儲存: `STATE['importances']`, `STATE['sens']`, `STATE['target_col']`
+
+✅ 必做步驟 (Round 2) — 只做 Round 1 沒做的:
+5. 用「相關性 Top-2」畫 contour + interaction（線性關係視角）
+6. 用「RF Top-2」畫 contour + interaction（非線性關係視角）
+7. `sigma.operating_window(...)` + Sweet Spot 表格
+
+### Round 1 範例
 ```python
 print("=" * 50)
-print("Round 1 目標: 讀取驅動因子排名，畫趨勢圖")
-print("  1. 引用 data_summary 中的 Feature Importance")
-print("  2. 對 Top 3 驅動因子做趨勢圖")
+print("Round 1 目標: 分佈評估 + 敏感度 + 驅動因子")
 print("=" * 50)
 
-# 從 data_summary 取欄位名，用 sigma 工具畫圖
-top_features = [c for c in ["COL1", "COL2", "COL3"] if c in df_active.columns]
-if top_features:
-    sigma.plot_trend(df_active, cols=top_features)
+target_col = "TARGET_COL"  # 從 data_summary 的 ★ 優化控制規格 取得
+
+# Step 1: 分佈評估
+cpk_result = sigma.process_capability(df_active[target_col])
+print(f"分佈: mean={cpk_result.get('mean'):.4f}, std={cpk_result.get('std'):.4f}")
+
+# Step 2: 敏感度分析
+sens = sigma.sensitivity_analysis(df_active, target=target_col, top_n=10)
+
+# Step 3: 驅動因子
+fi_result = sigma.feature_importance(df_active, target=target_col)
+importances = fi_result.get("importances", [])
+print(f"模型 R²={fi_result.get('model_score', 0):.3f}")
+for col, score in importances[:5]:
+    print(f"  {col}: importance={score:.4f}")
+
+# ⚠️ 存入 STATE 供 Round 2 使用
+STATE['importances'] = importances
+STATE['sens'] = sens  # sensitivity_analysis 回傳的 list[dict]
+STATE['target_col'] = target_col
 # ℹ️ 不下結論，不印 [ANALYSIS_COMPLETE]
 ```
 
-先判斷 data_summary 中有沒有目標變數 (Y):
-- 有 Y: data_summary 的 Feature Importance 區塊有因子排名 → 操作窗口
-- 無 Y: 嚴禁自行假設 Y → 做穩定度/setpoint 分析
+### Round 2 範例 — ⚠️ 禁止重跑 process_capability/sensitivity/feature_importance
+```python
+print("=" * 50)
+print("Round 2 目標: 等高線圖 + 交互效應 + Sweet Spot")
+print("=" * 50)
+
+target_col = STATE.get('target_col', 'TARGET_COL')
+importances = STATE.get('importances', [])
+sens = STATE.get('sens', [])
+
+# --- 組 1: 相關性 Top-2 (線性關係) ---
+corr_top2 = [s['col'] for s in sens[:2] if s['col'] in df_active.columns]
+if len(corr_top2) >= 2:
+    print(f"\\n[組1] 相關性 Top-2: {corr_top2[0]}, {corr_top2[1]}")
+    sigma.contour_response_surface(df_active, x1=corr_top2[0], x2=corr_top2[1], y=target_col)
+    sigma.interaction_plot(df_active, x1=corr_top2[0], x2=corr_top2[1], y=target_col)
+
+# --- 組 2: RF Top-2 (非線性關係) ---
+rf_top2 = [col for col, _ in importances[:2] if col in df_active.columns]
+if len(rf_top2) >= 2 and set(rf_top2) != set(corr_top2):
+    print(f"\\n[組2] RF Top-2: {rf_top2[0]}, {rf_top2[1]}")
+    sigma.contour_response_surface(df_active, x1=rf_top2[0], x2=rf_top2[1], y=target_col)
+    sigma.interaction_plot(df_active, x1=rf_top2[0], x2=rf_top2[1], y=target_col)
+
+# --- Sweet Spot ---
+ow = sigma.operating_window(df_active, target=target_col, direction="minimize")
+for rec in ow.get("sop_recommendations", [])[:5]:
+    print(f"  {rec['parameter']}: [{rec['operating_range_min']:.2f} ~ {rec['operating_range_max']:.2f}] (r={rec['correlation_with_target']:.4f})")
+print("[ANALYSIS_COMPLETE]")
+```
 
 完成條件:
-1. 有 Y: 至少列出 Top 3 驅動因子
-2. 無 Y: 至少列出穩定度指標或偏移欄位
+1. process_capability + sensitivity_analysis 敏感度圖
+2. feature_importance Top 5 因子排名
+3. 兩組 contour + interaction (相關性 Top-2 + RF Top-2)
+4. 操作窗口 Sweet Spot 表格
 """
 
 POLICY_DRIFT = """## 分析策略: 漂移/老化分析
@@ -306,11 +367,34 @@ TOOLS_DRIFT = (
 TOOLS_OPTIMIZATION = (
     SIGMA_COMMON
     + """
+### 製程能力 (Cpk)
+- `sigma.process_capability(series, usl=None, lsl=None, target=None)`
+  → `{"cp": float, "cpk": float, "ppk": float, "mean": float, "std": float, "within_spec_pct": float, "n": int, "offset_from_target": float}`
+  + 繪製含 USL/LSL/Target 規格線的直方圖 + Cpk 等級色標
+  ✅ 正確: `cpk = sigma.process_capability(df_active['Y'], usl=10, lsl=5, target=7.5)`
+
+### 敏感度分析
+- `sigma.sensitivity_analysis(df, target, top_n=10)`
+  → `[{"col": str, "sensitivity": float, "r": float, "direction": str, "y_impact_per_x_sigma": float}, ...]`
+  + 繪製水平條形圖 (正相關=藍, 負相關=紅) + 印出表格
+  ✅ 正確: `sens = sigma.sensitivity_analysis(df_active, target="Y", top_n=10)`
+
+### 交互效應圖
+- `sigma.interaction_plot(df, x1, x2, y, n_levels=3)`
+  → 繪製 X1×X2 交互效應圖 (Low/Mid/High 三水平，線條交叉=有交互)
+  ✅ 正確: `sigma.interaction_plot(df_active, x1="X1", x2="X2", y="Y")`
+
+### 等高線圖 (Response Surface)
+- `sigma.contour_response_surface(df, x1, x2, y, usl=None, lsl=None, target=None)`
+  → 繪製二維等高線圖，含規格等高線 (USL/LSL/Target) + 最佳觀測點標記
+  ✅ 正確: `sigma.contour_response_surface(df_active, x1='X1', x2='X2', y='Y', usl=10, target=7.5)`
+
 ### 特徵 & 因子
 - `sigma.feature_importance(df, target, method="random_forest", top_n=15)`
   → `{"importances": [(col, score), ...], "model_score": float}`
 - `sigma.operating_window(df, target, direction="maximize")`
-  → `{"window_specs": dict}`
+  → `{"sop_recommendations": [{"parameter": str, "suggested_target": float, "operating_range_min": float, "operating_range_max": float, "correlation_with_target": float}, ...], "good_batch_count": int}`
+  ✅ 正確: `ow = sigma.operating_window(df_active, target="Y"); for rec in ow.get("sop_recommendations", []):`
 - `sigma.top_correlations(df, target=col, top_n=15)`
   → `[(colA, colB, corr), ...]`
   ✅ 正確: `for a, b, r in sigma.top_correlations(df, target="COL"):`

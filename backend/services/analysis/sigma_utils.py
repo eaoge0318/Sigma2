@@ -2699,13 +2699,32 @@ def operating_window(
     bad = df[~good_mask]
 
     windows = []
+    # 計算每個欄位跟 target 的相關係數
+    _corr_with_target = {}
+    _numeric_cols = df.select_dtypes(include="number").columns
+    for col in _numeric_cols:
+        if col == target:
+            continue
+        _pair = df[[target, col]].dropna()
+        if len(_pair) >= 10:
+            _r = float(_pair.corr().iloc[0, 1])
+            if not np.isnan(_r):
+                _corr_with_target[col] = _r
+
     for col in df.columns:
         if col == target:
             continue
         g_mean, g_std = good[col].mean(), good[col].std()
         b_mean = bad[col].mean()
         diff = abs(g_mean - b_mean)
+        _r = _corr_with_target.get(col, 0.0)
+        _abs_r = abs(_r)
+        # 只保留有一定相關性的參數 (|r| > 0.1)
+        if _abs_r < 0.1:
+            continue
         if g_std > 0:
+            # 複合分數 = |r| × diff（相關性加權的差異量）
+            _weighted_score = _abs_r * diff
             window = {
                 "parameter": col,
                 "optimal_range": (
@@ -2714,22 +2733,54 @@ def operating_window(
                 ),
                 "optimal_mean": round(float(g_mean), 4),
                 "diff_vs_bad": round(float(diff), 4),
+                "correlation_with_target": round(float(_r), 4),
+                "abs_correlation": round(float(_abs_r), 4),
+                "weighted_score": round(float(_weighted_score), 4),
+                "operating_range_min": round(float(g_mean - g_std), 4),
+                "operating_range_max": round(float(g_mean + g_std), 4),
+                "suggested_target": round(float(g_mean), 4),
             }
             windows.append(window)
 
-    windows.sort(key=lambda x: x["diff_vs_bad"], reverse=True)
+    # 用 weighted_score (|r| × diff) 排序，而非單純 diff
+    windows.sort(key=lambda x: x["weighted_score"], reverse=True)
 
     print(f"[sigma] 操作窗口 (target={target}, {direction}):")
     for w in windows[:top_k]:
         lo, hi = w["optimal_range"]
         print(
-            f"  {w['parameter']}: [{lo:.2f} ~ {hi:.2f}] (差異={w['diff_vs_bad']:.2f})"
+            f"  {w['parameter']}: [{lo:.2f} ~ {hi:.2f}] "
+            f"(r={w['correlation_with_target']:+.4f}, diff={w['diff_vs_bad']:.2f}, "
+            f"score={w['weighted_score']:.2f})"
         )
 
-    _result = {"windows": windows[:top_k]}
+    # sop_recommendations 格式 (供 LLM code 使用)
+    _sop = []
+    for w in windows[:top_k]:
+        _sop.append(
+            {
+                "parameter": w["parameter"],
+                "suggested_target": w["suggested_target"],
+                "operating_range_min": w["operating_range_min"],
+                "operating_range_max": w["operating_range_max"],
+                "correlation_with_target": w["correlation_with_target"],
+                "diff_vs_bad": w["diff_vs_bad"],
+                "weighted_score": w["weighted_score"],
+            }
+        )
+
+    _result = {
+        "windows": windows[:top_k],
+        "sop_recommendations": _sop,
+        "good_batch_count": int(good_mask.sum()),
+    }
     if auto_chart and windows:
-        _items = [(w["parameter"], w["diff_vs_bad"]) for w in windows[:top_k]]
-        _auto_bar_chart(_items, f"操作窗口 (target={target})", xlabel="差異")
+        _items = [(w["parameter"], w["weighted_score"]) for w in windows[:top_k]]
+        _auto_bar_chart(
+            _items,
+            f"操作窗口 (target={target})",
+            xlabel="|r| × 差異 (相關性加權分數)",
+        )
     return _result
 
 
@@ -3450,6 +3501,16 @@ def _preprocess_anomaly_B(
             rz = robust_zscore(df_active[[y_col]], threshold=3.5, auto_chart=False)
             _oc = rz.get("outlier_count", 0)
             _oi = rz.get("outlier_indices", [])
+            # Debug: log Z-score stats for diagnosis
+            _s = df_active[y_col]
+            _med = _s.median()
+            _mad_raw = (_s - _med).abs().median()
+            _max_val = _s.max()
+            _z_max = 0.6745 * abs(_max_val - _med) / _mad_raw if _mad_raw > 1e-9 else 0
+            print(
+                f"[preprocess:B] {y_col}: median={_med:.2f}, MAD={_mad_raw:.4f}, "
+                f"max={_max_val:.2f}, Z(max)={_z_max:.2f}, outliers={_oc}"
+            )
             # Cap: 超過 6% 時只取 Z 值最大的 top 6%
             if _oc > _max_outliers and _oi:
                 _series = df_active[y_col]
@@ -4985,9 +5046,10 @@ def preprocess_summary_text(prep: Dict) -> str:
                     _feat = w.get("parameter", "?")
                     _opt = w.get("optimal_range", (0, 0))
                     _lo, _hi = _opt[0], _opt[1]
-                    _eff = w.get("diff_vs_bad", 0)
+                    _r = w.get("correlation_with_target", 0)
+                    _ws = w.get("weighted_score", 0)
                     lines.append(
-                        f"  {_feat}: [{_lo:.3f} ~ {_hi:.3f}] (diff={_eff:.3f})"
+                        f"  {_feat}: [{_lo:.3f} ~ {_hi:.3f}] (r={_r:+.4f}, score={_ws:.2f})"
                     )
 
             # Cross-correlation lag
@@ -5797,6 +5859,66 @@ def generate_preprocess_charts(
                         )
                         chart_data2["is_overview"] = False  # 掛在發現下不掛概述
                         charts.append(chart_data2)
+
+                        # --- 第三張圖: Box plot 分布對比 (異常段 vs 基線) ---
+                        try:
+                            _compare_cols = [y_col] + _factor_cols[:3]
+                            _n_box = len(_compare_cols)
+                            fig3, axes3 = plt.subplots(
+                                1, _n_box, figsize=(3.5 * _n_box, 4), squeeze=False
+                            )
+                            axes3 = axes3[0]
+                            _seg_data = _df.iloc[_s : _e + 1]
+                            _base_data = pd.concat(
+                                [_df.iloc[: max(0, _s)], _df.iloc[_e + 1 :]]
+                            )
+                            for ci, ccol in enumerate(_compare_cols):
+                                ax3 = axes3[ci]
+                                _box_data = []
+                                _box_labels = []
+                                if ccol in _base_data.columns:
+                                    _bv = _base_data[ccol].dropna()
+                                    if len(_bv) > 0:
+                                        _box_data.append(_bv.values)
+                                        _box_labels.append("基線")
+                                if ccol in _seg_data.columns:
+                                    _sv = _seg_data[ccol].dropna()
+                                    if len(_sv) > 0:
+                                        _box_data.append(_sv.values)
+                                        _box_labels.append(f"#{_s}-{_e}")
+                                if _box_data:
+                                    bp = ax3.boxplot(
+                                        _box_data,
+                                        labels=_box_labels,
+                                        patch_artist=True,
+                                        widths=0.5,
+                                    )
+                                    _bp_colors = ["#93C5FD", "#F87171"]
+                                    for pi, patch in enumerate(bp["boxes"]):
+                                        patch.set_facecolor(_bp_colors[pi % 2])
+                                        patch.set_alpha(0.7)
+                                _short_name = ccol
+                                if len(_short_name) > 15:
+                                    _short_name = _short_name[:13] + ".."
+                                ax3.set_title(_short_name, fontsize=9)
+                                ax3.grid(True, alpha=0.2, axis="y")
+                            fig3.suptitle(
+                                f"[前處理] {y_col} #{_s}-{_e} 分布對比",
+                                fontsize=11,
+                                fontweight="bold",
+                            )
+                            plt.tight_layout()
+                            chart_data3 = _fig_to_base64(fig3)
+                            chart_data3["title"] = (
+                                f"[前處理] {y_col} #{_s}-{_e} 分布對比 (基線 vs 異常段)"
+                            )
+                            chart_data3["is_overview"] = False
+                            charts.append(chart_data3)
+                        except Exception as _be:
+                            print(
+                                f"[preprocess_charts] Box plot "
+                                f"{y_col} #{_s}-{_e} failed: {_be}"
+                            )
                     except Exception as _fe:
                         print(
                             f"[preprocess_charts] Segment factor chart "
@@ -5904,6 +6026,98 @@ def generate_preprocess_charts(
                 except Exception as _e:
                     print(f"[preprocess_charts] optim scatter failed: {_e}")
 
+        # --- OPTIMIZATION 3b: Top-3 相關係數雙軸趨勢圖 ---
+        if _df is not None and target_col in _df.columns:
+            try:
+                # 計算所有數值欄位與目標的 Pearson 相關係數
+                _numeric_df = _df.select_dtypes(include="number")
+                _corrs = {}
+                for _c in _numeric_df.columns:
+                    if _c == target_col:
+                        continue
+                    _pair = _numeric_df[[target_col, _c]].dropna()
+                    if len(_pair) > 10:
+                        _r = _pair.corr().iloc[0, 1]
+                        if not np.isnan(_r):
+                            _corrs[_c] = _r
+
+                # 取 |r| 最大的 top 3
+                _sorted_corrs = sorted(
+                    _corrs.items(), key=lambda x: abs(x[1]), reverse=True
+                )[:3]
+
+                if _sorted_corrs:
+                    _n = len(_sorted_corrs)
+                    fig, axes = plt.subplots(_n, 1, figsize=(14, 4 * _n), sharex=True)
+                    if _n == 1:
+                        axes = [axes]
+
+                    _y_vals = _df[target_col].values
+                    _x_idx = np.arange(len(_y_vals))
+                    _win = max(5, len(_y_vals) // 20)
+
+                    _colors_x = ["#F97316", "#8B5CF6", "#10B981"]  # 橘/紫/綠
+
+                    for _i, (_col, _r) in enumerate(_sorted_corrs):
+                        ax1 = axes[_i]
+                        _x_vals = _df[_col].values
+
+                        # 左軸: 目標 Y (藍)
+                        ax1.plot(
+                            _x_idx, _y_vals, color="#93C5FD", linewidth=0.6, alpha=0.4
+                        )
+                        _ma_y = pd.Series(_y_vals).rolling(_win, center=True).mean()
+                        ax1.plot(
+                            _x_idx,
+                            _ma_y.values,
+                            color="#3B82F6",
+                            linewidth=2.0,
+                            label=f"{target_col} (MA)",
+                        )
+                        ax1.set_ylabel(target_col, color="#3B82F6", fontsize=9)
+                        ax1.tick_params(axis="y", labelcolor="#3B82F6")
+
+                        # 右軸: 相關 X (橘/紫/綠)
+                        ax2 = ax1.twinx()
+                        _xc = _colors_x[_i % len(_colors_x)]
+                        ax2.plot(_x_idx, _x_vals, color=_xc, linewidth=0.6, alpha=0.3)
+                        _ma_x = pd.Series(_x_vals).rolling(_win, center=True).mean()
+                        ax2.plot(
+                            _x_idx,
+                            _ma_x.values,
+                            color=_xc,
+                            linewidth=2.0,
+                            label=f"{_col} (MA)",
+                        )
+                        ax2.set_ylabel(_col, color=_xc, fontsize=9)
+                        ax2.tick_params(axis="y", labelcolor=_xc)
+
+                        # 標題含 r 值 + 方向
+                        _dir = "↑正" if _r > 0 else "↓負"
+                        ax1.set_title(
+                            f"{_col}  (r={_r:.4f} {_dir}相關)",
+                            fontsize=10,
+                            fontweight="bold",
+                        )
+
+                        # 合併 legend
+                        _h1, _l1 = ax1.get_legend_handles_labels()
+                        _h2, _l2 = ax2.get_legend_handles_labels()
+                        ax1.legend(_h1 + _h2, _l1 + _l2, loc="upper right", fontsize=8)
+                        ax1.grid(True, alpha=0.2)
+
+                    axes[-1].set_xlabel("樣本序號")
+                    fig.suptitle(
+                        f"[前處理] Top-{_n} 相關參數趨勢對比 (Target: {target_col})",
+                        fontsize=12,
+                        fontweight="bold",
+                    )
+                    plt.tight_layout(rect=[0, 0, 1, 0.96])
+                    chart_data = _fig_to_base64(fig)
+                    chart_data["title"] = f"[前處理] Top-{_n} 相關參數趨勢對比"
+                    charts.append(chart_data)
+            except Exception as _e:
+                print(f"[preprocess_charts] optim corr dual-axis failed: {_e}")
         # --- OPTIMIZATION 4: Operating Window (sweet spot) ---
         ow = ta.get("operating_window", {})
         _windows = ow.get("windows", [])
@@ -5950,8 +6164,12 @@ def generate_preprocess_charts(
                         alpha=0.8,
                     )
                     axes[i].set_yticks([])
+                    _w_r = w.get("correlation_with_target", 0)
+                    _r_tag = f"  r={_w_r:+.3f}" if _w_r else ""
                     axes[i].set_title(
-                        f"{col_name}  [{lo:.2f} ~ {hi:.2f}]", fontsize=10, loc="left"
+                        f"{col_name}  [{lo:.2f} ~ {hi:.2f}]{_r_tag}",
+                        fontsize=10,
+                        loc="left",
                     )
                     axes[i].grid(axis="x", alpha=0.3)
                 plt.suptitle(
@@ -6037,6 +6255,60 @@ def generate_preprocess_charts(
                     charts.append(chart_data)
                 except Exception as _e:
                     print(f"[preprocess_charts] deep compare #{iv_str} failed: {_e}")
+
+                # 1b) Box plot 分布對比 (異常段 vs 基線)
+                if group_diff and len(group_diff) >= 2 and _df_deep is not None:
+                    try:
+                        parts = iv_str.split("-")
+                        _bs, _be = int(parts[0]), int(parts[1])
+                        top_cols = [x[0] for x in group_diff[:4]]
+                        _n_box = len(top_cols)
+                        fig_box, axes_box = plt.subplots(
+                            1, _n_box, figsize=(3.5 * _n_box, 4), squeeze=False
+                        )
+                        axes_box = axes_box[0]
+                        _seg_df = _df_deep.iloc[_bs : _be + 1]
+                        _base_df = pd.concat(
+                            [_df_deep.iloc[: max(0, _bs)], _df_deep.iloc[_be + 1 :]]
+                        )
+                        for ci, ccol in enumerate(top_cols):
+                            ax_b = axes_box[ci]
+                            _bd, _bl = [], []
+                            if ccol in _base_df.columns:
+                                _bv = _base_df[ccol].dropna()
+                                if len(_bv) > 0:
+                                    _bd.append(_bv.values)
+                                    _bl.append("基線")
+                            if ccol in _seg_df.columns:
+                                _sv = _seg_df[ccol].dropna()
+                                if len(_sv) > 0:
+                                    _bd.append(_sv.values)
+                                    _bl.append(f"#{iv_str}")
+                            if _bd:
+                                bp = ax_b.boxplot(
+                                    _bd, labels=_bl, patch_artist=True, widths=0.5
+                                )
+                                _bpc = ["#93C5FD", "#F87171"]
+                                for pi, patch in enumerate(bp["boxes"]):
+                                    patch.set_facecolor(_bpc[pi % 2])
+                                    patch.set_alpha(0.7)
+                            _sn = ccol if len(ccol) <= 18 else ccol[:16] + ".."
+                            ax_b.set_title(_sn, fontsize=9)
+                            ax_b.grid(True, alpha=0.2, axis="y")
+                        fig_box.suptitle(
+                            f"[深度分析] #{iv_str} 分布對比 (基線 vs 異常段)",
+                            fontsize=11,
+                            fontweight="bold",
+                        )
+                        plt.tight_layout()
+                        chart_box = _fig_to_base64(fig_box)
+                        chart_box["title"] = (
+                            f"[深度分析] #{iv_str} 分布對比 (基線 vs 異常段)"
+                        )
+                        chart_box["is_overview"] = False
+                        charts.append(chart_box)
+                    except Exception as _be:
+                        print(f"[preprocess_charts] deep box #{iv_str} failed: {_be}")
             # 2) 主導欄位趨勢圖 (帶異常標記)
             if (
                 dominant_col
@@ -6478,3 +6750,689 @@ def plot_distribution_compare(
         plt.show()
     except Exception as e:
         print(f"[sigma.plot_distribution_compare] 繪圖失敗: {e}")
+
+
+# ============================================================
+# 7. 製程能力分析 (Cpk) + 等高線圖
+# ============================================================
+
+
+def process_capability(
+    series,
+    usl=None,
+    lsl=None,
+    target=None,
+    title: str = "",
+):
+    """
+    製程能力分析。
+    計算 Cp, Cpk, Ppk 並繪製直方圖 + USL/LSL/Target 線。
+
+    Parameters:
+        series: pd.Series 或 array-like
+        usl: 規格上限 (可選)
+        lsl: 規格下限 (可選)
+        target: 目標值 (可選)
+        title: 圖表標題
+
+    Returns:
+        dict: {cp, cpk, ppk, mean, std, within_spec_pct, n, usl, lsl, target}
+    """
+    try:
+        import matplotlib.pyplot as plt
+
+        data = pd.Series(series).dropna()
+        if len(data) < 5:
+            print("[sigma.process_capability] 資料不足 5 筆，跳過")
+            return {"error": "資料不足"}
+
+        mean = float(data.mean())
+        std = float(data.std(ddof=1))
+        n = len(data)
+
+        result = {"mean": mean, "std": std, "n": n}
+
+        # Cp / Cpk 計算 (需要 USL 和 LSL)
+        if usl is not None and lsl is not None:
+            usl, lsl = float(usl), float(lsl)
+            result["usl"] = usl
+            result["lsl"] = lsl
+
+            if std > 1e-10:
+                cp = (usl - lsl) / (6 * std)
+                cpu = (usl - mean) / (3 * std)
+                cpl = (mean - lsl) / (3 * std)
+                cpk = min(cpu, cpl)
+                result["cp"] = round(cp, 3)
+                result["cpk"] = round(cpk, 3)
+                result["cpu"] = round(cpu, 3)
+                result["cpl"] = round(cpl, 3)
+            else:
+                result["cp"] = float("inf")
+                result["cpk"] = float("inf")
+
+            # 規格內比例
+            within = ((data >= lsl) & (data <= usl)).sum()
+            result["within_spec_pct"] = round(within / n * 100, 2)
+        elif usl is not None:
+            usl = float(usl)
+            result["usl"] = usl
+            if std > 1e-10:
+                result["cpu"] = round((usl - mean) / (3 * std), 3)
+            within = (data <= usl).sum()
+            result["within_spec_pct"] = round(within / n * 100, 2)
+        elif lsl is not None:
+            lsl = float(lsl)
+            result["lsl"] = lsl
+            if std > 1e-10:
+                result["cpl"] = round((mean - lsl) / (3 * std), 3)
+            within = (data >= lsl).sum()
+            result["within_spec_pct"] = round(within / n * 100, 2)
+
+        if target is not None:
+            target = float(target)
+            result["target"] = target
+            result["offset_from_target"] = round(mean - target, 4)
+
+        # Ppk (使用整體標準差)
+        std_overall = float(data.std(ddof=0))
+        if std_overall > 1e-10:
+            if usl is not None and lsl is not None:
+                ppk = min(
+                    (usl - mean) / (3 * std_overall), (mean - lsl) / (3 * std_overall)
+                )
+                result["ppk"] = round(ppk, 3)
+
+        # --- 繪圖 ---
+        col_name = getattr(series, "name", "Parameter")
+        _desc = title or f"{col_name} 製程能力分析"
+        cpk_str = f"Cpk={result.get('cpk', 'N/A')}"
+        if isinstance(result.get("cpk"), float):
+            cpk_str = f"Cpk={result['cpk']:.3f}"
+        print(f"[圖表] {_desc} ({cpk_str})")
+
+        fig, ax = plt.subplots(figsize=(12, 6))
+
+        # 直方圖
+        bins = min(50, max(15, n // 5))
+        ax.hist(
+            data,
+            bins=bins,
+            alpha=0.6,
+            color="#3B82F6",
+            edgecolor="#1E40AF",
+            density=True,
+            label="分佈",
+        )
+
+        # 密度曲線
+        try:
+            from scipy.stats import norm
+
+            x_range = np.linspace(data.min() - std * 2, data.max() + std * 2, 200)
+            pdf = norm.pdf(x_range, mean, std)
+            ax.plot(x_range, pdf, color="#3B82F6", linewidth=2, label="常態分佈")
+        except ImportError:
+            pass
+
+        # 均值線
+        ax.axvline(
+            mean, color="#1E40AF", linewidth=2, linestyle="-", label=f"Mean={mean:.4f}"
+        )
+
+        # 規格線
+        if lsl is not None:
+            ax.axvline(
+                lsl, color="#EF4444", linewidth=2.5, linestyle="--", label=f"LSL={lsl}"
+            )
+        if usl is not None:
+            ax.axvline(
+                usl, color="#EF4444", linewidth=2.5, linestyle="--", label=f"USL={usl}"
+            )
+        if target is not None:
+            ax.axvline(
+                target,
+                color="#10B981",
+                linewidth=2.5,
+                linestyle="-.",
+                label=f"Target={target}",
+            )
+
+        # USL/LSL 之間的區域著色
+        if usl is not None and lsl is not None:
+            ax.axvspan(lsl, usl, alpha=0.08, color="#10B981")
+
+        # 統計資訊文字框
+        stats_lines = [f"n = {n}", f"μ = {mean:.4f}", f"σ = {std:.4f}"]
+        if "cp" in result:
+            stats_lines.append(f"Cp = {result['cp']:.3f}")
+        if "cpk" in result:
+            stats_lines.append(f"Cpk = {result['cpk']:.3f}")
+        if "ppk" in result:
+            stats_lines.append(f"Ppk = {result['ppk']:.3f}")
+        if "within_spec_pct" in result:
+            stats_lines.append(f"規格內 = {result['within_spec_pct']:.1f}%")
+        if "offset_from_target" in result:
+            stats_lines.append(f"偏移 = {result['offset_from_target']:+.4f}")
+
+        stats_text = "\n".join(stats_lines)
+        ax.text(
+            0.98,
+            0.95,
+            stats_text,
+            transform=ax.transAxes,
+            fontsize=10,
+            verticalalignment="top",
+            horizontalalignment="right",
+            bbox=dict(
+                boxstyle="round,pad=0.5",
+                facecolor="white",
+                edgecolor="#D1D5DB",
+                alpha=0.9,
+            ),
+            fontfamily="monospace",
+        )
+
+        # Cpk 等級色標
+        cpk_val = result.get("cpk")
+        if cpk_val is not None and isinstance(cpk_val, (int, float)):
+            if cpk_val >= 1.33:
+                grade, grade_color = "優良 (≥1.33)", "#10B981"
+            elif cpk_val >= 1.0:
+                grade, grade_color = "尚可 (≥1.0)", "#F59E0B"
+            elif cpk_val >= 0.67:
+                grade, grade_color = "警告 (≥0.67)", "#F97316"
+            else:
+                grade, grade_color = "不足 (<0.67)", "#EF4444"
+            ax.text(
+                0.02,
+                0.95,
+                f"Cpk: {grade}",
+                transform=ax.transAxes,
+                fontsize=12,
+                fontweight="bold",
+                color=grade_color,
+                verticalalignment="top",
+            )
+
+        ax.set_xlabel(col_name)
+        ax.set_ylabel("機率密度")
+        ax.set_title(_desc)
+        ax.legend(loc="upper left", fontsize=9)
+        ax.grid(True, alpha=0.3)
+        plt.tight_layout()
+        plt.show()
+
+        return result
+
+    except Exception as e:
+        print(f"[sigma.process_capability] 失敗: {e}")
+        return {"error": str(e)}
+
+
+def contour_response_surface(
+    df: pd.DataFrame,
+    x1,
+    x2,
+    y,
+    usl=None,
+    lsl=None,
+    target=None,
+    resolution: int = 50,
+    title: str = "",
+):
+    """
+    等高線圖 (Response Surface)。
+    用 Top-2 重要 X 和 Y 繪製二維等高線圖，標示最佳操作區域。
+
+    Parameters:
+        df: DataFrame
+        x1, x2: 兩個 X 欄位名
+        y: Y 欄位名
+        usl, lsl, target: Y 的規格
+        resolution: 網格解析度
+        title: 圖表標題
+    """
+    try:
+        import matplotlib.pyplot as plt
+        from scipy.interpolate import griddata
+
+        # 正規化欄位名
+        x1_col = _flatten_any(x1)[0] if _flatten_any(x1) else None
+        x2_col = _flatten_any(x2)[0] if _flatten_any(x2) else None
+        y_col = _flatten_any(y)[0] if _flatten_any(y) else None
+
+        if not x1_col or not x2_col or not y_col:
+            print("[sigma.contour_response_surface] x1/x2/y 欄位名無效")
+            return
+
+        for col in [x1_col, x2_col, y_col]:
+            if col not in df.columns:
+                print(f"[sigma.contour_response_surface] '{col}' 不存在，跳過")
+                return
+
+        data = df[[x1_col, x2_col, y_col]].dropna()
+        if len(data) < 10:
+            print("[sigma.contour_response_surface] 資料不足 10 筆，跳過")
+            return
+
+        x1_vals = data[x1_col].values
+        x2_vals = data[x2_col].values
+        y_vals = data[y_col].values
+
+        _desc = title or f"Response Surface: {y_col} = f({x1_col}, {x2_col})"
+        print(f"[圖表] {_desc}")
+
+        # 建立網格
+        x1_grid = np.linspace(x1_vals.min(), x1_vals.max(), resolution)
+        x2_grid = np.linspace(x2_vals.min(), x2_vals.max(), resolution)
+        X1, X2 = np.meshgrid(x1_grid, x2_grid)
+
+        # 插值 (cubic, fallback to linear, then nearest)
+        try:
+            Z = griddata((x1_vals, x2_vals), y_vals, (X1, X2), method="cubic")
+        except Exception:
+            Z = None
+        if Z is None or np.all(np.isnan(Z)):
+            try:
+                Z = griddata((x1_vals, x2_vals), y_vals, (X1, X2), method="linear")
+            except Exception:
+                Z = None
+        if Z is None or np.all(np.isnan(Z)):
+            try:
+                Z = griddata((x1_vals, x2_vals), y_vals, (X1, X2), method="nearest")
+            except Exception:
+                Z = None
+
+        fig, ax = plt.subplots(figsize=(12, 9))
+
+        if Z is not None and not np.all(np.isnan(Z)):
+            # 等高線填色
+            levels = 20
+            cf = ax.contourf(X1, X2, Z, levels=levels, cmap="RdYlGn_r", alpha=0.85)
+            plt.colorbar(cf, ax=ax, label=y_col, shrink=0.85)
+
+            # 等高線線條
+            ax.contour(
+                X1, X2, Z, levels=levels, colors="white", linewidths=0.3, alpha=0.5
+            )
+
+            # 規格等高線 (USL/LSL/Target)
+            if target is not None:
+                target = float(target)
+                cs_target = ax.contour(
+                    X1,
+                    X2,
+                    Z,
+                    levels=[target],
+                    colors=["#10B981"],
+                    linewidths=3,
+                    linestyles=["-"],
+                )
+                ax.clabel(cs_target, fmt=f"Target={target:.2f}", fontsize=9)
+            if usl is not None:
+                usl = float(usl)
+                cs_usl = ax.contour(
+                    X1,
+                    X2,
+                    Z,
+                    levels=[usl],
+                    colors=["#EF4444"],
+                    linewidths=2.5,
+                    linestyles=["--"],
+                )
+                ax.clabel(cs_usl, fmt=f"USL={usl:.2f}", fontsize=9)
+            if lsl is not None:
+                lsl = float(lsl)
+                cs_lsl = ax.contour(
+                    X1,
+                    X2,
+                    Z,
+                    levels=[lsl],
+                    colors=["#EF4444"],
+                    linewidths=2.5,
+                    linestyles=["--"],
+                )
+                ax.clabel(cs_lsl, fmt=f"LSL={lsl:.2f}", fontsize=9)
+        else:
+            print("[sigma.contour_response_surface] 插值全 NaN，改用散佈圖模式")
+
+        # 散佈原始點
+        ax.scatter(
+            x1_vals,
+            x2_vals,
+            c=y_vals,
+            cmap="RdYlGn_r",
+            edgecolors="black",
+            s=15,
+            alpha=0.6,
+            linewidths=0.5,
+        )
+
+        # 最佳點標記
+        if target is not None:
+            best_idx = np.argmin(np.abs(y_vals - target))
+        else:
+            best_idx = np.argmin(y_vals)  # minimize by default
+        ax.scatter(
+            x1_vals[best_idx],
+            x2_vals[best_idx],
+            color="#FBBF24",
+            s=200,
+            marker="*",
+            edgecolors="black",
+            linewidths=1.5,
+            zorder=10,
+            label="最佳觀測點",
+        )
+
+        ax.set_xlabel(x1_col, fontsize=12)
+        ax.set_ylabel(x2_col, fontsize=12)
+        ax.set_title(_desc, fontsize=13, fontweight="bold")
+        ax.legend(loc="upper right")
+        ax.grid(True, alpha=0.2)
+        plt.tight_layout()
+        plt.show()
+
+    except ImportError:
+        print(
+            "[sigma.contour_response_surface] 需要 scipy.interpolate (pip install scipy)"
+        )
+    except Exception as e:
+        print(f"[sigma.contour_response_surface] 繪圖失敗: {e}")
+
+
+def sensitivity_analysis(
+    df: pd.DataFrame,
+    target,
+    top_n: int = 10,
+    title: str = "",
+):
+    """
+    敏感度分析 (Sensitivity Analysis)。
+    計算每個 X 變動 1σ 時，Y 變動多少 σ（標準化敏感度）。
+
+    Parameters:
+        df: DataFrame
+        target: Y 欄位名
+        top_n: 顯示前幾名
+        title: 圖表標題
+
+    Returns:
+        list[dict]: [{col, sensitivity, r, direction}, ...]
+    """
+    try:
+        import matplotlib.pyplot as plt
+
+        target_col = _flatten_any(target)[0] if _flatten_any(target) else None
+        if not target_col or target_col not in df.columns:
+            print(f"[sigma.sensitivity_analysis] '{target}' 不存在，跳過")
+            return []
+
+        y = df[target_col].dropna()
+        y_std = float(y.std())
+        if y_std < 1e-10:
+            print("[sigma.sensitivity_analysis] Y 標準差為 0，跳過")
+            return []
+
+        numeric_cols = df.select_dtypes(include="number").columns.tolist()
+        numeric_cols = [c for c in numeric_cols if c != target_col]
+
+        results = []
+        for col in numeric_cols:
+            pair = df[[target_col, col]].dropna()
+            if len(pair) < 10:
+                continue
+            x_std = float(pair[col].std())
+            if x_std < 1e-10:
+                continue
+
+            r = float(pair.corr().iloc[0, 1])
+            if np.isnan(r):
+                continue
+
+            # 標準化敏感度 = r * (σ_y / σ_x) * (σ_x / σ_y) = r
+            # 但更有用的: β_standardized = r (in simple linear regression)
+            # 實際敏感度: Δy_σ = |r| (Y 變動幾個 σ when X 變動 1σ)
+            sensitivity = abs(r)
+            direction = "↑正" if r > 0 else "↓負"
+
+            results.append(
+                {
+                    "col": col,
+                    "sensitivity": round(sensitivity, 4),
+                    "r": round(r, 4),
+                    "direction": direction,
+                    "x_std": round(x_std, 4),
+                    "y_impact_per_x_sigma": round(r * y_std, 4),
+                }
+            )
+
+        results.sort(key=lambda x: x["sensitivity"], reverse=True)
+        results = results[:top_n]
+
+        if not results:
+            print("[sigma.sensitivity_analysis] 無有效結果")
+            return []
+
+        # --- 繪圖 ---
+        _desc = title or f"敏感度分析: {target_col}"
+        print(f"[圖表] {_desc}")
+
+        fig, ax = plt.subplots(figsize=(12, max(4, len(results) * 0.5 + 1)))
+
+        cols = [r["col"] for r in reversed(results)]
+        sens = [r["sensitivity"] for r in reversed(results)]
+        colors = ["#EF4444" if r["r"] < 0 else "#3B82F6" for r in reversed(results)]
+
+        bars = ax.barh(cols, sens, color=colors, alpha=0.8, edgecolor="white")
+
+        # 數值標示
+        for bar, r_item in zip(bars, reversed(results)):
+            w = bar.get_width()
+            label = f"r={r_item['r']:+.3f} {r_item['direction']}"
+            ax.text(
+                w + 0.005,
+                bar.get_y() + bar.get_height() / 2,
+                label,
+                va="center",
+                fontsize=9,
+                color="#374151",
+            )
+
+        ax.set_xlabel("標準化敏感度 |r| (X 變動 1σ → Y 變動幾 σ)")
+        ax.set_title(_desc, fontsize=12, fontweight="bold")
+
+        # 圖例
+        from matplotlib.patches import Patch
+
+        legend_elements = [
+            Patch(facecolor="#3B82F6", label="正相關 (X↑ → Y↑)"),
+            Patch(facecolor="#EF4444", label="負相關 (X↑ → Y↓)"),
+        ]
+        ax.legend(handles=legend_elements, loc="lower right", fontsize=9)
+        ax.grid(True, alpha=0.3, axis="x")
+        ax.set_xlim(0, max(sens) * 1.3)
+        plt.tight_layout()
+        plt.show()
+
+        # 印出表格
+        print(f"\n{'參數':<35} {'敏感度':>8} {'r值':>8} {'方向':>5} {'Y變量/Xσ':>10}")
+        print("-" * 75)
+        for r in results:
+            print(
+                f"{r['col']:<35} {r['sensitivity']:>8.4f} {r['r']:>+8.4f} "
+                f"{r['direction']:>5} {r['y_impact_per_x_sigma']:>+10.4f}"
+            )
+
+        return results
+
+    except Exception as e:
+        print(f"[sigma.sensitivity_analysis] 失敗: {e}")
+        return []
+
+
+def interaction_plot(
+    df: pd.DataFrame,
+    x1,
+    x2,
+    y,
+    n_levels: int = 3,
+    title: str = "",
+):
+    """
+    交互效應圖 (Interaction Plot)。
+    將 X1, X2 各分 n_levels 個水平，看 Y 的均值如何隨 X1 變化（線 = X2 水平）。
+    如果線條平行 → 無交互效應；如果交叉 → 有交互效應。
+
+    Parameters:
+        df: DataFrame
+        x1, x2: 兩個 X 欄位名
+        y: Y 欄位名
+        n_levels: 分幾個水平 (default=3: Low/Mid/High)
+        title: 圖表標題
+    """
+    try:
+        import matplotlib.pyplot as plt
+
+        x1_col = _flatten_any(x1)[0] if _flatten_any(x1) else None
+        x2_col = _flatten_any(x2)[0] if _flatten_any(x2) else None
+        y_col = _flatten_any(y)[0] if _flatten_any(y) else None
+
+        if not all([x1_col, x2_col, y_col]):
+            print("[sigma.interaction_plot] 欄位名無效")
+            return
+
+        for col in [x1_col, x2_col, y_col]:
+            if col not in df.columns:
+                print(f"[sigma.interaction_plot] '{col}' 不存在，跳過")
+                return
+
+        data = df[[x1_col, x2_col, y_col]].dropna()
+        if len(data) < 20:
+            print("[sigma.interaction_plot] 資料不足 20 筆，跳過")
+            return
+
+        _desc = title or f"交互效應: {y_col} = f({x1_col} × {x2_col})"
+        print(f"[圖表] {_desc}")
+
+        # 分水平 — 不預設 labels，讓 qcut 自動決定 bin 數（duplicates="drop" 可能減少）
+        try:
+            _x1_q = pd.qcut(data[x1_col], n_levels, duplicates="drop")
+            _x2_q = pd.qcut(data[x2_col], n_levels, duplicates="drop")
+        except Exception as _qe:
+            print(f"[sigma.interaction_plot] qcut 失敗: {_qe}")
+            return
+
+        # 重命名 categories 為 Low/Mid/High
+        _rename_map = {0: "Low", 1: "Mid", 2: "High"}
+        data["_x1_level"] = _x1_q.cat.codes.map(
+            lambda c: _rename_map.get(c, f"L{c + 1}")
+        ).astype("category")
+        data["_x2_level"] = _x2_q.cat.codes.map(
+            lambda c: _rename_map.get(c, f"L{c + 1}")
+        ).astype("category")
+
+        # 重新取實際 level labels
+        x2_levels = sorted(data["_x2_level"].unique())
+        x1_levels = sorted(data["_x1_level"].unique())
+
+        # 計算每組均值
+        grouped = data.groupby(["_x1_level", "_x2_level"])[y_col].agg(["mean", "count"])
+        grouped = grouped.reset_index()
+
+        fig, axes = plt.subplots(1, 2, figsize=(14, 5.5))
+
+        # --- Plot 1: X1 為 X 軸, X2 為線條 ---
+        _colors = ["#3B82F6", "#F97316", "#10B981", "#8B5CF6", "#EF4444"]
+        for i, x2_lv in enumerate(x2_levels):
+            subset = grouped[grouped["_x2_level"] == x2_lv]
+            if len(subset) > 0:
+                axes[0].plot(
+                    subset["_x1_level"].astype(str),
+                    subset["mean"],
+                    marker="o",
+                    linewidth=2,
+                    markersize=8,
+                    color=_colors[i % len(_colors)],
+                    label=f"{x2_col}={x2_lv}",
+                )
+                # 標數值
+                for _, row in subset.iterrows():
+                    axes[0].annotate(
+                        f"{row['mean']:.3f}",
+                        (str(row["_x1_level"]), row["mean"]),
+                        textcoords="offset points",
+                        xytext=(0, 10),
+                        fontsize=8,
+                        ha="center",
+                    )
+
+        axes[0].set_xlabel(x1_col, fontsize=11)
+        axes[0].set_ylabel(f"Mean({y_col})", fontsize=11)
+        axes[0].set_title(f"{x1_col} × {x2_col} → {y_col}", fontsize=11)
+        axes[0].legend(fontsize=9)
+        axes[0].grid(True, alpha=0.3)
+
+        # --- Plot 2: X2 為 X 軸, X1 為線條 ---
+        for i, x1_lv in enumerate(x1_levels):
+            subset = grouped[grouped["_x1_level"] == x1_lv]
+            if len(subset) > 0:
+                axes[1].plot(
+                    subset["_x2_level"].astype(str),
+                    subset["mean"],
+                    marker="s",
+                    linewidth=2,
+                    markersize=8,
+                    color=_colors[i % len(_colors)],
+                    label=f"{x1_col}={x1_lv}",
+                )
+                for _, row in subset.iterrows():
+                    axes[1].annotate(
+                        f"{row['mean']:.3f}",
+                        (str(row["_x2_level"]), row["mean"]),
+                        textcoords="offset points",
+                        xytext=(0, 10),
+                        fontsize=8,
+                        ha="center",
+                    )
+
+        axes[1].set_xlabel(x2_col, fontsize=11)
+        axes[1].set_ylabel(f"Mean({y_col})", fontsize=11)
+        axes[1].set_title(f"{x2_col} × {x1_col} → {y_col}", fontsize=11)
+        axes[1].legend(fontsize=9)
+        axes[1].grid(True, alpha=0.3)
+
+        # 判斷交互效應
+        # 如果線條交叉（不同 x2 level 的 slope 方向不同）→ 有交互
+        _has_interaction = False
+        if len(x1_levels) >= 2 and len(x2_levels) >= 2:
+            slopes = []
+            for x2_lv in x2_levels:
+                subset = grouped[grouped["_x2_level"] == x2_lv].sort_values("_x1_level")
+                if len(subset) >= 2:
+                    slopes.append(subset["mean"].iloc[-1] - subset["mean"].iloc[0])
+            if slopes and len(slopes) >= 2:
+                # 如果 slopes 方向不同 → 有交互
+                _has_interaction = any(
+                    s1 * s2 < 0 for s1, s2 in zip(slopes[:-1], slopes[1:])
+                )
+                # 或 slope 差異大於 50% → 可能有交互
+                if not _has_interaction and max(abs(s) for s in slopes) > 0:
+                    _ratio = min(abs(s) for s in slopes) / max(abs(s) for s in slopes)
+                    _has_interaction = _ratio < 0.3
+
+        _interact_text = "⚠️ 交互效應顯著" if _has_interaction else "✓ 無明顯交互效應"
+        fig.suptitle(f"{_desc}\n{_interact_text}", fontsize=12, fontweight="bold")
+        plt.tight_layout(rect=[0, 0, 1, 0.92])
+        plt.show()
+
+        # 印出交互效應判定
+        print(f"\n交互效應判定: {_interact_text}")
+        if _has_interaction:
+            print(f"  → {x1_col} 和 {x2_col} 需要一起調整，不能獨立優化")
+        else:
+            print(f"  → {x1_col} 和 {x2_col} 可以獨立調整")
+
+    except Exception as e:
+        print(f"[sigma.interaction_plot] 繪圖失敗: {e}")

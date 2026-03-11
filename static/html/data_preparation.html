@@ -1,0 +1,4647 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <title>資料整理</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #f1f5f9;
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* ==================== Header ==================== */
+        .page-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 20px;
+            background: white;
+            border-bottom: 1px solid #e2e8f0;
+            flex-shrink: 0;
+        }
+
+        .page-header .icon-box {
+            width: 34px;
+            height: 34px;
+            border-radius: 10px;
+            background: linear-gradient(135deg, #6366f1, #8b5cf6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 16px;
+            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25);
+        }
+
+        .page-header h1 {
+            font-size: 16px;
+            font-weight: 700;
+            color: #1e293b;
+        }
+
+        .page-header .subtitle {
+            font-size: 11px;
+            color: #94a3b8;
+        }
+
+        /* ==================== Main Layout ==================== */
+        .main-layout {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+
+        /* ==================== Tool Sidebar (far left) ==================== */
+        .tool-sidebar {
+            width: 200px;
+            background: white;
+            border-right: 1px solid #e2e8f0;
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+        }
+
+        .tool-sidebar .ts-section {
+            font-size: 10px;
+            font-weight: 800;
+            color: #94a3b8;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            padding: 14px 14px 6px;
+        }
+
+        .tool-sidebar .ts-file-select {
+            padding: 6px 10px;
+        }
+
+        .tool-sidebar .ts-file-select select {
+            width: 100%;
+            padding: 7px 10px;
+            border: 1.5px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 11px;
+            font-weight: 500;
+            color: #334155;
+            background: #fff;
+            outline: none;
+            cursor: pointer;
+        }
+
+        .tool-sidebar .ts-file-select select:focus {
+            border-color: #6366f1;
+        }
+
+        .tool-sidebar .ts-tools {
+            flex: 1;
+            overflow-y: auto;
+            padding: 4px 8px;
+        }
+
+        .ts-tool-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 9px 10px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.15s;
+            font-size: 12px;
+            font-weight: 600;
+            color: #475569;
+            border: 1.5px solid transparent;
+            user-select: none;
+        }
+
+        .ts-tool-item:hover {
+            background: #f8fafc;
+            color: #1e293b;
+        }
+
+        .ts-tool-item.active {
+            background: #eef2ff;
+            color: #4f46e5;
+            border-color: #c7d2fe;
+        }
+
+        .ts-tool-item .ts-icon {
+            width: 28px;
+            height: 28px;
+            border-radius: 7px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            flex-shrink: 0;
+        }
+
+        .ts-tool-item .ts-text {
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
+        }
+
+        .ts-tool-item .ts-name {
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .ts-tool-item .ts-desc {
+            font-size: 9px;
+            color: #94a3b8;
+            font-weight: 500;
+        }
+
+        .ts-tool-item.active .ts-desc {
+            color: #818cf8;
+        }
+
+        /* ==================== Left: Field List ==================== */
+        .field-panel {
+            width: 240px;
+            background: white;
+            border-right: 1px solid #e2e8f0;
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+        }
+
+        .field-panel-header {
+            padding: 12px 14px 8px;
+            border-bottom: 1px solid #f1f5f9;
+            flex-shrink: 0;
+        }
+
+        .field-panel-header .fp-title {
+            font-size: 12px;
+            font-weight: 800;
+            color: #475569;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .field-panel-header .fp-title .count {
+            font-size: 10px;
+            font-weight: 700;
+            background: #e2e8f0;
+            color: #64748b;
+            padding: 1px 6px;
+            border-radius: 10px;
+        }
+
+        .field-search {
+            width: 100%;
+            padding: 7px 10px;
+            border: 1.5px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 12px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .field-search:focus {
+            border-color: #6366f1;
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.08);
+        }
+
+        /* File selector */
+        .file-select-wrap {
+            padding: 8px 12px;
+            border-bottom: 1px solid #f1f5f9;
+            flex-shrink: 0;
+        }
+
+        .file-select-wrap select {
+            width: 100%;
+            padding: 7px 10px;
+            border: 1.5px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 500;
+            color: #334155;
+            background: #fff;
+            outline: none;
+            cursor: pointer;
+        }
+
+        .file-select-wrap select:focus {
+            border-color: #6366f1;
+        }
+
+        /* Field List */
+        .field-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 6px 8px;
+        }
+
+        .field-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 7px 10px;
+            border-radius: 6px;
+            cursor: grab;
+            font-size: 12px;
+            font-weight: 500;
+            color: #334155;
+            transition: background 0.1s;
+            user-select: none;
+            border: 1px solid transparent;
+        }
+
+        .field-item:hover {
+            background: #f8fafc;
+        }
+
+        .field-item:active {
+            cursor: grabbing;
+        }
+
+        .field-item .field-icon {
+            font-size: 10px;
+            width: 18px;
+            height: 18px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800;
+            flex-shrink: 0;
+        }
+
+        .field-item .field-icon.numeric {
+            background: #dbeafe;
+            color: #2563eb;
+        }
+
+        .field-item .field-icon.category {
+            background: #fef3c7;
+            color: #d97706;
+        }
+
+        .field-item .field-icon.datetime {
+            background: #dcfce7;
+            color: #16a34a;
+        }
+
+        .field-item .field-name {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .field-item.dragging {
+            opacity: 0.4;
+        }
+
+        .field-item.in-use {
+            color: #94a3b8;
+            font-style: italic;
+        }
+
+        .field-item.in-use::after {
+            content: '✓';
+            font-size: 10px;
+            color: #6366f1;
+            font-style: normal;
+        }
+
+        /* ==================== Right: Pivot Config + Result ==================== */
+        .pivot-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            padding: 16px;
+            gap: 12px;
+        }
+
+        /* Drop Zone + Target Wrapper */
+        .config-row {
+            display: flex;
+            gap: 10px;
+            flex-shrink: 0;
+        }
+
+        /* Drop Zone Grid */
+        .drop-zone-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 5px;
+            flex: 1;
+            min-width: 0;
+        }
+
+        .drop-zone-col {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .drop-zone {
+            background: white;
+            border: 2px dashed #cbd5e1;
+            border-radius: 8px;
+            padding: 4px 8px;
+            min-height: 36px;
+            transition: all 0.2s;
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+
+        .drop-zone.drag-over {
+            border-color: #6366f1;
+            background: #eef2ff;
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+        }
+
+        .drop-zone .dz-label {
+            font-size: 10px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .dz-rows .dz-label {
+            color: #2563eb;
+        }
+
+        .dz-cols .dz-label {
+            color: #7c3aed;
+        }
+
+        .dz-values .dz-label {
+            color: #059669;
+        }
+
+        .dz-filters .dz-label {
+            color: #d97706;
+        }
+
+        .drop-zone .dz-hint {
+            font-size: 10px;
+            color: #94a3b8;
+            font-style: italic;
+        }
+
+        .drop-zone .dz-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+        }
+
+        /* Dropped chips */
+        .dz-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 4px 8px 4px 10px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 600;
+            cursor: default;
+            user-select: none;
+            animation: chipIn 0.2s ease;
+        }
+
+        @keyframes chipIn {
+            from {
+                transform: scale(0.8);
+                opacity: 0;
+            }
+
+            to {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        .dz-rows .dz-chip {
+            background: #dbeafe;
+            color: #1d4ed8;
+        }
+
+        .dz-cols .dz-chip {
+            background: #ede9fe;
+            color: #6d28d9;
+        }
+
+        .dz-values .dz-chip {
+            background: #d1fae5;
+            color: #047857;
+        }
+
+        .dz-filters .dz-chip {
+            background: #fef3c7;
+            color: #b45309;
+        }
+
+        .dz-chip .chip-remove {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 9px;
+            cursor: pointer;
+            opacity: 0.5;
+            transition: opacity 0.15s;
+            font-weight: 800;
+        }
+
+        .dz-chip .chip-remove:hover {
+            opacity: 1;
+        }
+
+        .dz-values .dz-chip .agg-select {
+            font-size: 10px;
+            border: 1px solid rgba(0, 0, 0, 0.1);
+            border-radius: 4px;
+            padding: 1px 3px;
+            background: rgba(255, 255, 255, 0.5);
+            outline: none;
+            cursor: pointer;
+            font-weight: 700;
+            color: inherit;
+        }
+
+        /* ==================== Target Parameter Selector ==================== */
+        .target-selector {
+            background: white;
+            border: 2px solid #e2e8f0;
+            border-radius: 10px;
+            padding: 6px 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .target-selector .ts-label {
+            font-size: 10px;
+            font-weight: 800;
+            color: #0f766e;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .target-selector #target-search {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 5px 8px;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 600;
+            color: #1e293b;
+            outline: none;
+            background: #f8fafc;
+        }
+
+        .target-selector #target-search:focus {
+            border-color: #0f766e;
+            box-shadow: 0 0 0 2px rgba(15, 118, 110, 0.1);
+        }
+
+        .ts-dropdown {
+            display: none;
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            max-height: 180px;
+            overflow-y: auto;
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            z-index: 100;
+            margin-top: 2px;
+        }
+
+        .ts-dropdown.show {
+            display: block;
+        }
+
+        .ts-dropdown-item {
+            padding: 5px 8px;
+            font-size: 11px;
+            cursor: pointer;
+            color: #334155;
+        }
+
+        .ts-dropdown-item:hover {
+            background: #f0fdfa;
+            color: #0f766e;
+        }
+
+        /* ==================== Chart Modal ==================== */
+        .chart-modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 20000;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            backdrop-filter: blur(2px);
+        }
+
+        .chart-modal-overlay.show {
+            display: flex;
+        }
+
+        .chart-modal {
+            background: white;
+            border-radius: 14px;
+            padding: 16px;
+            max-width: 900px;
+            max-height: 85vh;
+            overflow: auto;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            animation: modalIn 0.2s ease;
+        }
+
+        @keyframes modalIn {
+            from {
+                transform: scale(0.9);
+                opacity: 0;
+            }
+
+            to {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        .chart-modal .modal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
+        }
+
+        .chart-modal .modal-title {
+            font-size: 14px;
+            font-weight: 700;
+            color: #1e293b;
+        }
+
+        .chart-modal .modal-close {
+            width: 28px;
+            height: 28px;
+            border: none;
+            background: #f1f5f9;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 14px;
+            color: #64748b;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .chart-modal .modal-close:hover {
+            background: #e2e8f0;
+        }
+
+        .chart-modal img {
+            max-width: 860px;
+            border-radius: 8px;
+        }
+
+        .chart-loading {
+            text-align: center;
+            padding: 40px;
+            color: #94a3b8;
+            font-size: 13px;
+        }
+
+        .top1-link {
+            color: #6366f1;
+            cursor: pointer;
+            text-decoration: underline;
+            text-decoration-style: dotted;
+            text-underline-offset: 2px;
+            font-weight: 600;
+        }
+
+        .top1-link:hover {
+            color: #4338ca;
+        }
+
+        .xgb-link {
+            color: #059669;
+            cursor: pointer;
+            text-decoration: underline;
+            text-decoration-style: dotted;
+            text-underline-offset: 2px;
+            font-weight: 600;
+        }
+
+        .xgb-link:hover {
+            color: #047857;
+        }
+
+        .t2-link {
+            color: #dc2626;
+            cursor: pointer;
+            text-decoration: underline;
+            text-decoration-style: dotted;
+            text-underline-offset: 2px;
+            font-weight: 600;
+        }
+
+        .t2-link:hover {
+            color: #b91c1c;
+        }
+
+        .target-selector .ts-info {
+            font-size: 10px;
+            color: #94a3b8;
+            line-height: 1.4;
+        }
+
+        .ts-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 3px;
+        }
+
+        .ts-chip {
+            display: inline-flex;
+            align-items: center;
+            padding: 2px 5px;
+            background: #f0fdfa;
+            border: 1px solid #99f6e4;
+            border-radius: 4px;
+            font-size: 9px;
+            font-weight: 600;
+            color: #0f766e;
+            white-space: nowrap;
+        }
+
+        .ts-chip .ts-name {
+            max-width: 140px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .ts-chip .ts-rm {
+            cursor: pointer;
+            opacity: 0.5;
+            font-size: 8px;
+            margin-left: 3px;
+            flex-shrink: 0;
+        }
+
+        .ts-chip .ts-rm:hover {
+            opacity: 1;
+        }
+
+        /* ==================== Result Table ==================== */
+        .result-area {
+            flex: 1;
+            background: white;
+            border-radius: 12px;
+            border: 1px solid #e2e8f0;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+
+        .result-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 16px;
+            border-bottom: 1px solid #f1f5f9;
+            flex-shrink: 0;
+        }
+
+        .result-header .rh-title {
+            font-size: 13px;
+            font-weight: 700;
+            color: #1e293b;
+        }
+
+        .result-header .rh-info {
+            font-size: 11px;
+            color: #94a3b8;
+        }
+
+        .analysis-toggles {
+            display: inline-flex;
+            gap: 5px;
+        }
+
+        .atgl {
+            padding: 3px 8px;
+            border: 1.5px solid var(--atgl-color, #94a3b8);
+            border-radius: 6px;
+            background: transparent;
+            color: var(--atgl-color, #94a3b8);
+            font-size: 10px;
+            font-weight: 700;
+            cursor: pointer;
+            opacity: 0.45;
+            transition: all 0.15s;
+        }
+
+        .atgl.active {
+            background: var(--atgl-bg, #f1f5f9);
+            opacity: 1;
+        }
+
+        .atgl:hover {
+            opacity: 0.85;
+        }
+
+        .result-filter-bar {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .filter-add-btn {
+            padding: 3px 10px;
+            border: 1.5px dashed #94a3b8;
+            border-radius: 6px;
+            background: transparent;
+            color: #64748b;
+            font-size: 11px;
+            cursor: pointer;
+        }
+
+        .filter-add-btn:hover {
+            border-color: #6366f1;
+            color: #6366f1;
+        }
+
+        .filter-reset-link {
+            font-size: 11px;
+            color: #6366f1;
+            text-decoration: none;
+        }
+
+        .filter-reset-link:hover {
+            text-decoration: underline;
+        }
+
+        .active-filters {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+            padding: 0 12px 6px;
+        }
+
+        .af-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 2px 8px;
+            background: #f1f5f9;
+            border: 1px solid #e2e8f0;
+            border-radius: 5px;
+            font-size: 10px;
+            color: #334155;
+        }
+
+        .af-chip .af-remove {
+            cursor: pointer;
+            color: #94a3b8;
+            font-weight: bold;
+            margin-left: 2px;
+        }
+
+        .af-chip .af-remove:hover {
+            color: #ef4444;
+        }
+
+        .filter-popover-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.25);
+            z-index: 1100;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .filter-popover {
+            background: #fff;
+            border-radius: 12px;
+            padding: 20px 24px;
+            width: 320px;
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.15);
+        }
+
+        .fp-label {
+            font-size: 12px;
+            font-weight: 600;
+            color: #334155;
+            margin-bottom: 4px;
+        }
+
+        .fp-select,
+        .fp-input {
+            width: 100%;
+            padding: 8px 10px;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 12px;
+            outline: none;
+            box-sizing: border-box;
+        }
+
+        .fp-select:focus,
+        .fp-input:focus {
+            border-color: #6366f1;
+        }
+
+        .fp-checkbox {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            color: #475569;
+            cursor: pointer;
+        }
+
+        .fp-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+            margin-top: 16px;
+        }
+
+        .fp-btn {
+            padding: 6px 16px;
+            border: none;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .fp-cancel {
+            background: #f1f5f9;
+            color: #64748b;
+        }
+
+        .fp-cancel:hover {
+            background: #e2e8f0;
+        }
+
+        .fp-submit {
+            background: #4f46e5;
+            color: white;
+        }
+
+        .fp-submit:hover {
+            background: #4338ca;
+        }
+
+        /* MVA Panel */
+        .mva-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            padding: 16px;
+            overflow: auto;
+            width: 100%;
+        }
+
+        .mva-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .mva-title {
+            font-size: 15px;
+            font-weight: 700;
+            color: #1e293b;
+        }
+
+        .mva-controls {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .mva-select {
+            padding: 5px 10px;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 12px;
+            min-width: 220px;
+            outline: none;
+        }
+
+        .mva-select:focus {
+            border-color: #6366f1;
+        }
+
+        .mva-info {
+            font-size: 11px;
+            color: #64748b;
+        }
+
+        .mva-chart-wrap {
+            position: relative;
+            background: #fff;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        .mva-chart-wrap canvas {
+            display: block;
+            width: 100%;
+        }
+
+        .mva-brush-hint {
+            position: absolute;
+            bottom: 6px;
+            right: 10px;
+            font-size: 10px;
+            color: #94a3b8;
+            pointer-events: none;
+        }
+
+        .mva-brush-rect {
+            position: absolute;
+            background: rgba(99, 102, 241, 0.12);
+            border: 1.5px solid rgba(99, 102, 241, 0.5);
+            pointer-events: none;
+        }
+
+        .mva-detail {
+            background: #fff;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            padding: 12px;
+            min-height: 80px;
+            overflow: auto;
+            max-height: 300px;
+        }
+
+        .mva-detail table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 11px;
+        }
+
+        .mva-detail th {
+            background: #f8fafc;
+            padding: 4px 8px;
+            text-align: left;
+            font-weight: 600;
+            border-bottom: 1px solid #e2e8f0;
+            position: sticky;
+            top: 0;
+        }
+
+        .mva-detail td {
+            padding: 4px 8px;
+            border-bottom: 1px solid #f1f5f9;
+        }
+
+        .mva-detail .sel-highlight {
+            background: #fef2f2;
+        }
+
+        .mva-empty {
+            text-align: center;
+            color: #94a3b8;
+            font-size: 13px;
+            padding: 30px;
+        }
+
+        .mva-run-btn {
+            padding: 5px 14px;
+            border: none;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 600;
+            background: linear-gradient(135deg, #6366f1, #8b5cf6);
+            color: #fff;
+            cursor: pointer;
+        }
+
+        .mva-run-btn:hover {
+            filter: brightness(1.1);
+        }
+
+        .mva-run-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .mva-filter-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+            min-height: 0;
+        }
+
+        .mva-action-bar {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 6px 16px;
+            background: #fff;
+            border: 2px solid #6366f1;
+            border-radius: 999px;
+            box-shadow: 0 4px 16px rgba(99, 102, 241, 0.2);
+            margin-top: 6px;
+            width: fit-content;
+            align-self: center;
+        }
+
+        .mva-sel-dot {
+            font-size: 14px;
+        }
+
+        .mva-action-bar>span:nth-child(2) {
+            font-size: 13px;
+            font-weight: 600;
+            color: #1e293b;
+            white-space: nowrap;
+        }
+
+        .mva-act-btn {
+            padding: 4px 16px;
+            border: none;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+
+        .mva-act-keep {
+            background: #16a34a;
+            color: #fff;
+        }
+
+        .mva-act-keep:hover {
+            background: #15803d;
+        }
+
+        .mva-act-remove {
+            background: #dc2626;
+            color: #fff;
+        }
+
+        .mva-act-remove:hover {
+            background: #b91c1c;
+        }
+
+        .mva-act-close {
+            font-size: 14px;
+            color: #94a3b8;
+            cursor: pointer;
+            margin-left: 4px;
+        }
+
+        .mva-act-close:hover {
+            color: #475569;
+        }
+
+        .mva-act-analyze {
+            background: #3b82f6;
+            color: #fff;
+        }
+
+        .mva-act-analyze:hover {
+            background: #2563eb;
+        }
+
+        .mva-body {
+            display: flex;
+            gap: 0;
+            flex: 1;
+            min-height: 0;
+        }
+
+        .mva-main {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .mva-contrib-panel {
+            flex: 1;
+            min-width: 0;
+            border-left: 1px solid #e2e8f0;
+            background: #f8fafc;
+            padding: 12px;
+            overflow-y: auto;
+            display: none;
+        }
+
+        .mva-contrib-panel.open {
+            display: block;
+        }
+
+        .mva-contrib-title {
+            font-size: 13px;
+            font-weight: 700;
+            color: #1e293b;
+            margin-bottom: 8px;
+        }
+
+        .mva-trend-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+
+        .mva-trend-card {
+            background: #fff;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 6px 8px;
+            overflow: hidden;
+        }
+
+        .mva-trend-card-hdr {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 4px;
+        }
+
+        .mva-trend-card-name {
+            font-size: 10px;
+            font-weight: 600;
+            color: #334155;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            flex: 1;
+        }
+
+        .mva-trend-card-pct {
+            font-size: 10px;
+            font-weight: 700;
+            color: #6366f1;
+            margin-left: 4px;
+            flex-shrink: 0;
+        }
+
+        .mva-trend-card-dismiss {
+            font-size: 12px;
+            cursor: pointer;
+            color: #cbd5e1;
+            border: none;
+            background: none;
+            padding: 0 2px;
+            line-height: 1;
+            flex-shrink: 0;
+        }
+
+        .mva-trend-card-dismiss:hover {
+            color: #ef4444;
+        }
+
+        .mva-trend-card canvas {
+            cursor: pointer;
+        }
+
+        /* Trend Lightbox */
+        .mva-lb-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.55);
+            z-index: 9999;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .mva-lb-overlay.open {
+            display: flex;
+        }
+
+        .mva-lb-card {
+            background: #fff;
+            border-radius: 12px;
+            padding: 20px 24px;
+            width: min(800px, 90vw);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            position: relative;
+        }
+
+        .mva-lb-title {
+            font-size: 14px;
+            font-weight: 700;
+            color: #1e293b;
+            margin-bottom: 8px;
+        }
+
+        .mva-lb-sub {
+            font-size: 11px;
+            color: #94a3b8;
+            margin-bottom: 10px;
+        }
+
+        .mva-lb-close {
+            position: absolute;
+            top: 12px;
+            right: 16px;
+            font-size: 20px;
+            cursor: pointer;
+            color: #94a3b8;
+            border: none;
+            background: none;
+        }
+
+        .mva-lb-close:hover {
+            color: #1e293b;
+        }
+
+        .mva-lb-nav {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 28px;
+            cursor: pointer;
+            color: #94a3b8;
+            border: none;
+            background: none;
+            padding: 8px;
+        }
+
+        .mva-lb-nav:hover {
+            color: #6366f1;
+        }
+
+        .mva-lb-prev {
+            left: -50px;
+        }
+
+        .mva-lb-next {
+            right: -50px;
+        }
+
+        .btn-run {
+            padding: 6px 16px;
+            background: linear-gradient(135deg, #6366f1, #8b5cf6);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s;
+            box-shadow: 0 2px 8px rgba(99, 102, 241, 0.2);
+        }
+
+        .btn-run:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+        }
+
+        .btn-run:disabled {
+            background: #cbd5e1;
+            box-shadow: none;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .result-body {
+            flex: 1;
+            overflow: auto;
+        }
+
+        .result-body table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+
+        .result-body th {
+            position: sticky;
+            top: 0;
+            background: #f8fafc;
+            padding: 8px 12px;
+            text-align: left;
+            font-weight: 700;
+            color: #475569;
+            border-bottom: 2px solid #e2e8f0;
+            white-space: nowrap;
+            z-index: 2;
+        }
+
+        .result-body td {
+            padding: 6px 12px;
+            border-bottom: 1px solid #f1f5f9;
+            color: #334155;
+            white-space: nowrap;
+        }
+
+        .result-body tr:hover td {
+            background: #fafbfe;
+        }
+
+        .result-empty {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: #94a3b8;
+            gap: 8px;
+            padding: 40px;
+        }
+
+        .result-empty .re-icon {
+            font-size: 36px;
+        }
+
+        .result-empty .re-text {
+            font-size: 13px;
+            font-weight: 600;
+            color: #64748b;
+        }
+
+        .result-empty .re-hint {
+            font-size: 11px;
+            color: #94a3b8;
+        }
+
+        /* ==================== Drag Ghost ==================== */
+        .drag-ghost {
+            position: fixed;
+            pointer-events: none;
+            z-index: 9999;
+            padding: 5px 12px;
+            background: #6366f1;
+            color: white;
+            font-size: 11px;
+            font-weight: 700;
+            border-radius: 6px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            white-space: nowrap;
+        }
+
+        /* ==================== Field Context Menu ==================== */
+        .field-ctx-menu {
+            position: fixed;
+            z-index: 10000;
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+            min-width: 140px;
+            padding: 4px;
+            display: none;
+            animation: ctxIn 0.12s ease;
+        }
+
+        @keyframes ctxIn {
+            from {
+                transform: scale(0.95);
+                opacity: 0;
+            }
+
+            to {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        .field-ctx-menu.show {
+            display: block;
+        }
+
+        .field-ctx-menu .ctx-title {
+            font-size: 10px;
+            font-weight: 800;
+            color: #94a3b8;
+            padding: 6px 10px 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .field-ctx-menu .ctx-item {
+            padding: 6px 10px;
+            font-size: 12px;
+            font-weight: 500;
+            color: #334155;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.1s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .field-ctx-menu .ctx-item:hover {
+            background: #6366f1;
+            color: white;
+        }
+
+        .field-ctx-menu .ctx-sep {
+            height: 1px;
+            background: #f1f5f9;
+            margin: 3px 6px;
+        }
+
+        .field-ctx-menu .ctx-item .ctx-key {
+            font-size: 10px;
+            opacity: 0.5;
+            margin-left: auto;
+        }
+
+        .ctx-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 9999;
+            display: none;
+        }
+
+        .ctx-overlay.show {
+            display: block;
+        }
+
+        /* ==================== Scrollbar ==================== */
+        ::-webkit-scrollbar {
+            width: 5px;
+            height: 5px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 3px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+
+        /* ============ G/B Test Panel ============ */
+        #panel-gb {
+            flex-direction: column;
+            width: 100%;
+            padding: 16px;
+        }
+
+        .gb-container {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+
+        .gb-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 10px;
+        }
+
+        .gb-title {
+            font-size: 16px;
+            font-weight: 700;
+            color: #1e293b;
+        }
+
+        .gb-mode-toggle {
+            display: flex;
+            gap: 4px;
+            background: #f1f5f9;
+            border-radius: 6px;
+            padding: 2px;
+        }
+
+        .gb-mode-btn {
+            border: none;
+            background: none;
+            padding: 5px 12px;
+            font-size: 11px;
+            border-radius: 4px;
+            cursor: pointer;
+            color: #64748b;
+        }
+
+        .gb-mode-btn.active {
+            background: #fff;
+            color: #1e293b;
+            font-weight: 600;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, .1);
+        }
+
+        .gb-info {
+            font-size: 11px;
+            color: #94a3b8;
+            margin-left: auto;
+        }
+
+        .gb-body {
+            display: flex;
+            gap: 12px;
+            flex: 1;
+            min-height: 0;
+        }
+
+        .gb-left {
+            flex: 1;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .gb-right {
+            flex: 1.5;
+            min-width: 0;
+            overflow-y: auto;
+        }
+
+        .gb-scatter-hint {
+            font-size: 10px;
+            color: #94a3b8;
+            text-align: center;
+            margin-top: 4px;
+        }
+
+        #gb-scatter,
+        #gb-target-trend {
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            cursor: crosshair;
+            background: #fff;
+            display: block;
+            width: 100%;
+            height: auto;
+        }
+
+        .gb-box-card canvas {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+
+        .gb-label {
+            font-size: 11px;
+            font-weight: 600;
+            color: #475569;
+            margin-bottom: 4px;
+            display: block;
+        }
+
+        #gb-target-select {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 14px;
+            color: #334155;
+            cursor: pointer;
+        }
+
+        .gb-searchable-select {
+            position: relative;
+        }
+
+        .gb-searchable-select input {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 14px;
+            color: #334155;
+            box-sizing: border-box;
+            outline: none;
+        }
+
+        .gb-searchable-select input:focus {
+            border-color: #3b82f6;
+        }
+
+        .gb-ss-dropdown {
+            display: none;
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: #fff;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            max-height: 250px;
+            overflow-y: auto;
+            z-index: 100;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            margin-top: 2px;
+        }
+
+        .gb-ss-dropdown.show {
+            display: block;
+        }
+
+        .gb-ss-item {
+            padding: 6px 12px;
+            font-size: 13px;
+            cursor: pointer;
+            color: #334155;
+        }
+
+        .gb-ss-item:hover {
+            background: #eff6ff;
+        }
+
+        .gb-target-groups {
+            margin-top: 8px;
+        }
+
+        .gb-group-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+        }
+
+        .gb-group-chip {
+            font-size: 10px;
+            padding: 3px 8px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            border: 1.5px solid;
+        }
+
+        .gb-group-chip span {
+            cursor: pointer;
+            font-size: 11px;
+        }
+
+        .gb-group-chip span:hover {
+            color: #ef4444;
+        }
+
+        .gb-actions {
+            display: flex;
+            gap: 6px;
+            margin-top: 4px;
+        }
+
+        .gb-act-btn {
+            border: none;
+            border-radius: 6px;
+            padding: 6px 14px;
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .gb-act-run {
+            background: #6366f1;
+            color: #fff;
+        }
+
+        .gb-act-run:hover {
+            background: #4f46e5;
+        }
+
+        .gb-act-clear {
+            background: #f1f5f9;
+            color: #64748b;
+        }
+
+        .gb-act-clear:hover {
+            background: #e2e8f0;
+        }
+
+        .gb-test-tabs {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 8px;
+            background: #f1f5f9;
+            border-radius: 6px;
+            padding: 2px;
+        }
+
+        .gb-tab {
+            border: none;
+            background: none;
+            padding: 5px 12px;
+            font-size: 11px;
+            border-radius: 4px;
+            cursor: pointer;
+            color: #64748b;
+        }
+
+        .gb-tab.active {
+            background: #fff;
+            color: #6366f1;
+            font-weight: 600;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, .1);
+        }
+
+        .gb-result-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+        }
+
+        .gb-fz-opts {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .gb-fz-opts select {
+            padding: 4px 8px;
+            border: 1px solid #e2e8f0;
+            border-radius: 4px;
+            font-size: 11px;
+            flex: 1;
+        }
+
+        .gb-fz-opts label {
+            font-size: 11px;
+            color: #475569;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
+        .gb-box-card {
+            background: #fff;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 8px;
+        }
+
+        .gb-box-card-hdr {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            margin-bottom: 4px;
+        }
+
+        .gb-box-card-name {
+            font-size: 10px;
+            font-weight: 600;
+            color: #334155;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            flex: 1;
+        }
+
+        .gb-box-card-pval {
+            font-size: 10px;
+            font-weight: 700;
+            flex-shrink: 0;
+        }
+
+        .gb-box-card {
+            cursor: pointer;
+            transition: box-shadow .15s;
+        }
+
+        .gb-box-card:hover {
+            box-shadow: 0 2px 8px rgba(0, 0, 0, .12);
+        }
+
+        #gb-lightbox {
+            position: fixed;
+            inset: 0;
+            z-index: 30000;
+            background: rgba(0, 0, 0, .55);
+            backdrop-filter: blur(3px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #gb-lightbox.show {
+            display: flex;
+        }
+
+        .gb-lb-box {
+            background: #fff;
+            border-radius: 14px;
+            padding: 20px;
+            max-width: 700px;
+            width: 90%;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, .3);
+            animation: modalIn .2s ease;
+        }
+
+        .gb-lb-hdr {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+
+        .gb-lb-title {
+            font-size: 15px;
+            font-weight: 700;
+            color: #1e293b;
+            flex: 1;
+        }
+
+        .gb-lb-pval {
+            font-size: 13px;
+            font-weight: 700;
+        }
+
+        .gb-lb-close {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background: #f1f5f9;
+            border: none;
+            font-size: 16px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .gb-lb-close:hover {
+            background: #e2e8f0;
+        }
+
+        .gb-lb-nav {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 10px;
+        }
+
+        .gb-lb-nav button {
+            border: none;
+            background: #f1f5f9;
+            border-radius: 8px;
+            padding: 6px 16px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+            color: #475569;
+        }
+
+        .gb-lb-nav button:hover {
+            background: #e2e8f0;
+        }
+
+        .gb-lb-counter {
+            font-size: 12px;
+            color: #94a3b8;
+            align-self: center;
+        }
+    </style>
+
+</head>
+
+<body>
+    <!-- Header -->
+    <div class="page-header">
+        <div class="icon-box">🔧</div>
+        <div>
+            <h1>資料整理工具</h1>
+            <p class="subtitle">資料前處理與樞紐分析</p>
+        </div>
+    </div>
+
+    <!-- Main -->
+    <div class="main-layout">
+
+        <!-- Far Left: Tool Sidebar -->
+        <div class="tool-sidebar">
+            <div class="ts-section">選擇檔案</div>
+            <div class="ts-file-select">
+                <select id="prep-file-select">
+                    <option value="" disabled selected>-- 選擇檔案 --</option>
+                </select>
+            </div>
+            <div class="ts-section">整理工具</div>
+            <div class="ts-tools">
+                <div class="ts-tool-item active" data-tool="pivot" onclick="switchTool('pivot')">
+                    <div class="ts-icon" style="background: #eff6ff;">📊</div>
+                    <div class="ts-text">
+                        <div class="ts-name">樞紐分析表</div>
+                        <div class="ts-desc">多維度交叉分析</div>
+                    </div>
+                </div>
+                <div class="ts-tool-item" data-tool="mva" onclick="switchTool('mva')">
+                    <div class="ts-icon" style="background: #fef2f2;">🎯</div>
+                    <div class="ts-text">
+                        <div class="ts-name">多變量分析</div>
+                        <div class="ts-desc">控制圖與框選</div>
+                    </div>
+                </div>
+                <div class="ts-tool-item" data-tool="gb" onclick="switchTool('gb')">
+                    <div class="ts-icon" style="background: #ecfdf5;">⚖️</div>
+                    <div class="ts-text">
+                        <div class="ts-name">G/B 檢定</div>
+                        <div class="ts-desc">多組統計檢定</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Pivot Panel -->
+        <div id="panel-pivot" class="tool-panel" style="display:contents;">
+
+            <!-- Middle: Field List -->
+            <div class="field-panel" id="panel-field-list">
+                <div class="field-panel-header">
+                    <div class="fp-title"
+                        style="display:flex;align-items:center;justify-content:space-between;width:100%;">
+                        <span>欄位清單 <span class="count" id="field-count">0</span></span>
+                        <span style="font-size:10px;color:#94a3b8;cursor:pointer;" onclick="clearAll()"
+                            title="清空所有區域">🗑
+                            清空</span>
+                    </div>
+                    <input type="text" class="field-search" id="field-search" placeholder="🔍 搜尋欄位...">
+                </div>
+                <div class="field-list" id="field-list">
+                    <div class="result-empty" style="padding:20px;">
+                        <div class="re-hint">請先選擇檔案</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right: Pivot Area -->
+            <div class="pivot-area">
+                <!-- Config Row: Drop Zones + Target Selector -->
+                <div class="config-row">
+                    <!-- Drop Zones -->
+                    <div class="drop-zone-grid">
+                        <div class="drop-zone-col">
+                            <div class="drop-zone dz-filters" data-zone="filters" ondragover="handleDragOver(event)"
+                                ondragleave="handleDragLeave(event)" ondrop="handleDrop(event, 'filters')">
+                                <div class="dz-label" style="display:flex;align-items:center;gap:8px;">
+                                    🔽 篩選
+                                    <button class="filter-add-btn" onclick="openFilterPopover()">+ 篩選條件</button>
+                                    <a href="#" class="filter-reset-link" onclick="resetAllFilters();return false;"
+                                        style="font-size:10px;">重設</a>
+                                </div>
+                                <div class="dz-chips" id="chips-filters"></div>
+                                <div class="dz-hint" id="hint-filters">拖入篩選條件</div>
+                            </div>
+                            <div class="drop-zone dz-rows" data-zone="rows" ondragover="handleDragOver(event)"
+                                ondragleave="handleDragLeave(event)" ondrop="handleDrop(event, 'rows')">
+                                <div class="dz-label">⬇️ 列（行標籤）</div>
+                                <div class="dz-chips" id="chips-rows"></div>
+                                <div class="dz-hint" id="hint-rows">縱軸分組</div>
+                            </div>
+                        </div>
+                        <div class="drop-zone-col">
+                            <div class="drop-zone dz-cols" data-zone="cols" ondragover="handleDragOver(event)"
+                                ondragleave="handleDragLeave(event)" ondrop="handleDrop(event, 'cols')">
+                                <div class="dz-label">➡️ 欄（列標籤）</div>
+                                <div class="dz-chips" id="chips-cols"></div>
+                                <div class="dz-hint" id="hint-cols">橫軸分組</div>
+                            </div>
+                            <div class="drop-zone dz-values" data-zone="values" ondragover="handleDragOver(event)"
+                                ondragleave="handleDragLeave(event)" ondrop="handleDrop(event, 'values')">
+                                <div class="dz-label">Σ 值（彙總）</div>
+                                <div class="dz-chips" id="chips-values"></div>
+                                <div class="dz-hint" id="hint-values">數值彙總計算</div>
+                            </div>
+                        </div>
+                        <!-- Target Parameter -->
+                        <div class="target-selector">
+                            <div class="ts-label">🎯 目標參數</div>
+                            <div class="ts-search-wrap" style="position:relative;">
+                                <input type="text" id="target-search" placeholder="搜尋目標參數..." autocomplete="off"
+                                    onfocus="showTargetDropdown()" oninput="filterTargetDropdown()">
+                                <div class="ts-dropdown" id="target-dropdown"></div>
+                            </div>
+                            <div class="ts-chips" id="target-chips"></div>
+                            <button class="btn-run" id="btn-analyze" onclick="runAnalysis()" disabled
+                                style="font-size:11px;padding:5px 10px;">▶ 執行分析</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Result -->
+                <div class="result-area">
+                    <div class="result-header">
+                        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+                            <span class="rh-title">分析結果</span>
+                            <span class="rh-info" id="result-info"></span>
+                            <div class="analysis-toggles" id="analysis-toggles" style="display:none;">
+                                <button class="atgl active" data-type="corr" onclick="toggleAnalysisType('corr')"
+                                    style="--atgl-color:#6366f1;--atgl-bg:#eef2ff;">相關係數</button>
+                                <button class="atgl active" data-type="xgb" onclick="toggleAnalysisType('xgb')"
+                                    style="--atgl-color:#059669;--atgl-bg:#ecfdf5;">關鍵因子</button>
+                                <button class="atgl active" data-type="t2" onclick="toggleAnalysisType('t2')"
+                                    style="--atgl-color:#dc2626;--atgl-bg:#fef2f2;">T²</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Filter popover -->
+                    <div class="filter-popover-overlay" id="filter-popover" style="display:none;"
+                        onclick="closeFilterPopover()">
+                        <div class="filter-popover" onclick="event.stopPropagation()">
+                            <div class="fp-label">選擇欄位</div>
+                            <select id="fp-col-select" class="fp-select">
+                                <option value=""></option>
+                            </select>
+                            <div class="fp-label" style="margin-top:10px;">搜尋關鍵字</div>
+                            <input type="text" id="fp-keyword" class="fp-input" placeholder="輸入文字...">
+                            <label class="fp-checkbox" style="margin-top:10px;">
+                                <input type="checkbox" id="fp-exclude-empty">
+                                排除空白值 (Exclude Empty)
+                            </label>
+                            <div class="fp-actions">
+                                <button class="fp-btn fp-cancel" onclick="closeFilterPopover()">取消</button>
+                                <button class="fp-btn fp-submit" onclick="addFilter()">新增篩選</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="result-body" id="result-body">
+                        <div class="result-empty">
+                            <div class="re-icon">📋</div>
+                            <div class="re-text">將欄位拖入上方區域</div>
+                            <div class="re-hint">至少需要一個「列」或「欄」，加上一個「值」欄位</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div> <!-- /panel-pivot -->
+
+        <!-- MVA Panel -->
+        <div id="panel-mva" class="tool-panel" style="display:none;">
+            <div class="mva-container">
+                <div class="mva-header">
+                    <div class="mva-title">多變量控制圖</div>
+                    <div class="mva-controls">
+                        <button class="filter-add-btn" onclick="openMvaFilter()">+ 篩選條件</button>
+                        <button class="mva-run-btn" onclick="runMvaT2()">▶ 執行分析</button>
+                        <span id="mva-info" class="mva-info"></span>
+                    </div>
+                </div>
+                <div id="mva-filter-chips" class="mva-filter-chips"></div>
+                <div class="mva-body">
+                    <div class="mva-main">
+                        <div class="mva-chart-wrap" id="mva-chart-wrap">
+                            <canvas id="mva-canvas" width="1000" height="340"></canvas>
+                            <div class="mva-brush-hint" id="mva-brush-hint">拖曳框選區域以選取數據點</div>
+                        </div>
+                        <div class="mva-action-bar" id="mva-action-bar" style="display:none;">
+                            <span class="mva-sel-dot">📍</span>
+                            <span id="mva-sel-info">已選取 0 筆</span>
+                            <button class="mva-act-btn mva-act-analyze" onclick="mvaAnalyzeSelected()">分析</button>
+                            <button class="mva-act-btn mva-act-keep" onclick="mvaKeepSelected()">保留</button>
+                            <button class="mva-act-btn mva-act-remove" onclick="mvaRemoveSelected()">排除</button>
+                            <span class="mva-act-close" onclick="mvaClearSelection()">✕</span>
+                        </div>
+                    </div>
+                    <div class="mva-contrib-panel" id="mva-contrib-panel"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- G/B Test Panel -->
+        <div id="panel-gb" class="tool-panel" style="display:none;">
+            <div class="gb-container">
+                <div class="gb-header">
+                    <span class="gb-title">G/B 檢定</span>
+                    <div class="gb-mode-toggle">
+                        <button class="gb-mode-btn active" data-mode="pca" onclick="gbSwitchMode('pca')">PCA
+                            散佈圖</button>
+                        <button class="gb-mode-btn" data-mode="target" onclick="gbSwitchMode('target')">Target
+                            分群</button>
+                    </div>
+                    <span class="gb-info" id="gb-info"></span>
+                </div>
+                <div class="gb-body">
+                    <div class="gb-left">
+                        <div id="gb-pca-area">
+                            <canvas id="gb-scatter" width="420" height="380"></canvas>
+                            <div class="gb-scatter-hint">拖曳框選區域以建立群組</div>
+                        </div>
+                        <div id="gb-target-area" style="display:none;">
+                            <label class="gb-label">Target 欄位</label>
+                            <div class="gb-searchable-select" id="gb-target-select-wrap">
+                                <input id="gb-target-input" placeholder="搜尋欄位..." autocomplete="off"
+                                    onfocus="gbToggleTargetDd(true)" oninput="gbTargetSearch()">
+                                <div class="gb-ss-dropdown" id="gb-target-dd"></div>
+                                <input type="hidden" id="gb-target-select" value="">
+                            </div>
+                            <canvas id="gb-target-trend" width="420" height="200"
+                                style="margin-top:8px;border:1px solid #e2e8f0;border-radius:8px;background:#fff;cursor:crosshair;"></canvas>
+                            <div class="gb-scatter-hint">拖曳框選區段以建立群組</div>
+                        </div>
+                        <div class="gb-group-chips" id="gb-group-chips"></div>
+                        <div class="gb-actions" id="gb-actions" style="display:none;">
+                            <button class="gb-act-btn gb-act-run" onclick="gbRunTest()">▶ 執行檢定</button>
+                            <button class="gb-act-btn gb-act-clear" onclick="gbClearGroups()">清除分組</button>
+                        </div>
+                    </div>
+                    <div class="gb-right" id="gb-result-panel">
+                        <div class="gb-test-tabs" id="gb-test-tabs" style="display:none;">
+                            <button class="gb-tab active" data-method="ttest"
+                                onclick="gbSwitchTest('ttest')">平均數</button>
+                            <button class="gb-tab" data-method="ks" onclick="gbSwitchTest('ks')">累積分布</button>
+                            <button class="gb-tab" data-method="mannwhitney"
+                                onclick="gbSwitchTest('mannwhitney')">中位數</button>
+                            <button class="gb-tab" data-method="fisherz" onclick="gbSwitchTest('fisherz')">相關性</button>
+                        </div>
+                        <div class="gb-fz-opts" id="gb-fz-opts" style="display:none;">
+                            <label>模式</label>
+                            <select id="gb-fz-mode" onchange="gbFzModeChanged()">
+                                <option value="all_pairs">All Pairs</option>
+                                <option value="vs_target">vs Target</option>
+                            </select>
+                            <select id="gb-fz-target" style="display:none;">
+                                <option value="">— 選擇 Target —</option>
+                            </select>
+                            <label>|r|≥</label>
+                            <input id="gb-fz-rthresh" type="number" value="0.3" min="0" max="1" step="0.05"
+                                onchange="if(Object.keys(_gbGroups||{}).length>=2) gbRunTest()"
+                                style="width:55px;padding:4px 6px;border:1px solid #e2e8f0;border-radius:4px;font-size:11px;">
+                        </div>
+                        <div id="gb-exclude-chips"
+                            style="display:none;padding:4px 0;display:flex;flex-wrap:wrap;gap:4px;"></div>
+                        <div class="gb-result-grid" id="gb-result-grid"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Chart Modal -->
+    <div class="chart-modal-overlay" id="chart-modal" onclick="if(event.target===this)closeChartModal()">
+        <div class="chart-modal">
+            <div class="modal-header">
+                <div class="modal-title" id="chart-modal-title">Top3 相關參數</div>
+                <button class="modal-close" onclick="closeChartModal()">✕</button>
+            </div>
+            <div id="chart-modal-body">
+                <div class="chart-loading">⏳ 載入中...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- GB Lightbox -->
+    <div id="gb-lightbox" onclick="if(event.target===this)gbCloseLb()">
+        <div class="gb-lb-box">
+            <div class="gb-lb-hdr">
+                <div class="gb-lb-title" id="gb-lb-title"></div>
+                <div class="gb-lb-pval" id="gb-lb-pval"></div>
+                <button class="gb-lb-close" onclick="gbCloseLb()">✕</button>
+            </div>
+            <canvas id="gb-lb-canvas" width="650" height="320"></canvas>
+            <div class="gb-lb-nav">
+                <button onclick="gbNavLb(-1)">◀ 上一張</button>
+                <span class="gb-lb-counter" id="gb-lb-counter"></span>
+                <button onclick="gbNavLb(1)">下一張 ▶</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MVA Trend Lightbox -->
+    <div class="mva-lb-overlay" id="mva-lb" onclick="if(event.target===this)closeMvaLb()">
+        <button class="mva-lb-nav mva-lb-prev" onclick="navMvaLb(-1)">‹</button>
+        <div class="mva-lb-card">
+            <button class="mva-lb-close" onclick="closeMvaLb()">✕</button>
+            <div class="mva-lb-title" id="mva-lb-title"></div>
+            <div class="mva-lb-sub" id="mva-lb-sub"></div>
+            <canvas id="mva-lb-canvas" width="750" height="300"></canvas>
+        </div>
+        <button class="mva-lb-nav mva-lb-next" onclick="navMvaLb(1)">›</button>
+    </div>
+    <!-- Context Menu -->
+    <div class="ctx-overlay" id="ctx-overlay" onclick="closeCtxMenu()"></div>
+    <div class="field-ctx-menu" id="field-ctx-menu">
+        <div class="ctx-title" id="ctx-field-name">欄位</div>
+        <div class="ctx-item" onclick="ctxAddToZone('rows')">⬇️ 加入列（行標籤）</div>
+        <div class="ctx-item" onclick="ctxAddToZone('cols')">➡️ 加入欄（列標籤）</div>
+        <div class="ctx-item" onclick="ctxAddToZone('filters')">🔽 加入篩選</div>
+        <div class="ctx-sep"></div>
+        <div class="ctx-title">值（彙總方式）</div>
+        <div class="ctx-item" onclick="ctxAddValue('count')">📊 數目</div>
+        <div class="ctx-item" onclick="ctxAddValue('mean')">📐 均值</div>
+        <div class="ctx-item" onclick="ctxAddValue('sum')">➕ 總和</div>
+        <div class="ctx-item" onclick="ctxAddValue('std')">📏 標準差</div>
+        <div class="ctx-item" onclick="ctxAddValue('min')">⬇ 最小值</div>
+        <div class="ctx-item" onclick="ctxAddValue('max')">⬆ 最大值</div>
+        <div class="ctx-item" onclick="ctxAddValue('median')">🔹 中位數</div>
+    </div>
+
+    <script>
+        // ================================================================
+        // State
+        // ================================================================
+        let currentFileId = null;
+        let allFields = [];          // [{name, dtype}]
+        let pivotConfig = {
+            rows: [],
+            cols: [],
+            values: [],    // [{name, agg}]
+            filters: []
+        };
+
+        // ================================================================
+        // Tool Sidebar Switching
+        // ================================================================
+        function switchTool(toolName) {
+            document.querySelectorAll('.ts-tool-item').forEach(item => {
+                item.classList.toggle('active', item.dataset.tool === toolName);
+            });
+            document.getElementById('panel-pivot').style.display = toolName === 'pivot' ? 'contents' : 'none';
+            document.getElementById('panel-mva').style.display = toolName === 'mva' ? 'flex' : 'none';
+            document.getElementById('panel-gb').style.display = toolName === 'gb' ? 'flex' : 'none';
+            if (toolName === 'gb' && currentFileId && !_gbScatterData) gbLoadScatter();
+        }
+
+        // ================================================================
+        // MVA: Multivariate Analysis
+        // ================================================================
+        let _mvaT2Data = null;
+        let _mvaPad = { t: 30, b: 35, l: 55, r: 15 };
+        let _mvaSelected = [];
+        let _mvaBrush = null;
+        const _mvaFilters = [];  // [{col, keyword, excludeEmpty}]
+
+        function openMvaFilter() {
+            // Reuse the filter popover, but target MVA
+            const sel = document.getElementById('fp-col-select');
+            sel.innerHTML = '<option value="">— 選擇欄位 —</option>';
+            // Use allFields (loaded from file)
+            allFields.forEach(f => {
+                sel.innerHTML += `<option value="${escapeAttr(f.name)}">${f.name}</option>`;
+            });
+            document.getElementById('fp-keyword').value = '';
+            document.getElementById('fp-exclude-empty').checked = false;
+            // Change popover's submit to addMvaFilter
+            document.getElementById('filter-popover').dataset.target = 'mva';
+            document.getElementById('filter-popover').style.display = 'flex';
+        }
+
+        function addMvaFilter() {
+            const col = document.getElementById('fp-col-select').value;
+            if (!col) return;
+            const keyword = document.getElementById('fp-keyword').value.trim();
+            const excludeEmpty = document.getElementById('fp-exclude-empty').checked;
+            if (!keyword && !excludeEmpty) return;
+            _mvaFilters.push({ col, keyword, excludeEmpty });
+            closeFilterPopover();
+            renderMvaFilterChips();
+        }
+
+        function removeMvaFilter(idx) {
+            const removed = _mvaFilters[idx];
+            _mvaFilters.splice(idx, 1);
+            renderMvaFilterChips();
+            if (removed && removed.isExclusion) {
+                _rebuildExcluded();
+                if (currentFileId) runMvaT2();
+            }
+            if (removed && removed.isColExclusion) {
+                const ci = _mvaExcludedCols.indexOf(removed.colName);
+                if (ci >= 0) _mvaExcludedCols.splice(ci, 1);
+                // Re-run analysis if panel is open
+                if (_mvaSelected.length) mvaAnalyzeSelected();
+            }
+        }
+
+        function renderMvaFilterChips() {
+            const container = document.getElementById('mva-filter-chips');
+            if (!_mvaFilters.length) { container.innerHTML = ''; return; }
+            container.innerHTML = _mvaFilters.map((f, i) => {
+                let desc = f.col;
+                if (f.keyword) desc += ` "${f.keyword}"`;
+                if (f.excludeEmpty) desc += ' (排除空白)';
+                return `<div class="dz-chip" style="background:#eef2ff;border-color:#c7d2fe;">${desc}<span class="chip-remove" onclick="removeMvaFilter(${i})">✕</span></div>`;
+            }).join('');
+        }
+
+        async function runMvaT2() {
+            if (!currentFileId) { alert('請先選擇檔案'); return; }
+            const btn = document.querySelector('.mva-run-btn');
+            btn.disabled = true; btn.textContent = '⏳ 計算中...';
+            try {
+                const sid = getSessionId();
+                const resp = await fetch(`/api/data-prep/t2-compute?session_id=${sid}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        file_id: currentFileId,
+                        filters: _mvaFilters
+                            .filter(f => !f.isExclusion && !f.isColExclusion)
+                            .map(f => ({
+                                column: f.col,
+                                keyword: f.keyword || '',
+                                exclude_empty: f.excludeEmpty || false
+                            })),
+                        exclude_indices: _mvaExcludedIndices,
+                        exclude_columns: _mvaExcludedCols
+                    })
+                });
+                if (!resp.ok) {
+                    let msg = 'T² 計算失敗';
+                    try { const err = await resp.json(); msg = err.detail || msg; } catch (_) { msg = await resp.text(); }
+                    alert(msg);
+                    return;
+                }
+                _mvaT2Data = await resp.json();
+                _mvaSelected = [];
+                // Use backend-provided original indices mapping
+                _mvaOrigMap = _mvaT2Data.original_indices || Array.from({ length: _mvaT2Data.t2_values.length }, (_, i) => i);
+                drawMvaChart();
+                document.getElementById('mva-action-bar').style.display = 'none';
+                document.getElementById('mva-info').textContent =
+                    `${_mvaT2Data.n_obs} 筆 | ${_mvaT2Data.n_anomalies} 異常 | ${_mvaT2Data.pca_used ? 'PCA ' + _mvaT2Data.n_components + ' comp' : _mvaT2Data.n_components + ' 維度'}`;
+            } catch (e) {
+                if (e.name !== 'AbortError') alert('計算錯誤: ' + e.message);
+            } finally {
+                btn.disabled = false; btn.textContent = '▶ 執行分析';
+            }
+        }
+
+        // Shortcut: jump to MVA from pivot T² link
+        function loadMvaFromPivot(rowIdx) {
+            const row = lastPivotData[rowIdx];
+            if (!row || !row['_t2_data']) return;
+            _mvaT2Data = JSON.parse(JSON.stringify(row['_t2_data']));
+            _mvaSelected = [];
+            _mvaExcludedIndices = [];
+            _mvaOrigMap = Array.from({ length: _mvaT2Data.t2_values.length }, (_, i) => i);
+            // Auto-import pivot group conditions as filter chips
+            _mvaFilters.length = 0;
+            lastPivotCols.forEach(c => {
+                if (c.startsWith('Top1') || c.startsWith('XGB') || c === 'T² 異常' ||
+                    c === 'Source Table' || c === 'ID') return;
+                const val = row[c];
+                if (val != null && typeof val === 'string' && val.trim()) {
+                    _mvaFilters.push({ col: c, keyword: val, excludeEmpty: false });
+                }
+            });
+            renderMvaFilterChips();
+            switchTool('mva');
+            drawMvaChart();
+            document.getElementById('mva-action-bar').style.display = 'none';
+            document.getElementById('mva-info').textContent =
+                `${_mvaT2Data.n_obs} 筆 | ${_mvaT2Data.n_anomalies} 異常 | ${_mvaT2Data.pca_used ? 'PCA ' + _mvaT2Data.n_components + ' comp' : '原始維度'}`;
+        }
+
+        function drawMvaChart() {
+            const canvas = document.getElementById('mva-canvas');
+            const wrap = document.getElementById('mva-chart-wrap');
+            const W = wrap.clientWidth || 1000;
+            const H = 340;
+            canvas.width = W; canvas.height = H;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
+
+            if (!_mvaT2Data) return;
+
+            const vals = _mvaT2Data.t2_values;
+            const u95 = _mvaT2Data.ucl_95;
+            const u99 = _mvaT2Data.ucl_99;
+            const pad = _mvaPad;
+            const cw = W - pad.l - pad.r, ch = H - pad.t - pad.b;
+            const maxVal = Math.max(...vals, u99) * 1.15;
+
+            const xScale = i => pad.l + (i / Math.max(vals.length - 1, 1)) * cw;
+            const yScale = v => pad.t + ch - (v / maxVal) * ch;
+
+            // Grid
+            ctx.strokeStyle = '#e2e8f0'; ctx.lineWidth = 0.5;
+            for (let i = 0; i <= 5; i++) {
+                const y = pad.t + (ch / 5) * i;
+                ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(pad.l + cw, y); ctx.stroke();
+            }
+
+            // 95% line
+            ctx.setLineDash([6, 4]);
+            ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = 1.5;
+            const y95 = yScale(u95);
+            ctx.beginPath(); ctx.moveTo(pad.l, y95); ctx.lineTo(pad.l + cw, y95); ctx.stroke();
+            ctx.fillStyle = '#f59e0b'; ctx.font = '11px sans-serif';
+            ctx.fillText(`95% UCL = ${u95.toFixed(1)}`, pad.l + 5, y95 - 5);
+
+            // 99% line
+            ctx.strokeStyle = '#dc2626'; ctx.lineWidth = 1.5;
+            const y99 = yScale(u99);
+            ctx.beginPath(); ctx.moveTo(pad.l, y99); ctx.lineTo(pad.l + cw, y99); ctx.stroke();
+            ctx.fillStyle = '#dc2626';
+            ctx.fillText(`99% UCL = ${u99.toFixed(1)}`, pad.l + 5, y99 - 5);
+            ctx.setLineDash([]);
+
+            // T² line
+            ctx.strokeStyle = '#93c5fd'; ctx.lineWidth = 1;
+            ctx.beginPath();
+            for (let i = 0; i < vals.length; i++) {
+                const x = xScale(i), y = yScale(Math.min(vals[i], maxVal));
+                i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+
+            // Points
+            for (let i = 0; i < vals.length; i++) {
+                const x = xScale(i), y = yScale(Math.min(vals[i], maxVal));
+                const isSelected = _mvaSelected.includes(i);
+                const isAnomaly = vals[i] > u99;
+                ctx.beginPath(); ctx.arc(x, y, isSelected ? 4 : 2.5, 0, Math.PI * 2);
+                if (isSelected) {
+                    ctx.fillStyle = '#6366f1'; ctx.fill();
+                    ctx.strokeStyle = '#4338ca'; ctx.lineWidth = 1.5; ctx.stroke();
+                } else if (isAnomaly) {
+                    ctx.fillStyle = '#dc2626'; ctx.fill();
+                } else {
+                    ctx.fillStyle = '#3b82f6'; ctx.fill();
+                }
+            }
+
+            // Y axis ticks
+            ctx.fillStyle = '#94a3b8'; ctx.font = '9px sans-serif';
+            for (let i = 0; i <= 5; i++) {
+                const v = (maxVal / 5) * (5 - i);
+                const y = pad.t + (ch / 5) * i;
+                ctx.fillText(v.toFixed(1), pad.l - 42, y + 3);
+            }
+            // X axis
+            ctx.fillStyle = '#64748b'; ctx.font = '10px sans-serif';
+            ctx.fillText('Index', pad.l + cw / 2 - 15, H - 5);
+            ctx.save(); ctx.translate(12, pad.t + ch / 2); ctx.rotate(-Math.PI / 2);
+            ctx.fillText('T² Value', -25, 0); ctx.restore();
+        }
+
+        // Brush selection on MVA canvas
+        (function setupMvaBrush() {
+            const canvas = document.getElementById('mva-canvas');
+            const wrap = document.getElementById('mva-chart-wrap');
+            let brushEl = null;
+
+            canvas.addEventListener('mousedown', e => {
+                if (!_mvaT2Data) return;
+                const r = canvas.getBoundingClientRect();
+                _mvaBrush = { startX: e.clientX - r.left, startY: e.clientY - r.top };
+                // Remove old brush rect
+                const old = wrap.querySelector('.mva-brush-rect');
+                if (old) old.remove();
+                brushEl = document.createElement('div');
+                brushEl.className = 'mva-brush-rect';
+                wrap.appendChild(brushEl);
+            });
+
+            canvas.addEventListener('mousemove', e => {
+                if (!_mvaBrush || !brushEl) return;
+                const r = canvas.getBoundingClientRect();
+                const cx = e.clientX - r.left, cy = e.clientY - r.top;
+                const scaleX = canvas.width / r.width;
+                const scaleY = canvas.height / r.height;
+                const x1 = Math.min(_mvaBrush.startX, cx), y1 = Math.min(_mvaBrush.startY, cy);
+                const w = Math.abs(cx - _mvaBrush.startX), h = Math.abs(cy - _mvaBrush.startY);
+                brushEl.style.left = (x1 / scaleX) + 'px';
+                brushEl.style.top = (y1 / scaleY) + 'px';
+                brushEl.style.width = (w / scaleX) + 'px';
+                brushEl.style.height = (h / scaleY) + 'px';
+            });
+
+            canvas.addEventListener('mouseup', e => {
+                if (!_mvaBrush || !_mvaT2Data) return;
+                const r = canvas.getBoundingClientRect();
+                const scaleX = canvas.width / r.width;
+                const scaleY = canvas.height / r.height;
+                const endX = e.clientX - r.left, endY = e.clientY - r.top;
+                const x1 = Math.min(_mvaBrush.startX, endX) * scaleX;
+                const x2 = Math.max(_mvaBrush.startX, endX) * scaleX;
+                const y1 = Math.min(_mvaBrush.startY, endY) * scaleY;
+                const y2 = Math.max(_mvaBrush.startY, endY) * scaleY;
+                _mvaBrush = null;
+
+                // Find selected points
+                const vals = _mvaT2Data.t2_values;
+                const pad = _mvaPad;
+                const W = canvas.width, H = canvas.height;
+                const cw = W - pad.l - pad.r, ch = H - pad.t - pad.b;
+                const maxVal = Math.max(...vals, _mvaT2Data.ucl_99) * 1.15;
+                const xScale = i => pad.l + (i / Math.max(vals.length - 1, 1)) * cw;
+                const yScale = v => pad.t + ch - (v / maxVal) * ch;
+
+                _mvaSelected = [];
+                for (let i = 0; i < vals.length; i++) {
+                    const px = xScale(i), py = yScale(Math.min(vals[i], maxVal));
+                    if (px >= x1 && px <= x2 && py >= y1 && py <= y2) {
+                        _mvaSelected.push(i);
+                    }
+                }
+
+                drawMvaChart();
+                showMvaActionBar();
+
+                // Remove brush rect after short delay
+                setTimeout(() => {
+                    const old = wrap.querySelector('.mva-brush-rect');
+                    if (old) old.remove();
+                }, 300);
+            });
+        })();
+
+        let _mvaExcludedIndices = [];  // original row indices excluded (sent to backend)
+        let _mvaOrigMap = [];          // maps current chart idx → original row idx
+
+        function showMvaActionBar() {
+            const bar = document.getElementById('mva-action-bar');
+            if (_mvaSelected.length === 0) { bar.style.display = 'none'; return; }
+            bar.style.display = 'flex';
+            document.getElementById('mva-sel-info').textContent = `已選取 ${_mvaSelected.length} 筆`;
+        }
+
+        function mvaClearSelection() {
+            _mvaSelected = [];
+            drawMvaChart();
+            document.getElementById('mva-action-bar').style.display = 'none';
+        }
+
+        // Rebuild _mvaExcludedIndices from all exclusion chips
+        function _rebuildExcluded() {
+            _mvaExcludedIndices = [];
+            _mvaFilters.forEach(f => {
+                if (f.isExclusion && f.origIndices) _mvaExcludedIndices.push(...f.origIndices);
+            });
+        }
+
+        function mvaRemoveSelected() {
+            if (!_mvaSelected.length || !_mvaT2Data) return;
+            // Map current chart indices → original row indices
+            const origIdxs = _mvaSelected.map(i => _mvaOrigMap[i]).filter(x => x !== undefined);
+            const count = origIdxs.length;
+            // Add chip, rebuild, re-run
+            _mvaFilters.push({ col: `排除 ${count} 筆`, keyword: '', excludeEmpty: false, isExclusion: true, origIndices: origIdxs });
+            renderMvaFilterChips();
+            _mvaSelected = [];
+            document.getElementById('mva-action-bar').style.display = 'none';
+            _rebuildExcluded();
+            runMvaT2();
+        }
+
+        function mvaKeepSelected() {
+            if (!_mvaSelected.length || !_mvaT2Data) return;
+            const keepSet = new Set(_mvaSelected);
+            // Everything NOT selected → excluded
+            const origIdxs = [];
+            _mvaT2Data.t2_values.forEach((_, i) => {
+                if (!keepSet.has(i) && _mvaOrigMap[i] !== undefined) origIdxs.push(_mvaOrigMap[i]);
+            });
+            const keepCount = keepSet.size;
+            const removeCount = origIdxs.length;
+            _mvaFilters.push({ col: `保留 ${keepCount} 筆 (排除 ${removeCount})`, keyword: '', excludeEmpty: false, isExclusion: true, origIndices: origIdxs });
+            renderMvaFilterChips();
+            _mvaSelected = [];
+            document.getElementById('mva-action-bar').style.display = 'none';
+            _rebuildExcluded();
+            runMvaT2();
+        }
+
+        let _mvaContribData = null;
+        let _mvaExcludedCols = [];  // columns excluded from contribution analysis
+
+        async function mvaAnalyzeSelected() {
+            if (!_mvaSelected.length || !_mvaT2Data || !currentFileId) return;
+            const panel = document.getElementById('mva-contrib-panel');
+            panel.classList.add('open');
+            panel.innerHTML = '<div class="mva-contrib-title">⏳ 計算貢獻度中...</div>';
+            try {
+                const sid = getSessionId();
+                const origSel = _mvaSelected.map(i => _mvaOrigMap[i]).filter(x => x !== undefined);
+                const resp = await fetch(`/api/data-prep/t2-contribution?session_id=${sid}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        file_id: currentFileId,
+                        filters: _mvaFilters.filter(f => !f.isExclusion && !f.isColExclusion).map(f => ({
+                            column: f.col, keyword: f.keyword || '', exclude_empty: f.excludeEmpty || false
+                        })),
+                        exclude_indices: _mvaExcludedIndices,
+                        selected_indices: origSel,
+                        exclude_columns: _mvaExcludedCols,
+                        top_n: 10
+                    })
+                });
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({}));
+                    panel.innerHTML = `<div class="mva-contrib-title">❌ ${err.detail || '分析失敗'}</div>`;
+                    return;
+                }
+                const data = await resp.json();
+                _mvaContribData = data;
+                const items = data.top_contributions || [];
+                let html = `<div class="mva-contrib-title">📊 Top ${items.length} 貢獻參數趨勢<span style="font-size:10px;color:#94a3b8;font-weight:400;margin-left:6px;">已選 ${data.n_selected} 筆</span></div>`;
+                html += '<div class="mva-trend-grid">';
+                items.forEach((item, idx) => {
+                    const safeParam = item.parameter.replace(/'/g, "\\'");
+                    html += `<div class="mva-trend-card">
+                        <div class="mva-trend-card-hdr">
+                            <div class="mva-trend-card-name" title="${item.parameter}">${item.parameter}</div>
+                            <div class="mva-trend-card-pct">${item.pct}%</div>
+                            <button class="mva-trend-card-dismiss" onclick="event.stopPropagation();mvaExcludeCol('${safeParam}')" title="排除此參數">✕</button>
+                        </div>
+                        <canvas id="mva-tc-${idx}" width="200" height="80"></canvas>
+                    </div>`;
+                });
+                html += '</div>';
+                panel.innerHTML = html;
+                // Draw all trend charts after DOM is ready
+                requestAnimationFrame(() => drawAllMvaTrends());
+            } catch (e) {
+                panel.innerHTML = `<div class="mva-contrib-title">❌ ${e.message}</div>`;
+            }
+        }
+
+        function drawAllMvaTrends() {
+            if (!_mvaContribData) return;
+            const items = _mvaContribData.top_contributions || [];
+            const selIdxs = new Set(_mvaContribData.selected_indices || []);
+            items.forEach((item, idx) => {
+                const canvas = document.getElementById(`mva-tc-${idx}`);
+                if (!canvas) return;
+                const W = canvas.parentElement.clientWidth - 16;
+                const H = 80;
+                canvas.width = W; canvas.height = H;
+                const ctx = canvas.getContext('2d');
+                ctx.fillStyle = '#fafbfc'; ctx.fillRect(0, 0, W, H);
+
+                const vals = item.values || [];
+                if (!vals.length) return;
+
+                const pad = { t: 5, b: 5, l: 3, r: 3 };
+                const cw = W - pad.l - pad.r, ch = H - pad.t - pad.b;
+                const valsClean = vals.map(v => v ?? 0);
+                const minV = Math.min(...valsClean), maxV = Math.max(...valsClean);
+                const range = maxV - minV || 1;
+                const xScale = i => pad.l + (i / Math.max(vals.length - 1, 1)) * cw;
+                const yScale = v => pad.t + ch - ((v - minV) / range) * ch;
+
+                // All points (gray)
+                ctx.fillStyle = '#94a3b8';
+                for (let i = 0; i < vals.length; i++) {
+                    if (vals[i] == null) continue;
+                    ctx.beginPath(); ctx.arc(xScale(i), yScale(vals[i]), 1, 0, Math.PI * 2); ctx.fill();
+                }
+                // Selected points (purple)
+                ctx.fillStyle = '#6366f1';
+                selIdxs.forEach(i => {
+                    if (i < vals.length && vals[i] != null) {
+                        ctx.beginPath(); ctx.arc(xScale(i), yScale(vals[i]), 2.5, 0, Math.PI * 2); ctx.fill();
+                    }
+                });
+                // Click to open lightbox
+                canvas.onclick = () => openMvaLb(idx);
+            });
+        }
+
+        async function mvaExcludeCol(paramName) {
+            if (_mvaExcludedCols.includes(paramName)) return;
+            _mvaExcludedCols.push(paramName);
+            _mvaFilters.push({
+                col: `排除欄位: ${paramName}`,
+                keyword: '', excludeEmpty: false,
+                isColExclusion: true, colName: paramName
+            });
+            renderMvaFilterChips();
+
+            // Save current selection (origMap indices)
+            const savedOrigSel = _mvaSelected.map(i => _mvaOrigMap[i]).filter(x => x !== undefined);
+
+            // Re-run T² with new column set (this clears _mvaSelected)
+            await runMvaT2();
+
+            // Restore selection: find new chart indices matching saved orig indices
+            if (savedOrigSel.length && _mvaT2Data) {
+                const origSet = new Set(savedOrigSel);
+                _mvaSelected = [];
+                _mvaOrigMap.forEach((origIdx, chartIdx) => {
+                    if (origSet.has(origIdx)) _mvaSelected.push(chartIdx);
+                });
+                if (_mvaSelected.length) {
+                    drawMvaChart();  // redraw with blue dots
+                    document.getElementById('mva-action-bar').style.display = 'flex';
+                    document.getElementById('mva-sel-info').textContent = `已選取 ${_mvaSelected.length} 筆`;
+                    // Re-run contribution analysis for new Top 10
+                    mvaAnalyzeSelected();
+                }
+            }
+        }
+
+        // ============ Trend Lightbox ============
+        let _mvaLbIdx = 0;
+
+        function openMvaLb(idx) {
+            if (!_mvaContribData) return;
+            _mvaLbIdx = idx;
+            document.getElementById('mva-lb').classList.add('open');
+            drawMvaLbChart();
+        }
+
+        function closeMvaLb() {
+            document.getElementById('mva-lb').classList.remove('open');
+        }
+
+        function navMvaLb(dir) {
+            if (!_mvaContribData) return;
+            const n = _mvaContribData.top_contributions.length;
+            _mvaLbIdx = (_mvaLbIdx + dir + n) % n;
+            drawMvaLbChart();
+        }
+
+        function drawMvaLbChart() {
+            if (!_mvaContribData) return;
+            const items = _mvaContribData.top_contributions;
+            const item = items[_mvaLbIdx];
+            if (!item) return;
+            const selIdxs = new Set(_mvaContribData.selected_indices || []);
+
+            document.getElementById('mva-lb-title').textContent = item.parameter;
+            document.getElementById('mva-lb-sub').textContent = `貢獻 ${item.pct}% · ${_mvaLbIdx + 1} / ${items.length} · ← → 切換 · ESC 關閉`;
+
+            const canvas = document.getElementById('mva-lb-canvas');
+            const card = canvas.parentElement;
+            const W = card.clientWidth - 48;
+            const H = 300;
+            canvas.width = W; canvas.height = H;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
+
+            const vals = item.values || [];
+            if (!vals.length) return;
+
+            const valsClean = vals.map(v => v ?? 0);
+            const minV = Math.min(...valsClean), maxV = Math.max(...valsClean);
+            const range = maxV - minV || 1;
+            const decimals = range < 0.1 ? 4 : range < 1 ? 3 : range < 10 ? 2 : range < 100 ? 1 : 0;
+
+            // Auto-compute left padding from label width
+            ctx.font = '10px sans-serif';
+            const longestLabel = [maxV, minV].map(v => v.toFixed(decimals));
+            const labelW = Math.max(...longestLabel.map(t => ctx.measureText(t).width));
+            const pad = { t: 15, b: 25, l: Math.ceil(labelW) + 14, r: 10 };
+            const cw = W - pad.l - pad.r, ch = H - pad.t - pad.b;
+            const xScale = i => pad.l + (i / Math.max(vals.length - 1, 1)) * cw;
+            const yScale = v => pad.t + ch - ((v - minV) / range) * ch;
+
+            // Grid
+            ctx.strokeStyle = '#dde3ea'; ctx.lineWidth = 0.5;
+            for (let i = 0; i <= 4; i++) {
+                const y = pad.t + (ch / 4) * i;
+                ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(pad.l + cw, y); ctx.stroke();
+            }
+
+            // All points
+            ctx.fillStyle = '#8896a8';
+            for (let i = 0; i < vals.length; i++) {
+                if (vals[i] == null) continue;
+                ctx.beginPath(); ctx.arc(xScale(i), yScale(vals[i]), 2.5, 0, Math.PI * 2); ctx.fill();
+            }
+            // Selected points
+            ctx.fillStyle = '#6366f1';
+            selIdxs.forEach(i => {
+                if (i < vals.length && vals[i] != null) {
+                    ctx.beginPath(); ctx.arc(xScale(i), yScale(vals[i]), 4, 0, Math.PI * 2); ctx.fill();
+                }
+            });
+
+            // Y axis labels
+            ctx.fillStyle = '#64748b'; ctx.font = '11px sans-serif'; ctx.textAlign = 'right';
+            for (let i = 0; i <= 4; i++) {
+                const v = maxV - (range / 4) * i;
+                const y = pad.t + (ch / 4) * i;
+                ctx.fillText(v.toFixed(decimals), pad.l - 6, y + 3);
+            }
+            // X axis
+            ctx.textAlign = 'center';
+            ctx.fillStyle = '#64748b';
+            ctx.fillText('Index', pad.l + cw / 2, H - 5);
+        }
+
+        // Keyboard navigation for lightbox
+        document.addEventListener('keydown', e => {
+            const lb = document.getElementById('mva-lb');
+            if (!lb.classList.contains('open')) return;
+            if (e.key === 'Escape') { closeMvaLb(); e.preventDefault(); }
+            else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { navMvaLb(-1); e.preventDefault(); }
+            else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { navMvaLb(1); e.preventDefault(); }
+        });
+        // File Loading
+        // ================================================================
+        const fileSelect = document.getElementById('prep-file-select');
+
+        async function loadFileList() {
+            try {
+                const sid = getSessionId();
+                const prevVal = fileSelect.value;
+                const resp = await fetch(`/api/analysis/files?session_id=${sid}`);
+                if (!resp.ok) return;
+                const data = await resp.json();
+                const files = data.files || [];
+                fileSelect.innerHTML = '<option value="" disabled>-- 選擇檔案 --</option>';
+                files.forEach(f => {
+                    const opt = document.createElement('option');
+                    opt.value = f.file_id || f.filename;
+                    opt.textContent = f.filename || f.file_id;
+                    if (opt.value === prevVal) opt.selected = true;
+                    fileSelect.appendChild(opt);
+                });
+                if (!prevVal) fileSelect.selectedIndex = 0;
+            } catch (e) {
+                console.error('loadFileList error:', e);
+            }
+        }
+
+        fileSelect.addEventListener('change', async () => {
+            const fid = fileSelect.value;
+            if (!fid) return;
+            currentFileId = fid;
+
+            // ── Clear all analysis state ──
+            // G/B Test
+            _gbGroups = {};
+            _gbTestResult = null;
+            _gbExcludedCols = [];
+            _gbScatterData = null;
+            _gbBrush = null;
+            gbRenderGroupChips();
+            gbRenderExcludeChips();
+            document.getElementById('gb-actions').style.display = 'none';
+            document.getElementById('gb-test-tabs').style.display = 'none';
+            document.getElementById('gb-result-grid').innerHTML = '';
+            // Target trend
+            _gbTargetValues = null;
+            _gbTargetBrush = null;
+            const tSel = document.getElementById('gb-target-select');
+            if (tSel) tSel.value = '';
+            const tInput = document.getElementById('gb-target-input');
+            if (tInput) tInput.value = '';
+            const tDd = document.getElementById('gb-target-dd');
+            if (tDd) { tDd.innerHTML = ''; tDd.classList.remove('show'); }
+            const ttCanvas = document.getElementById('gb-target-trend');
+            if (ttCanvas) { ttCanvas.getContext('2d').clearRect(0, 0, ttCanvas.width, ttCanvas.height); }
+            // MVA
+            _mvaT2Data = null; _mvaSelected = []; _mvaExcludedCols.length = 0;
+            _mvaFilters.length = 0;
+            if (typeof _mvaContribData !== 'undefined') _mvaContribData = null;
+            renderMvaFilterChips();
+            const mvaCanvas = document.getElementById('mva-canvas');
+            if (mvaCanvas) mvaCanvas.getContext('2d').clearRect(0, 0, mvaCanvas.width, mvaCanvas.height);
+            const mvaPanel = document.getElementById('mva-contrib-panel');
+            if (mvaPanel) { mvaPanel.innerHTML = ''; mvaPanel.classList.remove('open'); }
+            const mvaActionBar = document.getElementById('mva-action-bar');
+            if (mvaActionBar) mvaActionBar.style.display = 'none';
+            // PCA scatter
+            const pcaCanvas = document.getElementById('gb-scatter');
+            if (pcaCanvas) pcaCanvas.getContext('2d').clearRect(0, 0, pcaCanvas.width, pcaCanvas.height);
+            document.getElementById('gb-info').textContent = '';
+
+            await loadColumns(fid);
+        });
+        // Auto-refresh file list when dropdown is clicked
+        fileSelect.addEventListener('mousedown', () => loadFileList());
+
+        async function loadColumns(fileId) {
+            try {
+                const sid = getSessionId();
+                // Try the dedicated columns endpoint first, then fallback to summary
+                let cols = [];
+                let numericCols = [];
+
+                try {
+                    const resp = await fetch(`/api/data-prep/columns/${fileId}?session_id=${sid}`);
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        cols = data.columns || [];
+                        numericCols = data.numeric_columns || [];
+                    } else {
+                        throw new Error('columns endpoint not available');
+                    }
+                } catch (_) {
+                    // Fallback: try summary endpoint
+                    const resp2 = await fetch(`/api/data-prep/columns/${fileId}?session_id=${sid}`);
+                    if (resp2.ok) {
+                        const summary = await resp2.json();
+                        cols = summary.columns || [];
+                        numericCols = summary.numeric_columns || [];
+                    }
+                }
+
+                if (cols.length === 0) {
+                    console.warn('[DataPrep] No columns found for', fileId);
+                    return;
+                }
+
+                const numSet = new Set(numericCols);
+                allFields = cols.map(c => ({
+                    name: c,
+                    dtype: numSet.has(c) ? 'numeric' : 'category'
+                }));
+
+                // Auto-detect datetime-ish columns
+                allFields.forEach(f => {
+                    const lower = f.name.toLowerCase();
+                    if (lower.includes('time') || lower.includes('date') || lower.includes('時間') || lower.includes('日期')) {
+                        f.dtype = 'datetime';
+                    }
+                });
+
+                renderFieldList();
+                populateTargetParam();
+                resetPivot();
+            } catch (e) {
+                console.error('loadColumns error:', e);
+            }
+        }
+
+        // Multi-target parameter system
+        let selectedTargets = [];
+
+        let _targetOptions = [];
+
+        function populateTargetParam() {
+            _targetOptions = allFields.filter(f => f.dtype === 'numeric').map(f => f.name);
+        }
+
+        function showTargetDropdown() {
+            filterTargetDropdown();
+            document.getElementById('target-dropdown').classList.add('show');
+        }
+
+        function filterTargetDropdown() {
+            const q = document.getElementById('target-search').value.toLowerCase();
+            const dd = document.getElementById('target-dropdown');
+            const filtered = _targetOptions.filter(n =>
+                !selectedTargets.includes(n) && n.toLowerCase().includes(q)
+            );
+            dd.innerHTML = filtered.slice(0, 50).map(n =>
+                `<div class="ts-dropdown-item" onmousedown="selectTargetItem('${n.replace(/'/g, "\\'")}')">${n}</div>`
+            ).join('');
+            if (filtered.length === 0) {
+                dd.innerHTML = '<div style="padding:6px 8px;font-size:10px;color:#94a3b8;">無匹配</div>';
+            }
+        }
+
+        function selectTargetItem(name) {
+            addTarget(name);
+            document.getElementById('target-search').value = '';
+            document.getElementById('target-dropdown').classList.remove('show');
+        }
+
+        function hideTargetDropdown() {
+            setTimeout(() => document.getElementById('target-dropdown').classList.remove('show'), 150);
+        }
+        document.addEventListener('click', e => {
+            if (!e.target.closest('.ts-search-wrap')) hideTargetDropdown();
+        });
+
+        function addTarget(name) {
+            if (!name || selectedTargets.includes(name)) return;
+            selectedTargets.push(name);
+            renderTargetChips();
+            document.getElementById('btn-analyze').disabled = false;
+        }
+
+        function removeTarget(name) {
+            selectedTargets = selectedTargets.filter(t => t !== name);
+            renderTargetChips();
+            document.getElementById('btn-analyze').disabled = selectedTargets.length === 0;
+        }
+
+        function renderTargetChips() {
+            const container = document.getElementById('target-chips');
+            if (selectedTargets.length === 0) {
+                container.innerHTML = '';
+                return;
+            }
+            container.innerHTML = selectedTargets.map(t =>
+                `<div class="ts-chip"><span class="ts-name">${t}</span><span class="ts-rm" onclick="removeTarget('${escapeAttr(t)}')">✕</span></div>`
+            ).join('');
+        }
+
+        function resetPivot() {
+            pivotConfig.rows = [];
+            pivotConfig.cols = [];
+            pivotConfig.values = [];
+            pivotConfig.filters = [];
+            renderAllChips();
+            renderFieldList();
+        }
+
+        // ================================================================
+        // Field List Rendering
+        // ================================================================
+        function renderFieldList() {
+            const list = document.getElementById('field-list');
+            const search = document.getElementById('field-search').value.toLowerCase();
+
+            const filtered = allFields.filter(f => f.name.toLowerCase().includes(search));
+            document.getElementById('field-count').textContent = allFields.length;
+
+            // Determine which fields are already in use
+            const usedSet = new Set([
+                ...pivotConfig.rows,
+                ...pivotConfig.cols,
+                ...pivotConfig.values.map(v => v.name),
+                ...pivotConfig.filters
+            ]);
+
+            list.innerHTML = filtered.map(f => {
+                const iconClass = f.dtype === 'numeric' ? 'numeric' : f.dtype === 'datetime' ? 'datetime' : 'category';
+                const iconText = f.dtype === 'numeric' ? '#' : f.dtype === 'datetime' ? '🕐' : 'Aa';
+                const inUse = usedSet.has(f.name);
+                return `<div class="field-item ${inUse ? 'in-use' : ''}"
+                    draggable="true"
+                    ondragstart="handleFieldDragStart(event, '${escapeAttr(f.name)}', '${f.dtype}')"
+                    ondragend="handleFieldDragEnd(event)"
+                    onclick="showFieldCtxMenu(event, '${escapeAttr(f.name)}', '${f.dtype}')"
+                    title="${f.name}">
+                    <div class="field-icon ${iconClass}">${iconText}</div>
+                    <div class="field-name">${f.name}</div>
+                </div>`;
+            }).join('');
+        }
+
+        document.getElementById('field-search').addEventListener('input', renderFieldList);
+
+        // ================================================================
+        // Drag & Drop
+        // ================================================================
+        let dragData = null;
+
+        function handleFieldDragStart(e, fieldName, dtype) {
+            dragData = { name: fieldName, dtype: dtype };
+            e.dataTransfer.effectAllowed = 'copy';
+            e.dataTransfer.setData('text/plain', fieldName);
+            e.target.classList.add('dragging');
+
+            // Custom drag ghost
+            const ghost = document.createElement('div');
+            ghost.className = 'drag-ghost';
+            ghost.textContent = fieldName;
+            ghost.style.position = 'absolute';
+            ghost.style.top = '-1000px';
+            document.body.appendChild(ghost);
+            e.dataTransfer.setDragImage(ghost, 10, 14);
+            setTimeout(() => ghost.remove(), 0);
+        }
+
+        function handleFieldDragEnd(e) {
+            e.target.classList.remove('dragging');
+            dragData = null;
+        }
+
+        // ================================================================
+        // Context Menu
+        // ================================================================
+        let _ctxField = null;
+        let _ctxDtype = null;
+
+        function showFieldCtxMenu(e, fieldName, dtype) {
+            e.stopPropagation();
+            _ctxField = fieldName;
+            _ctxDtype = dtype;
+
+            const menu = document.getElementById('field-ctx-menu');
+            const overlay = document.getElementById('ctx-overlay');
+            document.getElementById('ctx-field-name').textContent = fieldName;
+
+            // Position near click
+            menu.classList.add('show');
+            overlay.classList.add('show');
+
+            const menuW = menu.offsetWidth;
+            const menuH = menu.offsetHeight;
+            let x = e.clientX + 4;
+            let y = e.clientY - 10;
+
+            // Keep within viewport
+            if (x + menuW > window.innerWidth) x = window.innerWidth - menuW - 8;
+            if (y + menuH > window.innerHeight) y = window.innerHeight - menuH - 8;
+            if (y < 8) y = 8;
+
+            menu.style.left = x + 'px';
+            menu.style.top = y + 'px';
+        }
+
+        function closeCtxMenu() {
+            document.getElementById('field-ctx-menu').classList.remove('show');
+            document.getElementById('ctx-overlay').classList.remove('show');
+            _ctxField = null;
+        }
+
+        function ctxAddToZone(zone) {
+            if (!_ctxField) return;
+            removeFromAllZones(_ctxField);
+            pivotConfig[zone].push(_ctxField);
+            closeCtxMenu();
+            renderAllChips();
+            renderFieldList();
+            autoRunPivot();
+        }
+
+        function ctxAddValue(agg) {
+            if (!_ctxField) return;
+            // Allow same field with different agg
+            if (pivotConfig.values.some(v => v.name === _ctxField && v.agg === agg)) {
+                closeCtxMenu();
+                return; // already exists with same agg
+            }
+            pivotConfig.values.push({ name: _ctxField, agg: agg });
+            closeCtxMenu();
+            renderAllChips();
+            renderFieldList();
+            autoRunPivot();
+        }
+
+        function handleDragOver(e) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'copy';
+            e.currentTarget.classList.add('drag-over');
+        }
+
+        function handleDragLeave(e) {
+            e.currentTarget.classList.remove('drag-over');
+        }
+
+        function handleDrop(e, zone) {
+            e.preventDefault();
+            e.currentTarget.classList.remove('drag-over');
+            if (!dragData) return;
+
+            const fieldName = dragData.name;
+            const dtype = dragData.dtype;
+
+            // Prevent duplicate in same zone
+            if (zone === 'values') {
+                if (pivotConfig.values.some(v => v.name === fieldName && v.agg === 'mean')) return;
+                pivotConfig.values.push({ name: fieldName, agg: 'mean' });
+            } else {
+                if (pivotConfig[zone].includes(fieldName)) return;
+                // Remove from other zones first
+                removeFromAllZones(fieldName);
+                pivotConfig[zone].push(fieldName);
+            }
+
+            renderAllChips();
+            renderFieldList();
+            autoRunPivot();
+        }
+
+        function removeFromAllZones(fieldName) {
+            pivotConfig.rows = pivotConfig.rows.filter(n => n !== fieldName);
+            pivotConfig.cols = pivotConfig.cols.filter(n => n !== fieldName);
+            pivotConfig.filters = pivotConfig.filters.filter(n => n !== fieldName);
+            pivotConfig.values = pivotConfig.values.filter(v => v.name !== fieldName);
+        }
+
+        function removeChip(fieldName, zone, idx) {
+            if (zone === 'values') {
+                pivotConfig.values.splice(idx, 1);
+            } else {
+                pivotConfig[zone] = pivotConfig[zone].filter(n => n !== fieldName);
+            }
+            renderAllChips();
+            renderFieldList();
+            autoRunPivot();
+        }
+
+        function changeAgg(idx, agg) {
+            if (pivotConfig.values[idx]) {
+                pivotConfig.values[idx].agg = agg;
+                autoRunPivot();
+            }
+        }
+
+
+        // ================================================================
+        // Chip Rendering
+        // ================================================================
+        function renderAllChips() {
+            renderChips('rows');
+            renderChips('cols');
+            renderChips('values');
+            renderChips('filters');
+        }
+
+        function renderChips(zone) {
+            const container = document.getElementById(`chips-${zone}`);
+            const hint = document.getElementById(`hint-${zone}`);
+            let items = [];
+
+            if (zone === 'values') {
+                items = pivotConfig.values;
+                container.innerHTML = items.map((v, i) => `
+                    <div class="dz-chip">
+                        <select class="agg-select" onchange="changeAgg(${i}, this.value)">
+                            <option value="mean" ${v.agg === 'mean' ? 'selected' : ''}>平均</option>
+                            <option value="sum" ${v.agg === 'sum' ? 'selected' : ''}>加總</option>
+                            <option value="count" ${v.agg === 'count' ? 'selected' : ''}>計數</option>
+                            <option value="min" ${v.agg === 'min' ? 'selected' : ''}>最小</option>
+                            <option value="max" ${v.agg === 'max' ? 'selected' : ''}>最大</option>
+                            <option value="std" ${v.agg === 'std' ? 'selected' : ''}>標準差</option>
+                            <option value="median" ${v.agg === 'median' ? 'selected' : ''}>中位數</option>
+                        </select>
+                        ${v.name}
+                        <span class="chip-remove" onclick="removeChip('${escapeAttr(v.name)}', 'values', ${i})">✕</span>
+                    </div>
+                `).join('');
+            } else {
+                items = pivotConfig[zone];
+                container.innerHTML = items.map(name => `
+                    <div class="dz-chip">
+                        ${name}
+                        <span class="chip-remove" onclick="removeChip('${escapeAttr(name)}', '${zone}')">✕</span>
+                    </div>
+                `).join('');
+            }
+
+            hint.style.display = items.length > 0 ? 'none' : '';
+        }
+
+        // ================================================================
+        // Run Pivot
+        // ================================================================
+        function clearAll() {
+            pivotConfig.rows = [];
+            pivotConfig.cols = [];
+            pivotConfig.values = [];
+            pivotConfig.filters = [];
+            renderAllChips();
+            renderFieldList();
+            document.getElementById('result-info').textContent = '';
+            document.getElementById('result-body').innerHTML = '<div class="result-empty"><div class="re-icon">📋</div><div class="re-text">將欄位拖入上方區域</div></div>';
+        }
+
+        // Auto-run pivot on drag/drop (no correlation)
+        let _autoRunTimer = null;
+        let _abortCtrl = null;
+
+        function autoRunPivot() {
+            clearTimeout(_autoRunTimer);
+            if (_abortCtrl) _abortCtrl.abort();
+            const hasGrouping = pivotConfig.rows.length > 0 || pivotConfig.cols.length > 0;
+            if (!hasGrouping) return;
+            _autoRunTimer = setTimeout(() => _doPivotFetch([]), 200);
+        }
+
+        // Manual analysis with targets (correlation)
+        async function runAnalysis() {
+            if (selectedTargets.length === 0) return;
+            const btn = document.getElementById('btn-analyze');
+            btn.disabled = true;
+            btn.textContent = '⏳ 分析中...';
+            try {
+                await _doPivotFetch(selectedTargets);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '▶ 執行分析';
+            }
+        }
+
+        async function _doPivotFetch(targets) {
+            const body = document.getElementById('result-body');
+            const info = document.getElementById('result-info');
+
+            _abortCtrl = new AbortController();
+
+            try {
+                const sid = getSessionId();
+                const payload = {
+                    file_id: currentFileId,
+                    rows: pivotConfig.rows,
+                    columns: pivotConfig.cols,
+                    values: pivotConfig.values.map(v => ({ column: v.name, aggfunc: v.agg })),
+                    filters: pivotConfig.filters,
+                    targets: targets
+                };
+
+                const resp = await fetch(`/api/data-prep/pivot?session_id=${sid}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                    signal: _abortCtrl.signal
+                });
+
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({}));
+                    throw new Error(err.detail || `HTTP ${resp.status}`);
+                }
+
+                const result = await resp.json();
+                renderPivotResult(result);
+                info.textContent = `${result.total_rows || '?'} 筆結果`;
+            } catch (e) {
+                if (e.name === 'AbortError') return;
+                body.innerHTML = `<div class="result-empty"><div class="re-icon">❌</div><div class="re-text">分析失敗</div><div class="re-hint">${e.message}</div></div>`;
+                info.textContent = '';
+            }
+        }
+
+        let lastPivotData = null;
+        let lastPivotCols = null;
+        let _sortCol = null;
+        let _sortDir = 1; // 1=asc, -1=desc
+
+        // Analysis column filter toggles
+        const _analysisToggles = { corr: true, xgb: true, t2: true };
+        const _activeFilters = [];  // [{col, keyword, excludeEmpty}]
+
+        function openFilterPopover() {
+            const sel = document.getElementById('fp-col-select');
+            sel.innerHTML = '<option value="">— 選擇欄位 —</option>';
+            const visCols = getVisibleCols();
+            visCols.forEach(c => {
+                sel.innerHTML += `<option value="${escapeAttr(c)}">${c}</option>`;
+            });
+            document.getElementById('fp-keyword').value = '';
+            document.getElementById('fp-exclude-empty').checked = false;
+            document.getElementById('filter-popover').dataset.target = 'pivot';
+            document.getElementById('filter-popover').style.display = 'flex';
+        }
+        function closeFilterPopover() {
+            document.getElementById('filter-popover').style.display = 'none';
+        }
+        function addFilter() {
+            const target = document.getElementById('filter-popover').dataset.target;
+            if (target === 'mva') { addMvaFilter(); return; }
+            const col = document.getElementById('fp-col-select').value;
+            if (!col) return;
+            const keyword = document.getElementById('fp-keyword').value.trim();
+            const excludeEmpty = document.getElementById('fp-exclude-empty').checked;
+            if (!keyword && !excludeEmpty) return;
+            _activeFilters.push({ col, keyword, excludeEmpty });
+            closeFilterPopover();
+            renderActiveFilters();
+            renderSortedTable();
+        }
+        function removeFilter(idx) {
+            _activeFilters.splice(idx, 1);
+            renderActiveFilters();
+            renderSortedTable();
+        }
+        function resetAllFilters() {
+            _activeFilters.length = 0;
+            renderActiveFilters();
+            renderSortedTable();
+        }
+        function renderActiveFilters() {
+            const container = document.getElementById('chips-filters');
+            const hint = document.getElementById('hint-filters');
+            // Keep existing drag-drop filter chips, append active filter chips
+            const existingChips = pivotConfig.filters.map(name =>
+                `<div class="dz-chip">${name}<span class="chip-remove" onclick="removeChip('${escapeAttr(name)}', 'filters')">✕</span></div>`
+            ).join('');
+            const activeChips = _activeFilters.map((f, i) => {
+                let desc = f.col;
+                if (f.keyword) desc += ` "${f.keyword}"`;
+                if (f.excludeEmpty) desc += ' (排除空白)';
+                return `<div class="dz-chip" style="background:#eef2ff;border-color:#c7d2fe;">${desc}<span class="chip-remove" onclick="removeFilter(${i})">✕</span></div>`;
+            }).join('');
+            container.innerHTML = existingChips + activeChips;
+            hint.style.display = (pivotConfig.filters.length + _activeFilters.length) > 0 ? 'none' : '';
+        }
+
+        function toggleAnalysisType(type) {
+            _analysisToggles[type] = !_analysisToggles[type];
+            const btn = document.querySelector(`.atgl[data-type="${type}"]`);
+            if (btn) btn.classList.toggle('active', _analysisToggles[type]);
+            renderSortedTable();
+        }
+
+        function getVisibleCols() {
+            return lastPivotCols.filter(c => {
+                if (c.startsWith('Top1 vs ') || c === '共同相關 Top1') return _analysisToggles.corr;
+                if (c.startsWith('XGB Top1 vs ')) return _analysisToggles.xgb;
+                if (c === 'T² 異常') return _analysisToggles.t2;
+                return true;
+            });
+        }
+
+        function renderPivotResult(result) {
+            const body = document.getElementById('result-body');
+            lastPivotCols = result.columns || [];
+            lastPivotData = result.data || [];
+            _sortCol = null;
+            _sortDir = 1;
+
+            // Show toggle buttons if analysis columns exist
+            const hasAnalysis = lastPivotCols.some(c =>
+                c.startsWith('Top1 vs ') || c.startsWith('XGB Top1 vs ') || c === 'T² 異常'
+            );
+            document.getElementById('analysis-toggles').style.display = hasAnalysis ? 'inline-flex' : 'none';
+
+            if (lastPivotData.length === 0) {
+                body.innerHTML = '<div class="result-empty"><div class="re-icon">📭</div><div class="re-text">無結果</div></div>';
+                return;
+            }
+
+            renderSortedTable();
+        }
+
+        function sortByColumn(col) {
+            if (_sortCol === col) {
+                _sortDir *= -1;
+            } else {
+                _sortCol = col;
+                _sortDir = 1;
+            }
+
+            // Determine sort key
+            let sortKey = col;
+            if (col.startsWith('Top1 vs ')) {
+                const target = col.replace('Top1 vs ', '');
+                sortKey = '_sort_' + target;
+            } else if (col.startsWith('XGB Top1 vs ')) {
+                const target = col.replace('XGB Top1 vs ', '');
+                sortKey = '_xgb_sort_' + target;
+            } else if (col === '共同相關 Top1') {
+                sortKey = '_sort_common';
+            }
+
+            lastPivotData.sort((a, b) => {
+                let va = a[sortKey], vb = b[sortKey];
+                if (va == null) return 1;
+                if (vb == null) return -1;
+                if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * _sortDir;
+                return String(va).localeCompare(String(vb)) * _sortDir;
+            });
+            renderSortedTable();
+        }
+
+        function renderSortedTable() {
+            const body = document.getElementById('result-body');
+            const visCols = getVisibleCols();
+
+            // Apply active filters
+            let filteredData = lastPivotData;
+            for (const f of _activeFilters) {
+                filteredData = filteredData.filter(row => {
+                    const val = row[f.col];
+                    if (f.excludeEmpty && (val == null || String(val).trim() === '')) return false;
+                    if (f.keyword) {
+                        const sv = String(val ?? '').toLowerCase();
+                        const op = f.keyword.trim();
+                        // Support numeric operators: >=30, <=10, >5, <3, =100
+                        const numMatch = op.match(/^([><=!]+)\s*([\d.]+)$/);
+                        if (numMatch) {
+                            const nv = Number(val);
+                            const threshold = Number(numMatch[2]);
+                            const oper = numMatch[1];
+                            if (isNaN(nv)) return false;
+                            if (oper === '>=' || oper === '≥') return nv >= threshold;
+                            if (oper === '<=') return nv <= threshold;
+                            if (oper === '>') return nv > threshold;
+                            if (oper === '<') return nv < threshold;
+                            if (oper === '=' || oper === '==') return nv === threshold;
+                            if (oper === '!=') return nv !== threshold;
+                        }
+                        if (!sv.includes(op.toLowerCase())) return false;
+                    }
+                    return true;
+                });
+            }
+
+            document.getElementById('result-info').textContent = `${filteredData.length} 筆結果`;
+
+            let html = '<table><thead><tr>';
+            visCols.forEach(h => {
+                const arrow = _sortCol === h ? (_sortDir === 1 ? ' ▲' : ' ▼') : ' ⇅';
+                html += `<th onclick="sortByColumn('${escapeAttr(h)}')" style="cursor:pointer;user-select:none;">${h}<span style="font-size:9px;opacity:0.5;margin-left:3px;">${arrow}</span></th>`;
+            });
+            html += '</tr></thead><tbody>';
+            filteredData.forEach((row, _fi) => {
+                const rowIdx = lastPivotData.indexOf(row);
+                html += '<tr>';
+                visCols.forEach(h => {
+                    if (h.startsWith('Top1 vs ')) {
+                        const target = h.replace('Top1 vs ', '');
+                        const top3Key = '_top3_' + target;
+                        const top3 = row[top3Key];
+                        if (top3 && top3.length > 0) {
+                            const t1 = top3[0];
+                            const label = `${t1.name}(${t1.r >= 0 ? '+' : ''}${t1.r.toFixed(3)})`;
+                            html += `<td><span class="top1-link" onclick="openCorrChart(${rowIdx},'${escapeAttr(target)}')">${label}</span></td>`;
+                        } else {
+                            html += `<td>${formatCell(row[h])}</td>`;
+                        }
+                    } else if (h === '共同相關 Top1') {
+                        const ct3 = row['_top3_common'];
+                        if (ct3 && ct3.length > 0) {
+                            const c1 = ct3[0];
+                            const label = `${c1.name}(Σ${c1.score.toFixed(3)})`;
+                            html += `<td><span class="top1-link" onclick="openCommonChart(${rowIdx})">${label}</span></td>`;
+                        } else {
+                            html += `<td>${formatCell(row[h])}</td>`;
+                        }
+                    } else if (h.startsWith('XGB Top1 vs ')) {
+                        const target = h.replace('XGB Top1 vs ', '');
+                        const xgbKey = '_xgb_top3_' + target;
+                        const xgb3 = row[xgbKey];
+                        if (xgb3 && xgb3.length > 0) {
+                            const x1 = xgb3[0];
+                            const label = `${x1.name}(${x1.imp.toFixed(3)})`;
+                            html += `<td><span class="xgb-link" onclick="openXgbChart(${rowIdx},'${escapeAttr(target)}')">${label}</span></td>`;
+                        } else {
+                            html += `<td>${formatCell(row[h])}</td>`;
+                        }
+                    } else if (h === 'T² 異常') {
+                        const t2d = row['_t2_data'];
+                        if (t2d && t2d.t2_values) {
+                            html += `<td><span class="t2-link" onclick="loadMvaFromPivot(${rowIdx})">${t2d.n_anomalies}/${t2d.n_obs}</span></td>`;
+                        } else {
+                            html += `<td>${formatCell(row[h])}</td>`;
+                        }
+                    } else {
+                        html += `<td>${formatCell(row[h])}</td>`;
+                    }
+                });
+                html += '</tr>';
+            });
+            html += '</tbody></table>';
+            body.innerHTML = html;
+        }
+
+        // ================================================================
+        // Chart Modal
+        // ================================================================
+        async function openCorrChart(rowIdx, target) {
+            const row = lastPivotData[rowIdx];
+            const top3Key = '_top3_' + target;
+            const top3 = row ? row[top3Key] : null;
+            if (!top3 || top3.length === 0) return;
+
+            const modal = document.getElementById('chart-modal');
+            const modalBody = document.getElementById('chart-modal-body');
+            const modalTitle = document.getElementById('chart-modal-title');
+
+            modalTitle.textContent = `Top3 相關 vs ${target}`;
+            modalBody.innerHTML = '<div class="chart-loading">⏳ 產生圖表中...</div>';
+            modal.classList.add('show');
+
+            // Build group filters from row columns
+            const groupFilters = {};
+            pivotConfig.rows.forEach(col => {
+                groupFilters[col] = String(row[col] ?? '');
+            });
+
+            const params = top3.map(t => t.name);
+
+            try {
+                const sid = getSessionId();
+                const resp = await fetch(`/api/data-prep/corr-chart?session_id=${sid}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        file_id: currentFileId,
+                        group_filters: groupFilters,
+                        target: target,
+                        params: params
+                    })
+                });
+
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({}));
+                    throw new Error(err.detail || `HTTP ${resp.status}`);
+                }
+
+                const blob = await resp.blob();
+                const url = URL.createObjectURL(blob);
+                modalBody.innerHTML = `<img src="${url}" alt="Correlation Chart">`;
+            } catch (e) {
+                modalBody.innerHTML = `<div class="chart-loading">❌ ${e.message}</div>`;
+            }
+        }
+
+        function closeChartModal() {
+            document.getElementById('chart-modal').classList.remove('show');
+        }
+
+        document.addEventListener('keydown', e => {
+            if (e.key === 'Escape') closeChartModal();
+        });
+
+        async function openCommonChart(rowIdx) {
+            const row = lastPivotData[rowIdx];
+            const ct3 = row ? row['_top3_common'] : null;
+            if (!ct3 || ct3.length === 0 || selectedTargets.length === 0) return;
+
+            const params = ct3.map(c => c.name);
+
+            const modal = document.getElementById('chart-modal');
+            const modalBody = document.getElementById('chart-modal-body');
+            const modalTitle = document.getElementById('chart-modal-title');
+
+            modalTitle.textContent = '共同相關 — 相關係數矩陣';
+            modalBody.innerHTML = '<div class="chart-loading">⏳ 產生矩陣中...</div>';
+            modal.classList.add('show');
+
+            const groupFilters = {};
+            pivotConfig.rows.forEach(col => {
+                groupFilters[col] = String(row[col] ?? '');
+            });
+
+            try {
+                const sid = getSessionId();
+                const resp = await fetch(`/api/data-prep/corr-matrix?session_id=${sid}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        file_id: currentFileId,
+                        group_filters: groupFilters,
+                        targets: selectedTargets,
+                        params: params
+                    })
+                });
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({}));
+                    throw new Error(err.detail || `HTTP ${resp.status}`);
+                }
+                const blob = await resp.blob();
+                const url = URL.createObjectURL(blob);
+                modalBody.innerHTML = `<img src="${url}" alt="Correlation Matrix">`;
+            } catch (e) {
+                modalBody.innerHTML = `<div class="chart-loading">❌ ${e.message}</div>`;
+            }
+        }
+
+        async function openXgbChart(rowIdx, target) {
+            const row = lastPivotData[rowIdx];
+            const xgbKey = '_xgb_top3_' + target;
+            const xgb3 = row ? row[xgbKey] : null;
+            if (!xgb3 || xgb3.length === 0) return;
+
+            const modal = document.getElementById('chart-modal');
+            const modalBody = document.getElementById('chart-modal-body');
+            const modalTitle = document.getElementById('chart-modal-title');
+
+            modalTitle.textContent = `XGBoost 重要參數 vs ${target}`;
+            modalBody.innerHTML = '<div class="chart-loading">⏳ 產生圖表中...</div>';
+            modal.classList.add('show');
+
+            const groupFilters = {};
+            pivotConfig.rows.forEach(col => {
+                groupFilters[col] = String(row[col] ?? '');
+            });
+
+            try {
+                const sid = getSessionId();
+                const resp = await fetch(`/api/data-prep/xgb-chart?session_id=${sid}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        file_id: currentFileId,
+                        group_filters: groupFilters,
+                        target: target,
+                        params: xgb3.map(x => x.name)
+                    })
+                });
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({}));
+                    throw new Error(err.detail || `HTTP ${resp.status}`);
+                }
+                const blob = await resp.blob();
+                const url = URL.createObjectURL(blob);
+                modalBody.innerHTML = `<img src="${url}" alt="XGBoost Chart">`;
+            } catch (e) {
+                modalBody.innerHTML = `<div class="chart-loading">❌ ${e.message}</div>`;
+            }
+        }
+
+        function openT2Chart(rowIdx) {
+            const row = lastPivotData[rowIdx];
+            const t2d = row ? row['_t2_data'] : null;
+            if (!t2d || !t2d.t2_values || t2d.t2_values.length === 0) return;
+
+            const modal = document.getElementById('chart-modal');
+            const modalBody = document.getElementById('chart-modal-body');
+            const modalTitle = document.getElementById('chart-modal-title');
+
+            const pcaInfo = t2d.pca_used ? ` (PCA ${t2d.n_components} comp)` : '';
+            modalTitle.textContent = `T² 控制圖${pcaInfo} — ${t2d.n_anomalies} 異常 / ${t2d.n_obs} 筆`;
+            modal.classList.add('show');
+
+            const vals = t2d.t2_values;
+            const u95 = t2d.ucl_95;
+            const u99 = t2d.ucl_99;
+            const maxVal = Math.max(...vals, u99) * 1.1;
+            const W = 800, H = 300;
+            const pad = { t: 30, b: 35, l: 55, r: 15 };
+            const cw = W - pad.l - pad.r, ch = H - pad.t - pad.b;
+
+            let cvs = `<canvas id="t2-canvas" width="${W}" height="${H}" style="max-width:100%;"></canvas>`;
+            modalBody.innerHTML = cvs;
+
+            const canvas = document.getElementById('t2-canvas');
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(0, 0, W, H);
+
+            const xScale = i => pad.l + (i / (vals.length - 1)) * cw;
+            const yScale = v => pad.t + ch - (v / maxVal) * ch;
+
+            // Grid
+            ctx.strokeStyle = '#e2e8f0'; ctx.lineWidth = 0.5;
+            for (let i = 0; i <= 5; i++) {
+                const y = pad.t + (ch / 5) * i;
+                ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(pad.l + cw, y); ctx.stroke();
+            }
+
+            // 95% line
+            ctx.setLineDash([6, 4]);
+            ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = 1.5;
+            const y95 = yScale(u95);
+            ctx.beginPath(); ctx.moveTo(pad.l, y95); ctx.lineTo(pad.l + cw, y95); ctx.stroke();
+            ctx.fillStyle = '#f59e0b'; ctx.font = '10px sans-serif';
+            ctx.fillText(`95% = ${u95.toFixed(1)}`, pad.l + cw - 80, y95 - 4);
+
+            // 99% line
+            ctx.strokeStyle = '#dc2626'; ctx.lineWidth = 1.5;
+            const y99 = yScale(u99);
+            ctx.beginPath(); ctx.moveTo(pad.l, y99); ctx.lineTo(pad.l + cw, y99); ctx.stroke();
+            ctx.fillStyle = '#dc2626';
+            ctx.fillText(`99% = ${u99.toFixed(1)}`, pad.l + cw - 80, y99 - 4);
+            ctx.setLineDash([]);
+
+            // T² line
+            ctx.strokeStyle = '#3b82f6'; ctx.lineWidth = 1;
+            ctx.beginPath();
+            for (let i = 0; i < vals.length; i++) {
+                const x = xScale(i), y = yScale(Math.min(vals[i], maxVal));
+                i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+
+            // Anomaly dots
+            for (let i = 0; i < vals.length; i++) {
+                if (vals[i] > u99) {
+                    ctx.fillStyle = '#dc2626';
+                    ctx.beginPath(); ctx.arc(xScale(i), yScale(Math.min(vals[i], maxVal)), 3, 0, Math.PI * 2); ctx.fill();
+                }
+            }
+
+            // Axes labels
+            ctx.fillStyle = '#64748b'; ctx.font = '10px sans-serif';
+            ctx.fillText('Index', pad.l + cw / 2 - 15, H - 5);
+            ctx.save();
+            ctx.translate(12, pad.t + ch / 2);
+            ctx.rotate(-Math.PI / 2);
+            ctx.fillText('T² Value', -25, 0);
+            ctx.restore();
+
+            // Y axis ticks
+            for (let i = 0; i <= 5; i++) {
+                const v = (maxVal / 5) * (5 - i);
+                const y = pad.t + (ch / 5) * i;
+                ctx.fillStyle = '#94a3b8'; ctx.font = '9px sans-serif';
+                ctx.fillText(v.toFixed(1), pad.l - 40, y + 3);
+            }
+        }
+
+        // ================================================================
+        // Utilities
+        // ================================================================
+        function resetPivot() {
+            pivotConfig = { rows: [], cols: [], values: [], filters: [] };
+            renderAllChips();
+            updateRunButton();
+            document.getElementById('result-body').innerHTML = `
+                <div class="result-empty">
+                    <div class="re-icon">📋</div>
+                    <div class="re-text">將欄位拖入上方區域</div>
+                    <div class="re-hint">至少需要一個「列」或「欄」，加上一個「值」欄位</div>
+                </div>`;
+            document.getElementById('result-info').textContent = '';
+        }
+
+        function getSessionId() {
+            try {
+                if (window.parent && window.parent.SESSION_ID) return window.parent.SESSION_ID;
+            } catch (e) { }
+            let sid = localStorage.getItem('sigma2_session_id');
+            if (!sid) {
+                sid = crypto.randomUUID();
+                localStorage.setItem('sigma2_session_id', sid);
+            }
+            return sid;
+        }
+
+        function escapeAttr(str) {
+            return str.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+        }
+
+        function formatCell(val) {
+            if (val === null || val === undefined) return '<span style="color:#cbd5e1;">—</span>';
+            if (typeof val === 'number') {
+                if (Number.isInteger(val)) return val.toLocaleString();
+                return val.toFixed(3);
+            }
+            return val;
+        }
+
+        // ================================================================
+        // G/B Test
+        // ================================================================
+        let _gbScatterData = null;
+        let _gbGroups = {};  // { "G1": [idx...], "G2": [...] }
+        let _gbBrush = null;
+        let _gbMode = 'pca';
+        let _gbTestMethod = 'ttest';
+        let _gbTestResult = null;
+        let _gbExcludedCols = [];
+        const _gbColors = ['#ef4444', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
+        const _gbPad = { t: 25, b: 30, l: 50, r: 15 };
+
+        function gbSwitchMode(mode) {
+            _gbMode = mode;
+            document.querySelectorAll('.gb-mode-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+            document.getElementById('gb-pca-area').style.display = mode === 'pca' ? '' : 'none';
+            document.getElementById('gb-target-area').style.display = mode === 'target' ? '' : 'none';
+            if (mode === 'pca') {
+                if (currentFileId && !_gbScatterData) gbLoadScatter();
+                else gbDrawScatter();
+            }
+            if (mode === 'target') {
+                if (currentFileId) gbLoadTargetCols();
+                if (_gbTargetValues) gbDrawTargetTrend();
+            }
+        }
+
+        async function gbLoadScatter() {
+            if (!currentFileId) return;
+            const sid = getSessionId();
+            try {
+                const resp = await fetch(`/api/data-prep/pca-scatter?session_id=${sid}`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ file_id: currentFileId, filters: [], exclude_indices: [], exclude_cols: _gbExcludedCols })
+                });
+                if (!resp.ok) return;
+                _gbScatterData = await resp.json();
+                document.getElementById('gb-info').textContent =
+                    `${_gbScatterData.n_obs} 筆 | PC1: ${(_gbScatterData.explained_var[0] * 100).toFixed(1)}% PC2: ${(_gbScatterData.explained_var[1] * 100).toFixed(1)}%`;
+                gbDrawScatter();
+            } catch (e) { console.error(e); }
+        }
+
+        function gbDrawScatter() {
+            const data = _gbScatterData;
+            if (!data) return;
+            const canvas = document.getElementById('gb-scatter');
+            // Dynamic size to fit container
+            const containerW = canvas.parentElement.clientWidth - 2;
+            if (containerW > 100) {
+                canvas.width = containerW;
+                canvas.height = Math.round(containerW * 0.7);
+            }
+            const ctx = canvas.getContext('2d');
+            const w = canvas.width, h = canvas.height;
+            const pad = _gbPad;
+            const cw = w - pad.l - pad.r, ch = h - pad.t - pad.b;
+            ctx.clearRect(0, 0, w, h);
+            ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h);
+
+            const scores = data.scores;
+            const xs = scores.map(s => s[0]), ys = scores.map(s => s[1]);
+            const xMin = Math.min(...xs), xMax = Math.max(...xs);
+            const yMin = Math.min(...ys), yMax = Math.max(...ys);
+            const xRange = xMax - xMin || 1, yRange = yMax - yMin || 1;
+            const sx = i => pad.l + ((xs[i] - xMin) / xRange) * cw;
+            const sy = i => pad.t + ((yMax - ys[i]) / yRange) * ch;
+
+            // Grid
+            ctx.strokeStyle = '#dde3ea'; ctx.lineWidth = 1;
+            for (let i = 0; i <= 4; i++) {
+                const y = pad.t + (ch / 4) * i;
+                ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(pad.l + cw, y); ctx.stroke();
+            }
+
+            // Axis labels
+            ctx.fillStyle = '#94a3b8'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center';
+            ctx.fillText(`PC1 (${(data.explained_var[0] * 100).toFixed(1)}%)`, pad.l + cw / 2, h - 4);
+            ctx.save(); ctx.translate(12, pad.t + ch / 2); ctx.rotate(-Math.PI / 2);
+            ctx.fillText(`PC2 (${(data.explained_var[1] * 100).toFixed(1)}%)`, 0, 0);
+            ctx.restore();
+
+            // Build set of grouped indices
+            const groupedMap = {};  // idx → group name
+            Object.entries(_gbGroups).forEach(([gname, idxs]) => {
+                idxs.forEach(i => { groupedMap[i] = gname; });
+            });
+            const gnames = Object.keys(_gbGroups);
+
+            // Draw ungrouped points
+            ctx.fillStyle = '#cbd5e1';
+            scores.forEach((_, i) => {
+                if (groupedMap[i] === undefined) {
+                    ctx.beginPath(); ctx.arc(sx(i), sy(i), 2, 0, Math.PI * 2); ctx.fill();
+                }
+            });
+
+            // Draw grouped points
+            gnames.forEach((gname, gi) => {
+                ctx.fillStyle = _gbColors[gi % _gbColors.length];
+                _gbGroups[gname].forEach(i => {
+                    ctx.beginPath(); ctx.arc(sx(i), sy(i), 3.5, 0, Math.PI * 2); ctx.fill();
+                });
+            });
+
+            // Draw brush rect
+            if (_gbBrush) {
+                ctx.strokeStyle = '#6366f1'; ctx.lineWidth = 1.5;
+                ctx.setLineDash([4, 3]);
+                ctx.strokeRect(_gbBrush.x, _gbBrush.y, _gbBrush.w, _gbBrush.h);
+                ctx.setLineDash([]);
+                ctx.fillStyle = 'rgba(99,102,241,0.08)';
+                ctx.fillRect(_gbBrush.x, _gbBrush.y, _gbBrush.w, _gbBrush.h);
+            }
+        }
+
+        // Scatter brush selection
+        function gbInitBrush() {
+            const canvas = document.getElementById('gb-scatter');
+            if (!canvas) return;
+            let dragging = false, startX, startY;
+            canvas.addEventListener('mousedown', e => {
+                if (!_gbScatterData) return;
+                const rect = canvas.getBoundingClientRect();
+                startX = e.clientX - rect.left; startY = e.clientY - rect.top;
+                dragging = true; _gbBrush = null;
+            });
+            canvas.addEventListener('mousemove', e => {
+                if (!dragging) return;
+                const rect = canvas.getBoundingClientRect();
+                const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+                _gbBrush = {
+                    x: Math.min(startX, mx), y: Math.min(startY, my),
+                    w: Math.abs(mx - startX), h: Math.abs(my - startY)
+                };
+                gbDrawScatter();
+            });
+            canvas.addEventListener('mouseup', e => {
+                if (!dragging || !_gbBrush || _gbBrush.w < 5 || _gbBrush.h < 5) {
+                    dragging = false; _gbBrush = null; return;
+                }
+                dragging = false;
+                const pad = _gbPad, w = canvas.width, h = canvas.height;
+                const cw = w - pad.l - pad.r, ch = h - pad.t - pad.b;
+                const scores = _gbScatterData.scores;
+                const xs = scores.map(s => s[0]), ys = scores.map(s => s[1]);
+                const xMin = Math.min(...xs), xMax = Math.max(...xs);
+                const yMin = Math.min(...ys), yMax = Math.max(...ys);
+                const xRange = xMax - xMin || 1, yRange = yMax - yMin || 1;
+                const selected = [];
+                scores.forEach((_, i) => {
+                    const px = pad.l + ((xs[i] - xMin) / xRange) * cw;
+                    const py = pad.t + ((yMax - ys[i]) / yRange) * ch;
+                    if (px >= _gbBrush.x && px <= _gbBrush.x + _gbBrush.w &&
+                        py >= _gbBrush.y && py <= _gbBrush.y + _gbBrush.h) {
+                        selected.push(i);
+                    }
+                });
+                _gbBrush = null;
+                if (selected.length > 0) {
+                    gbAddGroup(selected);
+                } else {
+                    gbDrawScatter();
+                }
+            });
+        }
+
+        function gbAddGroup(indices) {
+            const gnum = Object.keys(_gbGroups).length + 1;
+            const gname = `G${gnum}`;
+            _gbGroups[gname] = indices;
+            gbRenderGroupChips();
+            gbDrawScatter();
+            if (_gbTargetValues) gbDrawTargetTrend();
+            document.getElementById('gb-actions').style.display = 'flex';
+        }
+
+        function gbRenderGroupChips() {
+            const container = document.getElementById('gb-group-chips');
+            const gnames = Object.keys(_gbGroups);
+            container.innerHTML = gnames.map((g, i) =>
+                `<div class="gb-group-chip" style="border-color:${_gbColors[i % _gbColors.length]};background:${_gbColors[i % _gbColors.length]}15;">
+                    <span style="color:${_gbColors[i % _gbColors.length]};font-weight:600;">${g}</span> ${_gbGroups[g].length} 筆
+                    <span onclick="gbRemoveGroup('${g}')">✕</span>
+                </div>`
+            ).join('');
+        }
+
+        function gbRemoveGroup(gname) {
+            delete _gbGroups[gname];
+            // Rename remaining groups
+            const entries = Object.entries(_gbGroups);
+            _gbGroups = {};
+            entries.forEach(([, idxs], i) => { _gbGroups[`G${i + 1}`] = idxs; });
+            gbRenderGroupChips();
+            gbDrawScatter();
+            if (_gbTargetValues) gbDrawTargetTrend();
+            if (Object.keys(_gbGroups).length < 1) document.getElementById('gb-actions').style.display = 'none';
+        }
+
+        function gbClearGroups() {
+            _gbGroups = {};
+            gbRenderGroupChips();
+            gbDrawScatter();
+            if (_gbTargetValues) gbDrawTargetTrend();
+            document.getElementById('gb-actions').style.display = 'none';
+            document.getElementById('gb-test-tabs').style.display = 'none';
+            document.getElementById('gb-result-grid').innerHTML = '';
+        }
+
+        let _gbTargetOptions = [];
+
+        async function gbLoadTargetCols() {
+            if (!currentFileId) return;
+            _gbTargetOptions = (allFields || []).map(f => f.name);
+            gbTargetSearch();
+        }
+
+        function gbTargetSearch() {
+            const input = document.getElementById('gb-target-input');
+            const dd = document.getElementById('gb-target-dd');
+            const q = (input.value || '').toLowerCase();
+            const filtered = _gbTargetOptions.filter(n => !q || n.toLowerCase().includes(q));
+            dd.innerHTML = filtered.map(n =>
+                `<div class="gb-ss-item" onmousedown="gbSelectTarget('${n.replace(/'/g, "\\\\'")}')">${n}</div>`
+            ).join('');
+            if (filtered.length === 0) dd.innerHTML = '<div style="padding:8px 12px;color:#94a3b8;font-size:12px;">無符合欄位</div>';
+            dd.classList.add('show');
+        }
+
+        function gbSelectTarget(name) {
+            document.getElementById('gb-target-input').value = name;
+            document.getElementById('gb-target-select').value = name;
+            document.getElementById('gb-target-dd').classList.remove('show');
+            gbTargetChanged();
+        }
+
+        function gbToggleTargetDd(show) {
+            const dd = document.getElementById('gb-target-dd');
+            if (show) { gbTargetSearch(); }
+            else { dd.classList.remove('show'); }
+        }
+
+        // Close dropdown when clicking outside
+        document.addEventListener('click', e => {
+            const wrap = document.getElementById('gb-target-select-wrap');
+            if (wrap && !wrap.contains(e.target)) {
+                document.getElementById('gb-target-dd').classList.remove('show');
+            }
+        });
+
+        let _gbTargetValues = null;
+        let _gbTargetBrush = null;
+        const _gbTargetPad = { t: 15, b: 20, l: 45, r: 10 };
+
+        async function gbTargetChanged() {
+            const col = document.getElementById('gb-target-select').value;
+            if (!col || !currentFileId) return;
+            const sid = getSessionId();
+            try {
+                const resp = await fetch(`/api/data-prep/gb-column-values?session_id=${sid}&file_id=${currentFileId}&column=${encodeURIComponent(col)}`);
+                if (!resp.ok) return;
+                _gbTargetValues = await resp.json();
+                gbDrawTargetTrend();
+            } catch (e) { console.error(e); }
+        }
+
+        function gbDrawTargetTrend() {
+            const data = _gbTargetValues;
+            if (!data) return;
+            const canvas = document.getElementById('gb-target-trend');
+            // Dynamic size to fit container
+            const containerW = canvas.parentElement.clientWidth - 2;
+            if (containerW > 100) {
+                canvas.width = containerW;
+                canvas.height = Math.round(containerW * 0.45);
+            }
+            const ctx = canvas.getContext('2d');
+            const w = canvas.width, h = canvas.height;
+            const pad = _gbTargetPad;
+            const cw = w - pad.l - pad.r, ch = h - pad.t - pad.b;
+            ctx.clearRect(0, 0, w, h);
+            ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h);
+
+            const vals = data.values;
+            const n = vals.length;
+            if (n === 0) return;
+
+            let vMin = Infinity, vMax = -Infinity;
+            vals.forEach(v => { if (v != null) { vMin = Math.min(vMin, v); vMax = Math.max(vMax, v); } });
+            const range = vMax - vMin || 1;
+            vMin -= range * 0.05; vMax += range * 0.05;
+            const totalRange = vMax - vMin;
+            const sx = i => pad.l + (i / (n - 1 || 1)) * cw;
+            const sy = v => pad.t + ch - ((v - vMin) / totalRange) * ch;
+
+            // Grid
+            ctx.strokeStyle = '#dde3ea'; ctx.lineWidth = 0.5;
+            for (let i = 0; i <= 4; i++) {
+                const y = pad.t + (ch / 4) * i;
+                ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(pad.l + cw, y); ctx.stroke();
+            }
+            // Y-axis
+            ctx.fillStyle = '#94a3b8'; ctx.font = '9px sans-serif'; ctx.textAlign = 'right';
+            const dec = totalRange < 0.1 ? 4 : totalRange < 1 ? 3 : totalRange < 10 ? 2 : totalRange < 100 ? 1 : 0;
+            for (let i = 0; i <= 4; i++) {
+                const v = vMax - (totalRange / 4) * i;
+                ctx.fillText(v.toFixed(dec), pad.l - 4, pad.t + (ch / 4) * i + 3);
+            }
+            // X-axis
+            ctx.textAlign = 'center';
+            ctx.fillText(data.column, pad.l + cw / 2, h - 2);
+
+            // Build grouped set
+            const groupedMap = {};
+            Object.entries(_gbGroups).forEach(([gname, idxs]) => {
+                idxs.forEach(i => { groupedMap[i] = gname; });
+            });
+            const gnames = Object.keys(_gbGroups);
+
+            // Draw line
+            ctx.strokeStyle = '#cbd5e1'; ctx.lineWidth = 1;
+            ctx.beginPath();
+            let started = false;
+            vals.forEach((v, i) => {
+                if (v == null) return;
+                if (!started) { ctx.moveTo(sx(i), sy(v)); started = true; }
+                else ctx.lineTo(sx(i), sy(v));
+            });
+            ctx.stroke();
+
+            // Grouped points
+            gnames.forEach((gname, gi) => {
+                ctx.fillStyle = _gbColors[gi % _gbColors.length];
+                _gbGroups[gname].forEach(i => {
+                    if (i < 0 || i >= n || vals[i] == null) return;
+                    ctx.beginPath(); ctx.arc(sx(i), sy(vals[i]), 2.5, 0, Math.PI * 2); ctx.fill();
+                });
+            });
+
+            // Brush rect
+            if (_gbTargetBrush) {
+                ctx.strokeStyle = '#6366f1'; ctx.lineWidth = 1.5;
+                ctx.setLineDash([4, 3]);
+                ctx.strokeRect(_gbTargetBrush.x, pad.t, _gbTargetBrush.w, ch);
+                ctx.setLineDash([]);
+                ctx.fillStyle = 'rgba(99,102,241,0.08)';
+                ctx.fillRect(_gbTargetBrush.x, pad.t, _gbTargetBrush.w, ch);
+            }
+        }
+
+        function gbInitTargetBrush() {
+            const canvas = document.getElementById('gb-target-trend');
+            if (!canvas) return;
+            let dragging = false, startX;
+            canvas.addEventListener('mousedown', e => {
+                if (!_gbTargetValues) return;
+                const rect = canvas.getBoundingClientRect();
+                startX = e.clientX - rect.left;
+                dragging = true; _gbTargetBrush = null;
+            });
+            canvas.addEventListener('mousemove', e => {
+                if (!dragging) return;
+                const rect = canvas.getBoundingClientRect();
+                const mx = e.clientX - rect.left;
+                _gbTargetBrush = { x: Math.min(startX, mx), w: Math.abs(mx - startX) };
+                gbDrawTargetTrend();
+            });
+            canvas.addEventListener('mouseup', e => {
+                if (!dragging || !_gbTargetBrush || _gbTargetBrush.w < 5) {
+                    dragging = false; _gbTargetBrush = null; return;
+                }
+                dragging = false;
+                const pad = _gbTargetPad;
+                const cw = canvas.width - pad.l - pad.r;
+                const n = _gbTargetValues.values.length;
+                const i0 = Math.max(0, Math.round((_gbTargetBrush.x - pad.l) / cw * (n - 1)));
+                const i1 = Math.min(n - 1, Math.round((_gbTargetBrush.x + _gbTargetBrush.w - pad.l) / cw * (n - 1)));
+                _gbTargetBrush = null;
+                if (i1 > i0) {
+                    const idxs = [];
+                    for (let i = i0; i <= i1; i++) {
+                        if (_gbTargetValues.values[i] != null) idxs.push(i);
+                    }
+                    if (idxs.length >= 2) {
+                        gbAddGroup(idxs);
+                        gbDrawTargetTrend();
+                    }
+                }
+            });
+        }
+
+        async function gbRunTest() {
+            if (Object.keys(_gbGroups).length < 2) { alert('至少需要 2 組'); return; }
+            const sid = getSessionId();
+            const grid = document.getElementById('gb-result-grid');
+            grid.innerHTML = '<div style="padding:20px;color:#94a3b8;">⏳ 計算中...</div>';
+            document.getElementById('gb-test-tabs').style.display = 'flex';
+            const body = {
+                file_id: currentFileId,
+                filters: [], exclude_indices: [],
+                groups: _gbGroups,
+                test_method: _gbTestMethod,
+                top_n: 10,
+                exclude_cols: _gbExcludedCols
+            };
+            if (_gbTestMethod === 'fisherz') {
+                const fzMode = document.getElementById('gb-fz-mode').value;
+                if (fzMode === 'vs_target') {
+                    const tp = document.getElementById('gb-fz-target').value;
+                    if (!tp) { alert('請選擇 Target 參數'); grid.innerHTML = ''; return; }
+                    body.target_param = tp;
+                }
+                body.r_threshold = parseFloat(document.getElementById('gb-fz-rthresh').value) || 0;
+            }
+            try {
+                const resp = await fetch(`/api/data-prep/gb-test?session_id=${sid}`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                if (!resp.ok) { grid.innerHTML = '<div style="color:#ef4444;">❌ 檢定失敗</div>'; return; }
+                _gbTestResult = await resp.json();
+                gbRenderResults();
+            } catch (e) { grid.innerHTML = `<div style="color:#ef4444;">❌ ${e.message}</div>`; }
+        }
+
+        function gbSwitchTest(method) {
+            _gbTestMethod = method;
+            document.querySelectorAll('.gb-tab').forEach(b => b.classList.toggle('active', b.dataset.method === method));
+            const fzOpts = document.getElementById('gb-fz-opts');
+            fzOpts.style.display = method === 'fisherz' ? 'flex' : 'none';
+            if (method === 'fisherz') {
+                // Populate Fisher Z target dropdown
+                const sel = document.getElementById('gb-fz-target');
+                const prev = sel.value;
+                sel.innerHTML = '<option value="">— 選擇 Target —</option>';
+                (allFields || []).forEach(f => {
+                    sel.innerHTML += `<option value="${f.name}">${f.name}</option>`;
+                });
+                if (prev) sel.value = prev;
+            }
+            if (Object.keys(_gbGroups).length >= 2) gbRunTest();
+        }
+
+        function gbFzModeChanged() {
+            const mode = document.getElementById('gb-fz-mode').value;
+            document.getElementById('gb-fz-target').style.display = mode === 'vs_target' ? '' : 'none';
+            if (mode === 'all_pairs' && Object.keys(_gbGroups).length >= 2) gbRunTest();
+        }
+
+        let _gbLbIdx = 0;
+
+        function gbRenderExcludeChips() {
+            const el = document.getElementById('gb-exclude-chips');
+            if (!el) return;
+            if (_gbExcludedCols.length === 0) { el.style.display = 'none'; el.innerHTML = ''; return; }
+            el.style.display = 'flex';
+            el.innerHTML = _gbExcludedCols.map(c =>
+                `<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 8px;background:#fef2f2;border:1px solid #fecaca;border-radius:4px;font-size:10px;color:#ef4444;">
+                    排除: ${c}
+                    <button onclick="gbRemoveExclude('${c.replace(/'/g, "\\\'")}')" style="background:none;border:none;color:#ef4444;font-size:13px;cursor:pointer;padding:0;line-height:1;">&times;</button>
+                </span>`
+            ).join('');
+        }
+
+        async function gbExcludeCol(paramName) {
+            // Extract individual column names from the parameter label
+            // Fisher Z: "ColA vs ColB" → exclude both; Others: just the param name
+            const parts = paramName.includes(' vs ') ? paramName.split(' vs ').map(s => s.trim()) : [paramName];
+            let changed = false;
+            parts.forEach(p => {
+                if (!_gbExcludedCols.includes(p)) { _gbExcludedCols.push(p); changed = true; }
+            });
+            if (!changed) return;
+            gbRenderExcludeChips();
+            // Re-run PCA with new exclusions
+            await gbLoadScatter();
+            await gbRunTest();
+        }
+
+        async function gbRemoveExclude(colName) {
+            _gbExcludedCols = _gbExcludedCols.filter(c => c !== colName);
+            gbRenderExcludeChips();
+            await gbLoadScatter();
+            await gbRunTest();
+        }
+
+        function gbRenderResults() {
+            const data = _gbTestResult;
+            if (!data) return;
+            const grid = document.getElementById('gb-result-grid');
+            const gnames = data.group_names;
+            const isFZ = data.test_method === 'fisherz';
+
+            grid.innerHTML = data.results.map((item, idx) => {
+                const pColor = item.p_value < 0.001 ? '#ef4444' : item.p_value < 0.05 ? '#f59e0b' : '#94a3b8';
+                const pText = item.p_value < 0.001 ? 'p<.001' : `p=${item.p_value.toFixed(3)}`;
+                let rInfo = '';
+                if (isFZ && item.r_values) {
+                    rInfo = gnames.map(g => `${g}:${(item.r_values[g] || 0).toFixed(2)}`).join(' ');
+                    rInfo = `<div style="font-size:9px;color:#64748b;margin-top:2px;">${rInfo}</div>`;
+                }
+                const safeParam = item.parameter.replace(/'/g, "\\'");
+                return `<div class="gb-box-card" onclick="gbOpenLb(${idx})" style="position:relative;">
+                    <button onclick="event.stopPropagation();gbExcludeCol('${safeParam}')" title="排除" style="position:absolute;top:2px;right:2px;background:none;border:none;color:#94a3b8;cursor:pointer;font-size:12px;padding:2px 4px;line-height:1;z-index:2;">&times;</button>
+                    <div class="gb-box-card-hdr">
+                        <div class="gb-box-card-name" title="${item.parameter}">${item.parameter}</div>
+                        <div class="gb-box-card-pval" style="color:${pColor}">${pText}</div>
+                    </div>
+                    ${rInfo}
+                    <canvas id="gb-bp-${idx}" width="200" height="100"></canvas>
+                </div>`;
+            }).join('');
+            requestAnimationFrame(() => {
+                data.results.forEach((item, idx) => {
+                    const c = document.getElementById(`gb-bp-${idx}`);
+                    if (c) {
+                        const pw = c.parentElement.clientWidth - 16;
+                        c.width = Math.max(pw, 120);
+                        c.height = Math.round(c.width * 0.5);
+                    }
+                    if (isFZ && item.scatter_data) {
+                        gbDrawScatterPlot(`gb-bp-${idx}`, item.scatter_data, gnames, item.param_x, item.param_y, item.r_values);
+                    } else {
+                        gbDrawBoxPlot(`gb-bp-${idx}`, item.box_data, gnames);
+                    }
+                });
+            });
+        }
+
+        function gbOpenLb(idx) {
+            const data = _gbTestResult;
+            if (!data || !data.results[idx]) return;
+            _gbLbIdx = idx;
+            const item = data.results[idx];
+            const pColor = item.p_value < 0.001 ? '#ef4444' : item.p_value < 0.05 ? '#f59e0b' : '#94a3b8';
+            const pText = item.p_value < 0.001 ? 'p<.001' : `p=${item.p_value.toFixed(3)}`;
+            document.getElementById('gb-lb-title').textContent = item.parameter;
+            const pvalEl = document.getElementById('gb-lb-pval');
+            pvalEl.textContent = pText;
+            pvalEl.style.color = pColor;
+            document.getElementById('gb-lb-counter').textContent = `${idx + 1} / ${data.results.length}`;
+            document.getElementById('gb-lightbox').classList.add('show');
+            const isFZ = data.test_method === 'fisherz';
+            if (isFZ && item.scatter_data) {
+                gbDrawScatterPlot('gb-lb-canvas', item.scatter_data, data.group_names, item.param_x, item.param_y, item.r_values);
+            } else {
+                gbDrawBoxPlot('gb-lb-canvas', item.box_data, data.group_names);
+            }
+        }
+
+        function gbCloseLb() {
+            document.getElementById('gb-lightbox').classList.remove('show');
+        }
+
+        function gbNavLb(dir) {
+            const data = _gbTestResult;
+            if (!data) return;
+            const n = data.results.length;
+            _gbLbIdx = (_gbLbIdx + dir + n) % n;
+            gbOpenLb(_gbLbIdx);
+        }
+
+        document.addEventListener('keydown', e => {
+            const lb = document.getElementById('gb-lightbox');
+            if (!lb || !lb.classList.contains('show')) return;
+            if (e.key === 'Escape') gbCloseLb();
+            else if (e.key === 'ArrowLeft') gbNavLb(-1);
+            else if (e.key === 'ArrowRight') gbNavLb(1);
+        });
+
+        function gbDrawScatterPlot(canvasId, scatterData, groupNames, paramX, paramY, rValues) {
+            const canvas = document.getElementById(canvasId);
+            if (!canvas || !scatterData) return;
+            const ctx = canvas.getContext('2d');
+            const w = canvas.width, h = canvas.height;
+            const isLarge = w > 300;
+            ctx.clearRect(0, 0, w, h);
+            ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h);
+            const pad = isLarge
+                ? { t: 15, b: 30, l: 50, r: 15 }
+                : { t: 6, b: 16, l: 6, r: 6 };
+            const cw = w - pad.l - pad.r, ch = h - pad.t - pad.b;
+
+            // Global min/max for X and Y
+            let xMin = Infinity, xMax = -Infinity, yMin = Infinity, yMax = -Infinity;
+            groupNames.forEach(g => {
+                const sd = scatterData[g];
+                if (!sd) return;
+                sd.x.forEach(v => { if (v != null) { xMin = Math.min(xMin, v); xMax = Math.max(xMax, v); } });
+                sd.y.forEach(v => { if (v != null) { yMin = Math.min(yMin, v); yMax = Math.max(yMax, v); } });
+            });
+            const xRange = (xMax - xMin) || 1; xMin -= xRange * 0.05; xMax += xRange * 0.05;
+            const yRange = (yMax - yMin) || 1; yMin -= yRange * 0.05; yMax += yRange * 0.05;
+            const totalXR = xMax - xMin, totalYR = yMax - yMin;
+            const sx = v => pad.l + ((v - xMin) / totalXR) * cw;
+            const sy = v => pad.t + ch - ((v - yMin) / totalYR) * ch;
+
+            // Grid
+            if (isLarge) {
+                ctx.strokeStyle = '#dde3ea'; ctx.lineWidth = 0.5;
+                for (let i = 0; i <= 4; i++) {
+                    const y = pad.t + (ch / 4) * i;
+                    ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(pad.l + cw, y); ctx.stroke();
+                    const x = pad.l + (cw / 4) * i;
+                    ctx.beginPath(); ctx.moveTo(x, pad.t); ctx.lineTo(x, pad.t + ch); ctx.stroke();
+                }
+                // Y-axis labels
+                ctx.fillStyle = '#94a3b8'; ctx.font = '10px sans-serif'; ctx.textAlign = 'right';
+                for (let i = 0; i <= 4; i++) {
+                    const v = yMax - (totalYR / 4) * i;
+                    ctx.fillText(v.toFixed(1), pad.l - 4, pad.t + (ch / 4) * i + 3);
+                }
+                // X-axis labels
+                ctx.textAlign = 'center';
+                for (let i = 0; i <= 4; i++) {
+                    const v = xMin + (totalXR / 4) * i;
+                    ctx.fillText(v.toFixed(1), pad.l + (cw / 4) * i, h - 4);
+                }
+                // Axis names
+                ctx.fillStyle = '#475569'; ctx.font = '11px sans-serif';
+                ctx.fillText(paramX || 'X', pad.l + cw / 2, h - 16);
+                ctx.save();
+                ctx.translate(12, pad.t + ch / 2);
+                ctx.rotate(-Math.PI / 2);
+                ctx.fillText(paramY || 'Y', 0, 0);
+                ctx.restore();
+            }
+
+            // Draw each group
+            groupNames.forEach((g, gi) => {
+                const sd = scatterData[g];
+                if (!sd) return;
+                const color = _gbColors[gi % _gbColors.length];
+                const r = isLarge ? 3 : 1.5;
+
+                // Scatter points
+                ctx.fillStyle = color + '90';
+                sd.x.forEach((xv, i) => {
+                    const yv = sd.y[i];
+                    if (xv == null || yv == null) return;
+                    ctx.beginPath(); ctx.arc(sx(xv), sy(yv), r, 0, Math.PI * 2); ctx.fill();
+                });
+
+                // Regression line
+                const pairs = [];
+                sd.x.forEach((xv, i) => {
+                    if (xv != null && sd.y[i] != null) pairs.push([xv, sd.y[i]]);
+                });
+                if (pairs.length >= 3) {
+                    const n = pairs.length;
+                    let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
+                    pairs.forEach(([px, py]) => { sumX += px; sumY += py; sumXY += px * py; sumXX += px * px; });
+                    const denom = n * sumXX - sumX * sumX;
+                    if (Math.abs(denom) > 1e-10) {
+                        const slope = (n * sumXY - sumX * sumY) / denom;
+                        const intercept = (sumY - slope * sumX) / n;
+                        ctx.strokeStyle = color; ctx.lineWidth = isLarge ? 2 : 1;
+                        ctx.beginPath();
+                        ctx.moveTo(sx(xMin), sy(slope * xMin + intercept));
+                        ctx.lineTo(sx(xMax), sy(slope * xMax + intercept));
+                        ctx.stroke();
+                    }
+                }
+            });
+
+            // Legend with r-values
+            if (rValues) {
+                const fs = isLarge ? 12 : 9;
+                ctx.font = `${fs}px sans-serif`;
+                groupNames.forEach((g, gi) => {
+                    const color = _gbColors[gi % _gbColors.length];
+                    const rv = (rValues[g] || 0).toFixed(2);
+                    const ly = pad.t + 4 + gi * (fs + 4);
+                    const lx = pad.l + cw - (isLarge ? 100 : 60);
+                    // line sample
+                    ctx.strokeStyle = color; ctx.lineWidth = isLarge ? 2 : 1;
+                    ctx.beginPath(); ctx.moveTo(lx, ly); ctx.lineTo(lx + (isLarge ? 16 : 10), ly); ctx.stroke();
+                    // text
+                    ctx.fillStyle = color;
+                    ctx.textAlign = 'left';
+                    ctx.fillText(`${g}: r=${rv}`, lx + (isLarge ? 20 : 13), ly + fs * 0.35);
+                });
+            }
+        }
+
+        function gbDrawBoxPlot(canvasId, boxData, groupNames) {
+            const canvas = document.getElementById(canvasId);
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            const w = canvas.width, h = canvas.height;
+            ctx.clearRect(0, 0, w, h);
+            const isLarge = w > 300;
+            const pad = isLarge ? { t: 15, b: 30, l: 55, r: 15 } : { t: 8, b: 18, l: 35, r: 10 };
+            const cw = w - pad.l - pad.r, ch = h - pad.t - pad.b;
+            const fontSize = isLarge ? 13 : 8;
+
+            // Find global min/max
+            let gMin = Infinity, gMax = -Infinity;
+            groupNames.forEach(g => {
+                const b = boxData[g];
+                if (!b) return;
+                gMin = Math.min(gMin, b.whisker_lo, ...(b.outliers || []));
+                gMax = Math.max(gMax, b.whisker_hi, ...(b.outliers || []));
+            });
+            const range = gMax - gMin || 1;
+            gMin -= range * 0.05; gMax += range * 0.05;
+            const totalRange = gMax - gMin;
+            const yScale = v => pad.t + ch - ((v - gMin) / totalRange) * ch;
+
+            // Grid
+            ctx.strokeStyle = '#dde3ea'; ctx.lineWidth = 0.5;
+            for (let i = 0; i <= 3; i++) {
+                const y = pad.t + (ch / 3) * i;
+                ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(pad.l + cw, y); ctx.stroke();
+            }
+
+            // Y-axis labels
+            ctx.fillStyle = '#94a3b8'; ctx.font = `${fontSize}px sans-serif`; ctx.textAlign = 'right';
+            const decimals = totalRange < 0.1 ? 4 : totalRange < 1 ? 3 : totalRange < 10 ? 2 : totalRange < 100 ? 1 : 0;
+            for (let i = 0; i <= 3; i++) {
+                const v = gMax - (totalRange / 3) * i;
+                ctx.fillText(v.toFixed(decimals), pad.l - 4, pad.t + (ch / 3) * i + fontSize * 0.35);
+            }
+
+            const n = groupNames.length;
+            const boxW = isLarge ? Math.min(60, (cw - 20) / n - 10) : Math.min(30, (cw - 10) / n - 4);
+            const gap = (cw - n * boxW) / (n + 1);
+
+            groupNames.forEach((g, gi) => {
+                const b = boxData[g];
+                if (!b) return;
+                const cx = pad.l + gap * (gi + 1) + boxW * gi + boxW / 2;
+                const color = _gbColors[gi % _gbColors.length];
+
+                // Whisker line
+                ctx.strokeStyle = color; ctx.lineWidth = 1;
+                ctx.beginPath(); ctx.moveTo(cx, yScale(b.whisker_hi)); ctx.lineTo(cx, yScale(b.whisker_lo)); ctx.stroke();
+
+                // Whisker caps
+                ctx.beginPath(); ctx.moveTo(cx - boxW * 0.3, yScale(b.whisker_hi)); ctx.lineTo(cx + boxW * 0.3, yScale(b.whisker_hi)); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(cx - boxW * 0.3, yScale(b.whisker_lo)); ctx.lineTo(cx + boxW * 0.3, yScale(b.whisker_lo)); ctx.stroke();
+
+                // Box
+                const y1 = yScale(b.q3), y2 = yScale(b.q1);
+                ctx.fillStyle = color + '25'; ctx.fillRect(cx - boxW / 2, y1, boxW, y2 - y1);
+                ctx.strokeStyle = color; ctx.strokeRect(cx - boxW / 2, y1, boxW, y2 - y1);
+
+                // Median
+                ctx.strokeStyle = color; ctx.lineWidth = 2;
+                ctx.beginPath(); ctx.moveTo(cx - boxW / 2, yScale(b.median)); ctx.lineTo(cx + boxW / 2, yScale(b.median)); ctx.stroke();
+                ctx.lineWidth = 1;
+
+                // Outliers
+                ctx.fillStyle = color;
+                (b.outliers || []).forEach(o => {
+                    ctx.beginPath(); ctx.arc(cx, yScale(o), 2, 0, Math.PI * 2); ctx.fill();
+                });
+
+                // Group label
+                ctx.fillStyle = color; ctx.font = `bold ${fontSize}px sans-serif`; ctx.textAlign = 'center';
+                ctx.fillText(g, cx, h - (isLarge ? 8 : 4));
+            });
+        }
+
+        // ================================================================
+        // Init
+        // ================================================================
+        document.addEventListener('DOMContentLoaded', () => {
+            loadFileList();
+            renderAllChips();
+            gbInitBrush();
+            gbInitTargetBrush();
+        });
+    </script>
+</body>
+
+</html>

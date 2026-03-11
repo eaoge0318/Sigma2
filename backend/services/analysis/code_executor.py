@@ -1843,6 +1843,11 @@ class CodeExecutor:
             _ci_state = {}
         ns["STATE"] = _ci_state
 
+        # === __optim_specs__: 優化規格注入 ===
+        _optim_specs = context.get("__optim_specs__")
+        if _optim_specs:
+            ns["__optim_specs__"] = _optim_specs
+
         return ns
 
     @staticmethod

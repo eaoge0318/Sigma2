@@ -221,25 +221,84 @@ class OrchestratedAnalysisAgentV3(Workflow):
                 use_code_interpreter=False,  # QUICK_SCAN 走 Tool 模式
             )
 
-        # --- 快速通道: [DRAW:xxx] ---
+        # --- 快速通道: [DRAW:xxx] → 直接畫圖，不經 LLM ---
         if query.startswith("[DRAW:"):
             param_name = query.split("]")[0].replace("[DRAW:", "").strip()
-            route_result = RouteIntentOutput(
-                restatement=f"繪製 {param_name} 的趨勢圖",
-                task_type="general",
-                has_y=True,
-                target_params=[param_name],
-                suggested_tools=["draw_trend"],
+            logger.info(f"[V3:RouteIntent] 快速通道 → DRAW:{param_name} (直接繪圖)")
+            ctx.write_event_to_stream(
+                ProgressEvent(msg=f"繪製 {param_name} 趨勢圖...", turn=0)
             )
-            logger.info(f"[V3:RouteIntent] 快速通道 → DRAW:{param_name}")
-            return RouteCompleteEvent(
-                route_result=route_result,
-                query=query,
-                file_id=ev.file_id,
-                session_id=ev.session_id,
-                history=ev.history,
-                use_code_interpreter=False,  # DRAW 走 Tool 模式
-            )
+
+            try:
+                import asyncio
+                import matplotlib
+
+                matplotlib.use("Agg")
+                import matplotlib.pyplot as plt
+                import pandas as pd
+                import numpy as np
+                import io, base64
+                from backend.services.analysis.analysis_types import ChartImageEvent
+
+                # 載入資料
+                df = await asyncio.to_thread(
+                    self.analysis_service.get_dataframe, ev.session_id, ev.file_id
+                )
+                if df is None:
+                    ctx.write_event_to_stream(TextChunkEvent(content="❌ 資料載入失敗"))
+                    return StopEvent(result={"response": "資料載入失敗"})
+
+                df_numeric = df.select_dtypes(include="number").fillna(0)
+                if param_name not in df_numeric.columns:
+                    ctx.write_event_to_stream(
+                        TextChunkEvent(content=f"❌ 欄位 `{param_name}` 不存在")
+                    )
+                    return StopEvent(result={"response": f"欄位 {param_name} 不存在"})
+
+                # 畫圖
+                series = df_numeric[param_name]
+                fig, ax = plt.subplots(figsize=(14, 5))
+                x = np.arange(len(series))
+                ax.plot(x, series.values, alpha=0.5, color="#3B82F6", linewidth=0.8)
+                win = max(5, len(series) // 20)
+                ma = series.rolling(win, center=True).mean()
+                ax.plot(
+                    x, ma.values, color="#EF4444", linewidth=2.0, label=f"MA({win})"
+                )
+                ax.set_xlabel("樣本序號")
+                ax.set_ylabel(param_name)
+                ax.set_title(f"{param_name} 趨勢圖")
+                ax.legend(loc="upper right")
+                ax.grid(True, alpha=0.3)
+                plt.tight_layout()
+
+                # fig → base64
+                buf = io.BytesIO()
+                fig.savefig(buf, format="png", dpi=100, bbox_inches="tight")
+                plt.close(fig)
+                buf.seek(0)
+                img_b64 = base64.b64encode(buf.read()).decode("utf-8")
+
+                ctx.write_event_to_stream(
+                    ChartImageEvent(
+                        image_base64=img_b64,
+                        title=f"{param_name} 趨勢圖",
+                        width=1400,
+                        height=500,
+                        round_num=1,
+                    )
+                )
+                ctx.write_event_to_stream(
+                    TextChunkEvent(content=f"✅ 繪製 {param_name} 的趨勢圖")
+                )
+                return StopEvent(result={"response": f"繪製 {param_name} 的趨勢圖"})
+
+            except Exception as draw_err:
+                logger.error(f"[V3:DRAW] 直接繪圖失敗: {draw_err}", exc_info=True)
+                ctx.write_event_to_stream(
+                    TextChunkEvent(content=f"❌ 繪圖失敗: {draw_err}")
+                )
+                return StopEvent(result={"response": f"繪圖失敗: {draw_err}"})
 
         # --- 快速通道: [TOOL:xxx] ---
         if query.startswith("[TOOL:"):
@@ -319,6 +378,16 @@ class OrchestratedAnalysisAgentV3(Workflow):
             _has_ui_metadata = True
         if getattr(ev, "baseline_range", None):
             route_result.baseline_range = ev.baseline_range
+            _has_ui_metadata = True
+        if getattr(ev, "optimization_targets", None):
+            route_result.optimization_targets = ev.optimization_targets
+            # 確保 target_params 和 task_type 正確設定
+            if not route_result.target_params:
+                route_result.target_params = [
+                    t["param"] for t in ev.optimization_targets if t.get("param")
+                ]
+            route_result.has_y = True
+            route_result.task_type = "optimization"
             _has_ui_metadata = True
 
         # --- Intent Confirmation (兩次請求模式) ---
@@ -512,6 +581,22 @@ class OrchestratedAnalysisAgentV3(Workflow):
         else:
             plan_lines.append("對照區間: (無)")
         plan_lines.append(f"有目標變數 (has_y): {route.has_y}")
+
+        # 顯示 optimization_targets
+        _optim_targets = getattr(route, "optimization_targets", None) or []
+        if _optim_targets:
+            _dir_cn = {"minimize": "最小化", "maximize": "最大化", "target": "目標值"}
+            for _ot in _optim_targets:
+                _p = _ot.get("param", "?")
+                _d = _dir_cn.get(_ot.get("direction", ""), _ot.get("direction", ""))
+                _parts = [f"{_p}: 方向={_d}"]
+                if "target_value" in _ot:
+                    _parts.append(f"Target={_ot['target_value']}")
+                if "lsl" in _ot:
+                    _parts.append(f"LSL={_ot['lsl']}")
+                if "usl" in _ot:
+                    _parts.append(f"USL={_ot['usl']}")
+                plan_lines.append(f"優化規格: {', '.join(_parts)}")
 
         ctx.write_event_to_stream(
             MonologueEvent(
@@ -860,12 +945,14 @@ class OrchestratedAnalysisAgentV3(Workflow):
             )
 
         # --- 統一合約 context ---
+        optimization_targets = getattr(route, "optimization_targets", None) or []
         unified_context = {
             "target_params": route.target_params or [],
             "reference_params": getattr(route, "reference_params", []) or [],
             "target_range": route.target_range or [],
             "baseline_range": getattr(route, "baseline_range", "") or "",
             "has_y": route.has_y,
+            "optimization_targets": optimization_targets,
         }
 
         # --- Preprocess + Report + Baseline ---
@@ -1004,6 +1091,33 @@ class OrchestratedAnalysisAgentV3(Workflow):
                 # --- 場景 ---
                 if _scenario:
                     _summary_lines.append(f"  場景: {_scenario}")
+
+                # --- Top 相關參數 (優化場景 + 有 target_col 時注入) ---
+                if optimization_targets and getattr(route, "target_params", None):
+                    _target_for_corr = route.target_params[0]  # 第一個目標
+                    if _target_for_corr in df_active.columns:
+                        try:
+                            _corr_all = df_active.select_dtypes(
+                                include="number"
+                            ).corr()[_target_for_corr]
+                            _corr_all = _corr_all.drop(
+                                _target_for_corr, errors="ignore"
+                            )
+                            _corr_abs = _corr_all.abs().sort_values(ascending=False)
+                            _top_corr = _corr_abs.head(5)
+                            _summary_lines.append("")
+                            _summary_lines.append(
+                                f"  Top-5 相關參數 (vs {_target_for_corr}):"
+                            )
+                            for _cc in _top_corr.index:
+                                _rv = float(_corr_all[_cc])
+                                _dir = "正" if _rv > 0 else "負"
+                                _summary_lines.append(
+                                    f"    {_cc}: r={_rv:+.4f} ({_dir}相關)"
+                                )
+                            _summary_lines.append("    → 報告中必須提及這些高相關參數")
+                        except Exception:
+                            pass
 
                 # --- 異常區間 (Scene A/C 列出，Scene B/D 跳過) ---
                 _iv_scores = prep.get("interval_scores", {})
@@ -1181,6 +1295,65 @@ class OrchestratedAnalysisAgentV3(Workflow):
                     )
                 _summary_lines.append(
                     "    → 本輪應: 分析低優先區間、跨區間關聯、或對已知因子做更深入分析"
+                )
+
+            # === 優化控制規格注入 (讓 LLM 知道 target/direction/USL/LSL) ===
+            if optimization_targets:
+                _summary_lines.append("")
+                _summary_lines.append("  ★ 優化控制規格 (用戶設定):")
+                for _ot in optimization_targets:
+                    _p = _ot.get("param", "?")
+                    _d = _ot.get("direction", "minimize")
+                    _dir_cn = {
+                        "minimize": "最小化",
+                        "maximize": "最大化",
+                        "target": "目標值",
+                    }.get(_d, _d)
+                    _parts = [f"{_p}: 方向={_dir_cn}"]
+                    if _d == "target" and "target_value" in _ot:
+                        _parts.append(f"Target={_ot['target_value']}")
+                    if "lsl" in _ot:
+                        _parts.append(f"LSL={_ot['lsl']}")
+                    if "usl" in _ot:
+                        _parts.append(f"USL={_ot['usl']}")
+                    _summary_lines.append(f"    {', '.join(_parts)}")
+                _summary_lines.append(
+                    "    → 分析時請繪製 target 線、USL/LSL 區間，並評估目前數據是否在規格內"
+                )
+                _summary_lines.append(
+                    "    → Sweet Spot 分析結果請用表格呈現: 參數 | 建議區間 | 目前均值 | 偏移量"
+                )
+                _summary_lines.append("")
+                _summary_lines.append("  ★ 優化專用 API (必須使用):")
+                _summary_lines.append(
+                    "    1. sigma.process_capability(df_active['COL'], usl=, lsl=, target=)"
+                )
+                _summary_lines.append(
+                    "       → 回傳 {cp, cpk, ppk, within_spec_pct, ...} + 繪製直方圖含 USL/LSL/Target 規格線"
+                )
+                _summary_lines.append(
+                    "    2. sigma.contour_response_surface(df_active, x1='X1', x2='X2', y='Y', usl=, lsl=, target=)"
+                )
+                _summary_lines.append(
+                    "       → 繪製等高線圖 (Response Surface)，含規格等高線 + 最佳操作點"
+                )
+                _summary_lines.append(
+                    "    → 先跑 process_capability（即使沒 USL/LSL），再用 feature_importance 找 Top-2 重要 X，最後畫 contour"
+                )
+                _summary_lines.append(
+                    "    ⚠️ 禁止用 top_correlations 找因子（弱相關會回空），必須用 feature_importance"
+                )
+
+                # 注入 __optim_specs__ 變數到 code execution context
+                # LLM code 可以直接用: __optim_specs__[0]['param'], __optim_specs__[0].get('usl'), etc.
+                code_context["__optim_specs__"] = optimization_targets
+                _summary_lines.append("")
+                _summary_lines.append("  ★ 可直接使用的變數:")
+                _summary_lines.append(
+                    "    __optim_specs__: list[dict] — 每個 dict 有 param, direction, 可選有 target_value, lsl, usl"
+                )
+                _summary_lines.append(
+                    "    用法: spec = __optim_specs__[0]; usl = spec.get('usl'); lsl = spec.get('lsl'); target_val = spec.get('target_value')"
                 )
 
             code_context["__data_summary__"] = "\n".join(_summary_lines)

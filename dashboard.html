@@ -1036,6 +1036,9 @@
                 <div class="nav-item" onclick="switchView('analysis')" id="nav-analysis">
                     <span>📈</span> <span class="nav-text">數據圖表</span>
                 </div>
+                <div class="nav-item" onclick="switchView('data-preparation')" id="nav-data-preparation">
+                    <span>🔧</span> <span class="nav-text">資料整理</span>
+                </div>
                 <div class="nav-item" onclick="switchView('training')" id="nav-training">
                     <span>🧠</span> <span class="nav-text">模型訓練</span>
                 </div>
@@ -1257,13 +1260,13 @@
                                     <div style="font-size: 14px; margin-top: 5px;">支援 CSV, XML, Excel (.xlsx, .xls) 格式
                                     </div>
                                     <input type="file" id="file-input-main" style="display: none;"
-                                        accept=".csv,.xml,.xlsx,.xls" onchange="handleMainFileUpload(this)">
+                                        accept=".csv,.xml,.xlsx,.xls" multiple onchange="handleMainFileUpload(this)">
                                 </div>
                                 <div id="upload-status"
                                     style="margin-bottom: 10px; font-weight: bold; text-align: center;"></div>
                                 <div style="text-align: right;">
                                     <button onclick="closeUploadModal()"
-                                        style="padding: 8px 16px; background: #e2e8f0; border: none; border-radius: 6px; cursor: pointer; color: #475569; font-weight: 600;">取消</button>
+                                        style="padding: 8px 16px; background: #e2e8f0; border: none; border-radius: 6px; cursor: pointer; color: #475569; font-weight: 600;">完成</button>
                                 </div>
                             </div>
                         </div>
@@ -2565,6 +2568,13 @@
                         </div>
                     </div>
                 </div> <!-- End view-training -->
+
+                <!-- VIEW: Data Preparation (iframe) -->
+                <div id="view-data-preparation" style="display: none;">
+                    <iframe id="data-prep-iframe" src="/static/html/data_preparation.html" frameborder="0"
+                        style="width: 100%; height: calc(100vh - 60px); border: none; background: #f1f5f9;">
+                    </iframe>
+                </div>
 
                 <!-- VIEW: Intelligent Analysis (iframe) -->
                 <div id="view-intelligent-analysis" style="display: none;">

@@ -11,25 +11,26 @@ let fileSelectorPurpose = 'analysis';
 let selectedFiles = []; // For chat preview
 
 export function handleMainFileUpload(input) {
-    if (input.files.length > 0) {
-        uploadFile(input.files[0]);
+    for (let i = 0; i < input.files.length; i++) {
+        uploadFile(input.files[i]);
     }
 }
 
 export function handleDroppedFiles(files) {
     const allowed = ['.csv', '.xml', '.xlsx', '.xls'];
-    const file = files[0];
-    if (!file) return;
-    const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
-    if (!allowed.includes(ext)) {
-        const statusDiv = DOM.get('upload-status');
-        if (statusDiv) {
-            statusDiv.innerText = `不支援的格式: ${ext}，僅支援 CSV, XML, Excel`;
-            statusDiv.style.color = '#ef4444';
+    for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+        if (!allowed.includes(ext)) {
+            const statusDiv = DOM.get('upload-status');
+            if (statusDiv) {
+                statusDiv.innerText = `不支援的格式: ${ext}，僅支援 CSV, XML, Excel`;
+                statusDiv.style.color = '#ef4444';
+            }
+            continue;
         }
-        return;
+        uploadFile(file);
     }
-    uploadFile(file);
 }
 
 export async function uploadFile(file) {

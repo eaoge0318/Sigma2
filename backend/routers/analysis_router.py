@@ -134,6 +134,7 @@ class ChatRequest(BaseModel):
     suspect_params: Optional[List[str]] = None
     target_range: Optional[str] = None
     baseline_range: Optional[str] = None
+    optimization_targets: Optional[List[dict]] = None
     attachments: Optional[List[AttachmentItem]] = None
 
 
@@ -622,6 +623,7 @@ async def chat_stream_v3(
                 suspect_params=request.suspect_params,
                 target_range=request.target_range,
                 baseline_range=request.baseline_range,
+                optimization_targets=request.optimization_targets,
             )
 
             accumulated_response = []

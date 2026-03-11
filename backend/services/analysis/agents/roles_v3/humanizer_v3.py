@@ -55,6 +55,32 @@ B. Scan Segment Deep Analysis (滑動窗口異常掃描):
 ### 發現 2-3: ...
 最多 3-4 個發現。相似的合併。
 
+### 語義解讀（結論關鍵）
+**在寫每個發現的結論和行動建議時，必須根據欄位名稱推理業務含義**：
+
+1. **欄位名 → 業務語境**
+   - 看到「厚度(前)/(後)」→ 理解為「製程前後的量測」，後 < 前 代表異常
+   - 看到「左/中/右」→ 理解為「橫向均勻性」，std 大代表不均
+   - 看到「電流_01~20」→ 理解為「多組同類設備」，個別偏低可能是故障
+   - 看到「速度/溫度/壓力」→ 理解為「製程參數」，突變代表換料或調機
+   - 看到「IPQC/良率/剝離」→ 理解為「品質指標」
+
+2. **異常 → 業務解釋**
+   - 不要只說「Z-score 異常 3 筆」，要加：「電鍍厚度異常下降，可能是量測位置偏移或基材受損」
+   - 不要只說「漂移 4 段」，要加：「塗佈量呈階梯式變化，可能對應批次切換或配方調整」
+   - 不要只說「index 191 異常」，要加：「建議核對該時段的現場日報表，確認是否為試作或維護」
+
+3. **行動建議 → 具體可查**
+   - 不要寫「比對設定值變更紀錄」（太空泛）
+   - 要寫「核對 #191 附近的線速/溫度變更紀錄，確認是否為換料切換」
+
+4. **⛔ 嚴禁腦補**
+   - 語義解讀只能基於**欄位名字面意義**，不能編造領域知識
+   - 欄位名是編碼（如 DCS_A335、BCDRY_A101）→ **不做語義解讀**，只報告統計數字
+   - 欄位名有中文/明確意義（如 電鍍厚度、烘箱溫度）→ 才做業務解讀
+   - 不確定的解讀必須加「(推測)」標記
+   - 寧可不解讀，也不要說錯
+
 ### 行動建議
 2-3 條，按優先順序，具體可行。
 
@@ -231,20 +257,16 @@ class HumanizerV3:
                 for _o in _r["outputs"]:
                     _s = _o.get("stdout", "")
                     if _s:
-                        # 去掉 data_summary 前綴（本身已在 evidence_parts 裡）
-                        _ds_marker = "[系統] 資料摘要"
-                        if _ds_marker in _s:
-                            _lines = _s.split("\n")
-                            _cut = 0
-                            for _li, _ln in enumerate(_lines):
-                                if (
-                                    _ln.strip().startswith("[sigma]")
-                                    or _ln.strip().startswith("---")
-                                    or _ln.strip().startswith("=")
-                                ):
-                                    _cut = _li
-                                    break
-                            _s = "\n".join(_lines[_cut:]).strip() if _cut > 0 else ""
+                        # 去掉所有 data_summary 區塊（本身已在 evidence_parts 裡）
+                        # 匹配 [系統] 資料摘要 ... 到 [系統] 資料維度 或下一個 === 區塊
+                        import re
+
+                        _s = re.sub(
+                            r"\[系統\] 資料摘要.*?(?=\n={5,}|\[系統\] 資料維度|$)",
+                            "",
+                            _s,
+                            flags=re.DOTALL,
+                        ).strip()
                         # 截斷
                         if len(_s) > MAX_STDOUT_PER_ROUND:
                             _s = _s[:2500] + "\n...(中間省略)...\n" + _s[-1000:]
@@ -262,11 +284,11 @@ class HumanizerV3:
                 f"=== Code Interpreter 執行結果 ===\n{_ci_stdout_text}"
             )
         evidence_text = "\n\n".join(evidence_parts)
-        # Hard cap: 整體 evidence 不超過 12000 字
-        MAX_EVIDENCE_TOTAL = 12000
+        # Hard cap: 中文約 1.2~1.5 token/char，7000 chars ≈ 10000 tokens
+        MAX_EVIDENCE_TOTAL = 7000
         if len(evidence_text) > MAX_EVIDENCE_TOTAL:
             evidence_text = (
-                evidence_text[:9000] + "\n...(中間省略)...\n" + evidence_text[-2500:]
+                evidence_text[:5000] + "\n...(中間省略)...\n" + evidence_text[-1800:]
             )
         if evidence_text:
             evidence_text = (

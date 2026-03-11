@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-TW">
 
 <head>
@@ -248,8 +248,8 @@
             <div class="space-y-2 hidden">
                 <div class="text-[10px] text-slate-400 font-medium px-0.5">快捷分析</div>
                 <div class="grid grid-cols-2 gap-1.5">
-                    <button
-                        class="suggested-query text-center px-1.5 py-1.5 bg-white border border-gray-200 rounded-md hover:bg-blue-500 hover:text-white hover:border-blue-500 transition-all text-xs text-gray-600">品質概況</button>
+                    <button id="btn-open-optim-modal" onclick="openOptimModal()"
+                        class="suggested-query text-center px-1.5 py-1.5 bg-white border border-gray-200 rounded-md hover:bg-emerald-500 hover:text-white hover:border-emerald-500 transition-all text-xs text-gray-600">優化控制</button>
                     <button id="btn-open-mining-modal" onclick="openDataMiningModal()"
                         class="suggested-query text-center px-1.5 py-1.5 bg-white border border-gray-200 rounded-md hover:bg-blue-500 hover:text-white hover:border-blue-500 transition-all text-xs text-gray-600">資料探勘</button>
                     <button
@@ -861,6 +861,64 @@
             </div>
         </div>
     </div>
+
+    <!-- OPTIMIZATION CONTROL MODAL -->
+    <div id="optim-control-modal"
+        class="hidden fixed inset-0 bg-black bg-opacity-50 z-[200] flex items-start justify-center p-4 pt-8 backdrop-blur-sm transition-opacity duration-300 overflow-y-auto">
+        <div
+            class="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col overflow-hidden transform transition-all scale-100 my-auto">
+            <!-- Header -->
+            <div
+                class="sticky top-0 z-10 px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gradient-to-r from-emerald-50 to-teal-50">
+                <div class="flex items-center gap-3">
+                    <div class="p-2 bg-emerald-100 rounded-lg text-emerald-600">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd"
+                                d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z"
+                                clip-rule="evenodd" />
+                        </svg>
+                    </div>
+                    <h3 class="font-bold text-gray-800 text-lg">優化控制設定</h3>
+                </div>
+                <div class="flex items-center gap-3">
+                    <button id="btn-confirm-optim"
+                        class="px-5 py-2 text-sm font-bold rounded-lg shadow-md hover:shadow-lg active:scale-95 transition-all flex items-center gap-2"
+                        style="background-color: #059669; color: white;">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd"
+                                d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-8.707l-3-3a1 1 0 00-1.414 1.414L10.586 9H7a1 1 0 100 2h3.586l-1.293 1.293a1 1 0 101.414 1.414l3-3a1 1 0 000-1.414z"
+                                clip-rule="evenodd" />
+                        </svg>
+                        開始優化
+                    </button>
+                    <button onclick="closeOptimPanel()"
+                        class="text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg p-1 transition">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24"
+                            stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Body: Single Page List -->
+            <div class="flex-1 overflow-y-auto p-6">
+                <div id="optim-params-list" class="space-y-3"></div>
+                <button type="button" id="btn-add-optim-param"
+                    class="mt-4 w-full py-3 border-2 border-dashed border-emerald-300 rounded-xl text-emerald-600 hover:bg-emerald-50 hover:border-emerald-400 transition-all flex items-center justify-center gap-2 text-sm font-medium">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd"
+                            d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"
+                            clip-rule="evenodd" />
+                    </svg>
+                    新增優化參數
+                </button>
+                <p class="text-xs text-gray-400 mt-3 text-center">選擇要最佳化的參數，並設定方向與規格範圍</p>
+            </div>
+        </div>
+    </div>
+
     <!-- STAT TOOL MODAL -->
     <div id="stat-tool-modal"
         class="hidden fixed inset-0 bg-black bg-opacity-50 z-[200] flex items-start justify-center p-4 pt-8 backdrop-blur-sm transition-opacity duration-300 overflow-y-auto">

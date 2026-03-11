@@ -27,6 +27,7 @@ class V3StartEvent(StartEvent):
     suspect_params: Optional[List[str]] = None
     target_range: Optional[str] = None
     baseline_range: Optional[str] = None
+    optimization_targets: Optional[List[dict]] = None
 
 
 class IntentConfirmationEvent(Event):
@@ -132,6 +133,11 @@ class RouteIntentOutput(BaseModel):
     # 追問 — 有值時不跑工具，直接回覆用戶
     clarification_question: Optional[str] = Field(
         None, description="追問用戶的問題 (有值時不執行分析)"
+    )
+
+    # 優化控制參數 (從前端 modal 傳入)
+    optimization_targets: Optional[List[dict]] = Field(
+        None, description="優化目標 [{param, direction, target_value?, lsl?, usl?}]"
     )
 
 
