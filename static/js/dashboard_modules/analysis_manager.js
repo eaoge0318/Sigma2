@@ -1,7 +1,51 @@
 import { DOM, API, WINDOW_SIZE } from './utils.js';
-import { switchView } from './ui_core.js';
 import { SESSION_ID } from './session.js';
-import * as FileMgr from './file_manager.js'; // Need for openFileSelector
+
+// Safe imports: switchView and FileMgr may not be available in iframe context
+let switchView, FileMgr;
+try {
+    const uiCore = await import('./ui_core.js');
+    switchView = uiCore.switchView;
+} catch (e) {
+    switchView = () => {}; // No-op in iframe
+}
+try {
+    FileMgr = await import('./file_manager.js');
+} catch (e) {
+    FileMgr = { loadFileList: () => {} }; // No-op in iframe
+}
+
+// --- CSV Parser (handles quoted fields with commas) ---
+function _parseCsvLine(line) {
+    const result = [];
+    let cur = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (inQuotes) {
+            if (ch === '"') {
+                if (i + 1 < line.length && line[i + 1] === '"') {
+                    cur += '"'; i++; // escaped quote
+                } else {
+                    inQuotes = false;
+                }
+            } else {
+                cur += ch;
+            }
+        } else {
+            if (ch === '"') {
+                inQuotes = true;
+            } else if (ch === ',') {
+                result.push(cur.trim());
+                cur = '';
+            } else {
+                cur += ch;
+            }
+        }
+    }
+    result.push(cur.trim());
+    return result;
+}
 
 // --- Constants & State ---
 let analysisCurrentPage = 1;
@@ -69,14 +113,14 @@ export async function loadAnalysisPage(page) {
             DOM.setText('analysis-header-count', `(總計 ${analysisTotalLines - 1} 筆數據)`);
 
             if (analysisFilename.toLowerCase().endsWith('.csv')) {
-                tableHeaders = infoData.content.trim().split('\n')[0].split(',').map(h => h.trim());
+                tableHeaders = _parseCsvLine(infoData.content.trim().split('\n')[0]);
                 visibleColumnIndices = tableHeaders.map((_, i) => i);
 
                 const fullRes = await fetch(`/api/view_file/${analysisFilename}?page=1&page_size=1000000&session_id=${sid}`);
                 const fullData = await fullRes.json();
                 const lines = fullData.content.trim().split('\n');
                 originalTableData = lines.slice(1).map((row, idx) => {
-                    const arr = row.split(',').map(c => c.trim());
+                    const arr = _parseCsvLine(row);
                     arr.__idx = idx;
                     return arr;
                 });
@@ -563,7 +607,29 @@ export function initChartColumns() {
                 chip.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center; width:100%; pointer-events:none;"><span>${header}</span><span style="font-size:10px; opacity:0.8;">✨</span></div>`;
             }
         } else {
-            chip.innerText = header;
+            // Infer column type from data
+            const colIdx = tableHeaders.indexOf(header);
+            let dtype = '文字';
+            let dtypeColor = '#64748b';
+            let dtypeBg = '#f1f5f9';
+            if (colIdx >= 0 && originalTableData.length > 0) {
+                const samples = originalTableData.slice(0, 20).map(r => r[colIdx]).filter(v => v != null && v !== '');
+                const numCount = samples.filter(v => !isNaN(v) && v.trim() !== '').length;
+                const datePattern = /^\d{4}[\/\-]\d{1,2}[\/\-]\d{1,2}|^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}/;
+                const dateCount = samples.filter(v => datePattern.test(v)).length;
+                if (dateCount > samples.length * 0.5) {
+                    dtype = '日期'; dtypeColor = '#0369a1'; dtypeBg = '#e0f2fe';
+                } else if (numCount > samples.length * 0.5) {
+                    dtype = '數值'; dtypeColor = '#16a34a'; dtypeBg = '#dcfce7';
+                } else {
+                    // Check unique ratio for category vs text
+                    const uniq = new Set(samples).size;
+                    if (uniq <= Math.min(20, samples.length * 0.5)) {
+                        dtype = '類別'; dtypeColor = '#9333ea'; dtypeBg = '#faf5ff';
+                    }
+                }
+            }
+            chip.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center; width:100%; pointer-events:none;"><span>${header}</span><span style="font-size:9px; color:${dtypeColor}; background:${dtypeBg}; padding:1px 5px; border-radius:3px; flex-shrink:0;">${dtype}</span></div>`;
         }
 
         chip.style.textAlign = 'left';
@@ -787,7 +853,13 @@ export function resetAxis(axis) {
     const dropzone = DOM.get('drop-' + axis);
     if (dropzone) {
         dropzone.classList.remove('filled');
-        dropzone.innerHTML = `<span class="placeholder">拖曳至此</span>`;
+        const isVert = axis === 'y' || axis === 'y2';
+        const label = axis === 'y2' ? '(選填)' : '拖曳至此';
+        if (isVert) {
+            dropzone.innerHTML = `<span class="placeholder" style="transform: rotate(-90deg); white-space: nowrap; font-size: 11px; letter-spacing: 2px; display: inline-block;">${label}</span>`;
+        } else {
+            dropzone.innerHTML = `<span class="placeholder">拖曳至此</span>`;
+        }
     }
 
     // ✨ UI Sync: Clear highlight in side list if exists
@@ -971,6 +1043,18 @@ export function renderAnalysisChart() {
 
         isNumericX = dataPoints1.length > 0 && dataPoints1.every(p => typeof p.x === 'number' && !isNaN(p.x));
 
+        // Detect if Y is numeric
+        const isNumericY = dataPoints1.length > 0 && dataPoints1.filter(p => typeof p.y === 'number' && !isNaN(p.y)).length > dataPoints1.length * 0.5;
+        const isNumericY2 = dataPoints2.length > 0 && dataPoints2.filter(p => typeof p.y === 'number' && !isNaN(p.y)).length > dataPoints2.length * 0.5;
+
+        // If Y is non-numeric, show a warning
+        if (!isNumericY && yIdx !== -1) {
+            const info = document.getElementById('chart-info-overlay');
+            if (info) info.innerHTML = `⚠️ Y 軸「${chartConfig.y}」為文字/類別型欄位，散布圖/折線圖需要數值型欄位。<br>請改用盒鬚圖或選擇數值欄位。`;
+            updateChartSourceInfo(sourceRows.length);
+            return;
+        }
+
         if (isNumericX) {
             if (chartType === 'line') {
                 dataPoints1.sort((a, b) => a.x - b.x);
@@ -1034,14 +1118,16 @@ export function renderAnalysisChart() {
                 type: isNumericX ? 'linear' : 'category',
                 title: { display: true, text: chartConfig.x },
                 grid: { color: '#f1f5f9' },
+                grace: '5%',
                 beginAtZero: false
             },
             y: {
                 title: { display: true, text: chartConfig.y },
-                type: 'linear',
+                type: (chartType !== 'boxplot' && typeof isNumericY !== 'undefined' && !isNumericY) ? 'category' : 'linear',
                 display: true,
                 position: 'left',
                 grid: { color: '#f1f5f9' },
+                grace: '5%',
                 beginAtZero: false
             },
             y1: {
@@ -1050,6 +1136,7 @@ export function renderAnalysisChart() {
                 display: datasets.some(d => d.yAxisID === 'y1'),
                 position: 'right',
                 grid: { drawOnChartArea: false },
+                grace: '5%',
                 beginAtZero: false
             }
         },
@@ -1207,7 +1294,9 @@ export async function saveFilteredData() {
         const result = await response.json();
         if (result.status === 'success') {
             alert(result.message);
-            FileMgr.loadFileList();
+            // Refresh file list: works in both dashboard (direct) and iframe (postMessage) context
+            if (FileMgr && FileMgr.loadFileList) FileMgr.loadFileList();
+            if (window.parent !== window) window.parent.postMessage({ type: 'sigma2:refreshFiles' }, '*');
         } else {
             alert("儲存失敗");
         }
@@ -1355,32 +1444,22 @@ function updateSelectionUI() {
         return;
     }
 
-    const xIdx = tableHeaders.indexOf(currentChartSelectionRange.x);
-    const yIdx = tableHeaders.indexOf(currentChartSelectionRange.y);
-
-    const sourceRows = getFilteredRows(originalTableData);
-    const selected = sourceRows.filter(row => {
-        const vx = parseFloat(row[xIdx]);
-        const vy = parseFloat(row[yIdx]);
-        if (isNaN(vx) || isNaN(vy)) return false;
-        return vx >= currentChartSelectionRange.xMin && vx <= currentChartSelectionRange.xMax &&
-            vy >= currentChartSelectionRange.yMin && vy <= currentChartSelectionRange.yMax;
-    });
-
+    const count = currentChartSelectionRange._selectedIndices ? currentChartSelectionRange._selectedIndices.length : 0;
     modal.style.display = 'flex';
-    countText.innerHTML = `📍 已選取 <b style="color:#7c3aed; font-size:16px;">${selected.length}</b> 筆`;
+    countText.innerHTML = `📍 已選取 <b style="color:#7c3aed; font-size:16px;">${count}</b> 筆`;
 }
 
 function highlightPointsInChart() {
     if (!analysisChart || !currentChartSelectionRange) return;
+
+    const selectedSet = new Set(currentChartSelectionRange._selectedIndices || []);
 
     analysisChart.data.datasets.forEach((ds, dsIdx) => {
         const pointColors = [];
         const pointSizes = [];
 
         ds.data.forEach(p => {
-            const isSelected = p.x >= currentChartSelectionRange.xMin && p.x <= currentChartSelectionRange.xMax &&
-                p.y >= currentChartSelectionRange.yMin && p.y <= currentChartSelectionRange.yMax;
+            const isSelected = p._origIdx !== undefined && selectedSet.has(p._origIdx);
 
             if (isSelected) {
                 pointColors.push('#fbbf24'); // Bright Gold
@@ -1417,16 +1496,7 @@ export function clearChartSelection() {
 export function applySelectionAsFilter(mode) {
     if (!currentChartSelectionRange || !analysisChart) return;
 
-    // Collect precise indices from the current chart instance
-    const selectedIndices = [];
-    analysisChart.data.datasets.forEach(ds => {
-        ds.data.forEach(p => {
-            if (p.x >= currentChartSelectionRange.xMin && p.x <= currentChartSelectionRange.xMax &&
-                p.y >= currentChartSelectionRange.yMin && p.y <= currentChartSelectionRange.yMax) {
-                if (p._origIdx !== undefined) selectedIndices.push(p._origIdx);
-            }
-        });
-    });
+    const selectedIndices = currentChartSelectionRange._selectedIndices || [];
 
     if (selectedIndices.length === 0) return;
 
@@ -1491,7 +1561,7 @@ document.addEventListener('keydown', (e) => {
     }
 });
 
-function calculateCorrelation() {
+export function calculateCorrelation() {
     // ✨ NEW: Toggle behavior - if results already exist, clear them
     const resultDiv = document.getElementById('correlation-result');
     if (resultDiv && resultDiv.innerHTML.trim() !== '') {
@@ -1614,13 +1684,22 @@ setTimeout(() => {
     canvas.onmousedown = (e) => {
         if (!selectionMode || !analysisChart) return;
         isSelecting = true;
-        const rect = canvas.getBoundingClientRect();
-        selectionStart = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+        const canvasRect = canvas.getBoundingClientRect();
+        const parentRect = canvas.parentElement.getBoundingClientRect();
+        // Store both coordinate systems
+        selectionStart = {
+            // Parent-relative for selection-box positioning
+            px: e.clientX - parentRect.left,
+            py: e.clientY - parentRect.top,
+            // Canvas-relative for Chart.js getValueForPixel
+            cx: e.clientX - canvasRect.left,
+            cy: e.clientY - canvasRect.top
+        };
 
         const box = document.getElementById('selection-box');
         box.style.display = 'block';
-        box.style.left = selectionStart.x + 'px';
-        box.style.top = selectionStart.y + 'px';
+        box.style.left = selectionStart.px + 'px';
+        box.style.top = selectionStart.py + 'px';
         box.style.width = '0';
         box.style.height = '0';
     };
@@ -1628,15 +1707,15 @@ setTimeout(() => {
     window.addEventListener('mousemove', (e) => {
         if (!isSelecting) return;
         const canvas = document.getElementById('analysis-chart-canvas');
-        const rect = canvas.getBoundingClientRect();
-        const currentX = e.clientX - rect.left;
-        const currentY = e.clientY - rect.top;
+        const parentRect = canvas.parentElement.getBoundingClientRect();
+        const currentX = e.clientX - parentRect.left;
+        const currentY = e.clientY - parentRect.top;
 
         const box = document.getElementById('selection-box');
-        const left = Math.min(selectionStart.x, currentX);
-        const top = Math.min(selectionStart.y, currentY);
-        const width = Math.abs(currentX - selectionStart.x);
-        const height = Math.abs(currentY - selectionStart.y);
+        const left = Math.min(selectionStart.px, currentX);
+        const top = Math.min(selectionStart.py, currentY);
+        const width = Math.abs(currentX - selectionStart.px);
+        const height = Math.abs(currentY - selectionStart.py);
 
         box.style.left = left + 'px';
         box.style.top = top + 'px';
@@ -1653,43 +1732,39 @@ setTimeout(() => {
         if (!analysisChart) return;
 
         const canvas = document.getElementById('analysis-chart-canvas');
-        const rect = canvas.getBoundingClientRect();
-        const endX = e.clientX - rect.left;
-        const endY = e.clientY - rect.top;
+        const canvasRect = canvas.getBoundingClientRect();
 
-        const x1 = selectionStart.x;
-        const y1 = selectionStart.y;
-        const x2 = endX;
-        const y2 = endY;
+        // Canvas-relative coordinates
+        const endCX = e.clientX - canvasRect.left;
+        const endCY = e.clientY - canvasRect.top;
 
-        // Min/Max Pixels
-        const pXMin = Math.min(x1, x2);
-        const pXMax = Math.max(x1, x2);
-        const pYMin = Math.min(y1, y2);
-        const pYMax = Math.max(y1, y2);
-
-        // Convert Pixels to Data Values
-        const xScale = analysisChart.scales.x;
-        const yScale = analysisChart.scales.y;
-
-        const vXMin = xScale.getValueForPixel(pXMin);
-        const vXMax = xScale.getValueForPixel(pXMax);
-        const vYMin = yScale.getValueForPixel(pYMax);
-        const vYMax = yScale.getValueForPixel(pYMin);
+        const pXMin = Math.min(selectionStart.cx, endCX);
+        const pXMax = Math.max(selectionStart.cx, endCX);
+        const pYMin = Math.min(selectionStart.cy, endCY);
+        const pYMax = Math.max(selectionStart.cy, endCY);
 
         // Threshold to avoid accidental clicks
         if (Math.abs(pXMax - pXMin) > 5 || Math.abs(pYMax - pYMin) > 5) {
-            // Clear correlation results when selection starts
             const resDiv = document.getElementById('correlation-result');
             if (resDiv) resDiv.innerHTML = '';
+
+            // Directly compare chart element pixel positions (avoids getValueForPixel issues)
+            const selectedOrigIndices = [];
+            analysisChart.data.datasets.forEach((ds, dsIdx) => {
+                const meta = analysisChart.getDatasetMeta(dsIdx);
+                ds.data.forEach((p, pIdx) => {
+                    const el = meta.data[pIdx];
+                    if (!el) return;
+                    if (el.x >= pXMin && el.x <= pXMax && el.y >= pYMin && el.y <= pYMax) {
+                        if (p._origIdx !== undefined) selectedOrigIndices.push(p._origIdx);
+                    }
+                });
+            });
 
             currentChartSelectionRange = {
                 x: chartConfig.x,
                 y: chartConfig.y,
-                xMin: Math.min(vXMin, vXMax),
-                xMax: Math.max(vXMin, vXMax),
-                yMin: Math.min(vYMin, vYMax),
-                yMax: Math.max(vYMin, vYMax)
+                _selectedIndices: selectedOrigIndices
             };
             updateSelectionUI();
             highlightPointsInChart();

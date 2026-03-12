@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <title>檔案管理</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/styles_full.css">
+    <style>
+        /* Override body for iframe context */
+        body {
+            background: #f1f5f9;
+            overflow: auto;
+            height: auto;
+            padding: 15px;
+        }
+
+        .container {
+            height: auto;
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+</head>
+
+<body>
+    <div class="file-manager-container">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0px;">
+            <h3 style="margin: 0; color: #1e293b; font-size: 18px;">📑 已上傳檔案列表</h3>
+            <button class="btn-primary" onclick="openUploadModal()">
+                <span>📤</span> 上傳新檔案
+            </button>
+        </div>
+
+        <!-- Upload Modal -->
+        <div id="uploadModal" class="modal">
+            <div class="modal-content">
+                <button class="close-modal" onclick="closeUploadModal()">&times;</button>
+                <h3 style="margin-top: 0; margin-bottom: 20px; color: #1e293b;">上傳檔案</h3>
+                <div class="upload-area" id="upload-dropzone"
+                    onclick="document.getElementById('file-input-main').click()"
+                    ondragover="event.preventDefault(); event.stopPropagation(); this.style.borderColor='#3b82f6'; this.style.background='#eff6ff';"
+                    ondragenter="event.preventDefault(); event.stopPropagation(); this.style.borderColor='#3b82f6'; this.style.background='#eff6ff';"
+                    ondragleave="event.preventDefault(); event.stopPropagation(); this.style.borderColor=''; this.style.background='';"
+                    ondrop="event.preventDefault(); event.stopPropagation(); this.style.borderColor=''; this.style.background=''; if(event.dataTransfer.files.length>0) handleDroppedFiles(event.dataTransfer.files);">
+                    <div style="font-size: 40px; margin-bottom: 10px;">&#9729;&#65039;</div>
+                    <div style="font-size: 18px; font-weight: bold;">點擊或拖曳檔案至此處上傳</div>
+                    <div style="font-size: 14px; margin-top: 5px;">支援 CSV, XML, Excel (.xlsx, .xls) 格式</div>
+                    <input type="file" id="file-input-main" style="display: none;"
+                        accept=".csv,.xml,.xlsx,.xls" multiple onchange="handleMainFileUpload(this)">
+                </div>
+                <div id="upload-status" style="margin-bottom: 10px; font-weight: bold; text-align: center;"></div>
+                <div style="text-align: right;">
+                    <button onclick="closeUploadModal()"
+                        style="padding: 8px 16px; background: #e2e8f0; border: none; border-radius: 6px; cursor: pointer; color: #475569; font-weight: 600;">完成</button>
+                </div>
+            </div>
+        </div>
+
+        <table class="file-table">
+            <thead>
+                <tr>
+                    <th>名稱</th>
+                    <th>大小</th>
+                    <th>上傳時間</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody id="file-list-body">
+                <tr>
+                    <td colspan="4" style="text-align: center; padding: 30px;">載入中...</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <!-- Pagination -->
+        <div id="file-list-pagination" style="margin-top: 20px; display: flex; justify-content: center; gap: 8px;">
+        </div>
+
+        <!-- View Data Modal -->
+        <div id="viewDataModal" class="modal">
+            <div class="modal-content" style="max-width: 800px;">
+                <button class="close-modal" onclick="closeViewModal()">&times;</button>
+                <h3 id="viewDataTitle" style="margin-top: 0; margin-bottom: 20px; color: #1e293b;">預覽檔案</h3>
+                <pre id="viewDataContent"
+                    style="background: #f8fafc; padding: 15px; border-radius: 8px; overflow: auto; max-height: 400px; border: 1px solid #e2e8f0; font-family: monospace; font-size: 13px;"></pre>
+                <div style="text-align: right; margin-top: 15px;">
+                    <button onclick="closeViewModal()" class="btn-primary">關閉</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ============================================
+        // Session Management (inline for iframe isolation)
+        // ============================================
+        function getSessionId() {
+            let sid = localStorage.getItem("sigma2_session_id");
+            if (!sid) {
+                sid = 'sess-' + Math.random().toString(36).substr(2, 9) + Date.now().toString(36);
+                localStorage.setItem("sigma2_session_id", sid);
+            }
+            return sid;
+        }
+        const SESSION_ID = getSessionId();
+
+        // ============================================
+        // DOM Helpers
+        // ============================================
+        const $ = (id) => document.getElementById(id);
+
+        // ============================================
+        // File Manager Logic
+        // ============================================
+        let fileListCurrentPage = 1;
+        const FILE_LIST_PAGE_SIZE = 10;
+
+        function handleMainFileUpload(input) {
+            for (let i = 0; i < input.files.length; i++) {
+                uploadFile(input.files[i]);
+            }
+        }
+
+        function handleDroppedFiles(files) {
+            const allowed = ['.csv', '.xml', '.xlsx', '.xls'];
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+                if (!allowed.includes(ext)) {
+                    const statusDiv = $('upload-status');
+                    if (statusDiv) {
+                        statusDiv.innerText = `不支援的格式: ${ext}，僅支援 CSV, XML, Excel`;
+                        statusDiv.style.color = '#ef4444';
+                    }
+                    continue;
+                }
+                uploadFile(file);
+            }
+        }
+
+        async function uploadFile(file) {
+            const statusDiv = $('upload-status');
+            if (!statusDiv) return;
+            statusDiv.innerText = `⏳ 正在上傳 ${file.name}...`;
+            statusDiv.style.color = '#3b82f6';
+
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('session_id', SESSION_ID);
+
+            try {
+                const res = await fetch('/api/upload_file', { method: 'POST', body: formData });
+                const data = await res.json();
+                if (res.ok) {
+                    statusDiv.innerText = `✅ ${data.filename} 上傳成功`;
+                    statusDiv.style.color = '#22c55e';
+                    await loadFileList();
+                } else {
+                    statusDiv.innerText = `❌ 上傳失敗: ${data.detail}`;
+                    statusDiv.style.color = '#ef4444';
+                }
+            } catch (err) {
+                statusDiv.innerText = `❌ 上傳錯誤: ${err.message}`;
+                statusDiv.style.color = '#ef4444';
+            }
+        }
+
+        async function deleteFile(filename) {
+            if (!confirm(`確定要刪除 ${filename} 嗎？`)) return;
+            try {
+                const res = await fetch(`/api/delete_file/${filename}?session_id=${SESSION_ID}`, { method: 'DELETE' });
+                const data = await res.json();
+                if (res.ok) loadFileList();
+                else alert(`刪除失敗: ${data.detail}`);
+            } catch (err) {
+                alert(`錯誤: ${err.message}`);
+            }
+        }
+
+        async function viewFile(filename) {
+            try {
+                const res = await fetch(`/api/view_file/${filename}?session_id=${SESSION_ID}`);
+                const data = await res.json();
+                if (res.ok) {
+                    $('viewDataContent').innerText = data.content;
+                    $('viewDataTitle').innerText = `預覽: ${filename}`;
+                    $('viewDataModal').classList.add('show');
+                } else {
+                    alert(`無法預覽: ${data.detail}`);
+                }
+            } catch (err) {
+                alert(`錯誤: ${err.message}`);
+            }
+        }
+
+        function closeViewModal() {
+            $('viewDataModal').classList.remove('show');
+        }
+
+        async function loadFileList() {
+            const tbody = $('file-list-body');
+            if (!tbody) return;
+
+            try {
+                const res = await fetch(`/api/list_files?session_id=${SESSION_ID}`);
+                const data = await res.json();
+                tbody.innerHTML = '';
+
+                if (data.files.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: #94a3b8;">尚無已上傳檔案</td></tr>';
+                    const pc = $('file-list-pagination');
+                    if (pc) pc.innerHTML = '';
+                    return;
+                }
+
+                const totalItems = data.files.length;
+                const totalPages = Math.ceil(totalItems / FILE_LIST_PAGE_SIZE);
+                if (fileListCurrentPage > totalPages) fileListCurrentPage = Math.max(1, totalPages);
+
+                const startIdx = (fileListCurrentPage - 1) * FILE_LIST_PAGE_SIZE;
+                const endIdx = startIdx + FILE_LIST_PAGE_SIZE;
+                const sortedFiles = data.files.sort((a, b) => b.uploaded_at.localeCompare(a.uploaded_at));
+                const displayedFiles = sortedFiles.slice(startIdx, endIdx);
+
+                displayedFiles.forEach(f => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td style="font-weight: bold;">${f.filename}</td>
+                        <td style="color: #64748b;">${(f.size / 1024).toFixed(2)} KB</td>
+                        <td style="color: #64748b;">${f.uploaded_at}</td>
+                        <td>
+                            <div style="display: flex; align-items: center;">
+                                <button onclick="navigateToAnalysis('${f.filename}')" class="action-btn btn-view">資料</button>
+                                <button onclick="navigateToTraining('${f.filename}')" class="action-btn btn-train">訓練</button>
+                                <button onclick="deleteFile('${f.filename}')" class="action-btn btn-delete">刪除</button>
+                            </div>
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+
+                renderFileListPagination(totalPages);
+            } catch (err) {
+                tbody.innerHTML = `<tr><td colspan="4" style="color: red;">無法載入列表: ${err.message}</td></tr>`;
+            }
+        }
+
+        function renderFileListPagination(totalPages) {
+            const container = $('file-list-pagination');
+            if (!container) return;
+            if (totalPages <= 1) { container.innerHTML = ''; return; }
+
+            const btnStyle = "padding: 6px 14px; border: 1px solid #e2e8f0; border-radius: 6px; background: #fff; color: #64748b; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s;";
+            let html = '';
+            html += `<button style="${btnStyle}" ${fileListCurrentPage === 1 ? 'disabled style="opacity:0.5; cursor:not-allowed;"' : `onclick="changeFileListPage(${fileListCurrentPage - 1})"`}>上一頁</button>`;
+            html += `<span style="display: flex; align-items: center; gap: 5px; color: #64748b; font-size: 12px; margin: 0 10px;">第 ${fileListCurrentPage} / ${totalPages} 頁</span>`;
+            html += `<button style="${btnStyle}" ${fileListCurrentPage === totalPages ? 'disabled style="opacity:0.5; cursor:not-allowed;"' : `onclick="changeFileListPage(${fileListCurrentPage + 1})"`}>下一頁</button>`;
+            container.innerHTML = html;
+        }
+
+        function changeFileListPage(newPage) {
+            fileListCurrentPage = newPage;
+            loadFileList();
+        }
+
+        function openUploadModal() {
+            $('uploadModal').classList.add('show');
+            $('upload-status').innerText = '';
+        }
+
+        function closeUploadModal() {
+            $('uploadModal').classList.remove('show');
+        }
+
+        // ============================================
+        // Cross-iframe Navigation via postMessage
+        // ============================================
+        function navigateToAnalysis(filename) {
+            window.parent.postMessage({ type: 'sigma2:navigate', view: 'analysis', filename: filename }, '*');
+        }
+
+        function navigateToTraining(filename) {
+            window.parent.postMessage({ type: 'sigma2:navigate', view: 'training', filename: filename }, '*');
+        }
+
+        // ESC key handler
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                closeUploadModal();
+                closeViewModal();
+            }
+        });
+
+        // ============================================
+        // Init
+        // ============================================
+        document.addEventListener('DOMContentLoaded', () => {
+            loadFileList();
+        });
+
+        // Listen for messages from parent to refresh file list
+        window.addEventListener('message', (e) => {
+            if (e.data?.type === 'sigma2:refreshFiles') {
+                loadFileList();
+            }
+        });
+    </script>
+</body>
+
+</html>

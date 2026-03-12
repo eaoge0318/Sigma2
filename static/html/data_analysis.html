@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <title>數據圖表</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/styles_full.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@sgratzl/chartjs-chart-boxplot@3.8.0/build/index.umd.min.js"></script>
+    <script src="/static/js/lib/marked.min.js"></script>
+    <style>
+        /* Override body for iframe context */
+        html, body {
+            background: #f1f5f9;
+            overflow-y: auto;
+            height: 100%;
+            margin: 0;
+            padding: 0;
+        }
+        .container { height: 100%; }
+        .file-manager-container {
+            min-height: 100%;
+            max-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            box-sizing: border-box;
+        }
+
+        /* Chart Type Button Styles (from dashboard.html inline) */
+        .chart-type-btn {
+            padding: 6px 14px;
+            background: #fff;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            color: #64748b;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+        .chart-type-btn:hover { background: #f8fafc; border-color: #cbd5e1; color: #475569; }
+        .chart-type-btn.active { background: #3b82f6; color: white; border-color: #3b82f6; }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        /* btn-adv-selection */
+        .btn-adv-selection {
+            width: 100%;
+            padding: 8px 12px;
+            background: linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%);
+            border: 1px solid #d8b4fe;
+            border-radius: 8px;
+            color: #7e22ce;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.2s;
+        }
+        .btn-adv-selection:hover { background: #ede9fe; border-color: #c4b5fd; }
+    </style>
+</head>
+
+<body>
+    <!-- Entire view-analysis content from dashboard.html lines 1396-1819 -->
+    <div class="file-manager-container"
+        style="padding: 15px; box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1); background: #fff; border-radius: 12px; box-sizing: border-box;">
+        <!-- Header -->
+        <div
+            style="display: flex; align-items: center; padding: 10px 0; border-bottom: 1px solid #e2e8f0; margin-bottom: 15px; width: 100%; justify-content: flex-start; flex-shrink: 0;">
+            <span style="font-size: 18px; margin-right: 12px;">📈</span>
+            <span style="color: #1e293b; font-size: 16px; font-weight: bold; margin-right: 15px;">數據圖表</span>
+            <div style="font-size: 14px; color: #94a3b8;">
+                目前檔案 : <span id="analysis-filename"
+                    style="color: #2563eb; font-weight: bold; cursor: pointer; text-decoration-line: underline; text-decoration-thickness: 1px; text-underline-offset: 4px;"
+                    onclick="openInternalFileSelector()" title="點擊切換檔案">未選擇</span>
+                <span id="analysis-header-count" style="margin-left: 10px; color: #64748b; font-size: 12px;"></span>
+            </div>
+            <div style="flex: 1;"></div>
+            <div class="view-toggles" style="display: flex; background: #f1f5f9; padding: 4px; border-radius: 8px;">
+                <button id="btn-mode-table" onclick="switchAnalysisMode('table')"
+                    style="padding: 6px 12px; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; background: #fff; color: #3b82f6; box-shadow: 0 1px 2px rgba(0,0,0,0.1);">表格數據</button>
+                <button id="btn-mode-chart" onclick="switchAnalysisMode('chart')"
+                    style="padding: 6px 12px; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; background: transparent; color: #64748b;">繪圖分析</button>
+            </div>
+        </div>
+
+        <!-- TABLE VIEW CONTAINER -->
+        <div id="analysis-table-view">
+            <div id="filter-bar-area" class="filter-bar" style="overflow: visible;">
+                <div class="filter-actions-left">
+                    <div class="filter-menu-container">
+                        <button class="add-filter-btn" onclick="toggleFilterMenu(event)">
+                            <span>+</span> 篩選條件
+                        </button>
+                        <div id="filter-menu" class="filter-menu">
+                            <div>
+                                <label>選擇欄位</label>
+                                <select id="filter-column-select"></select>
+                            </div>
+                            <div>
+                                <label>搜尋關鍵字</label>
+                                <input type="text" id="filter-value-input" placeholder="輸入文字..."
+                                    onkeyup="handleFilterKey(event)">
+                            </div>
+                            <div style="margin-top: 10px; display: flex; align-items: center;">
+                                <input type="checkbox" id="filter-not-empty-check"
+                                    style="width: 16px; height: 16px; cursor: pointer; accent-color: #3b82f6;">
+                                <label for="filter-not-empty-check"
+                                    style="font-size: 14px; color: #334155; margin-left: 8px; cursor: pointer; user-select: none;">排除空白值
+                                    (Exclude Empty)</label>
+                            </div>
+                            <div class="filter-menu-actions">
+                                <button class="filter-menu-btn btn-cancel-filter"
+                                    onclick="toggleFilterMenu(event)">取消</button>
+                                <button class="filter-menu-btn btn-add-filter"
+                                    onclick="addFilterFromMenu()">新增篩選</button>
+                            </div>
+                        </div>
+                    </div>
+                    <span class="reset-filter-btn" onclick="resetAllFilters()"
+                        style="font-size: 13px; color: #94a3b8; cursor: pointer; text-decoration: underline; margin-left: 15px;">重設</span>
+                    <span id="filter-bar-count-display" style="display: none;"></span>
+                </div>
+                <div class="filter-actions-right">
+                    <button onclick="quickAnalysis()" class="add-filter-btn"
+                        style="background: #3b82f6; color: white; border: none; font-size: 12px; padding: 6px 12px; margin-right: 10px;">
+                        ⚡ 空值分析
+                    </button>
+                    <button onclick="saveFilteredData()" class="add-filter-btn"
+                        style="background: #10b981; color: white; border: none; font-size: 12px; padding: 6px 12px;">
+                        📦 匯出至檔案管理
+                    </button>
+                </div>
+            </div>
+
+            <!-- Column Picker Modal -->
+            <div id="col-picker-modal" class="col-picker-modal">
+                <div class="col-picker-content">
+                    <div class="col-picker-header">
+                        <h3 style="margin: 0; color: #1e293b;">⚙️ 欄位顯示控制</h3>
+                        <div style="display: flex; gap: 15px;">
+                            <input type="text" id="col-search-input" placeholder="搜尋欄位名稱..."
+                                style="padding: 6px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;"
+                                onkeyup="filterColumnList()">
+                            <button onclick="closeColumnPicker()"
+                                style="background:none; border:none; font-size: 20px; cursor:pointer; color: #94a3b8;">&times;</button>
+                        </div>
+                    </div>
+                    <div style="margin-top: 10px;">
+                        <button class="btn-page" onclick="toggleAllColumns(true)">全選</button>
+                        <button class="btn-page" onclick="toggleAllColumns(false)">全不選</button>
+                        <span id="col-select-count"
+                            style="margin-left: 10px; font-size: 13px; color: #64748b;"></span>
+                    </div>
+                    <div id="col-picker-list" class="col-picker-list"></div>
+                    <div class="col-picker-footer">
+                        <button class="btn-page" onclick="closeColumnPicker()" style="background: #94a3b8;">取消</button>
+                        <button class="btn-page" onclick="applyColumnVisibility()" style="background: #3b82f6;">套用修改</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="analysis-content" style="width: 100%; margin: 0; text-align: left;">
+                <div style="text-align: center; color: #94a3b8; padding: 40px;">
+                    請從檔案列表中選擇檔案進行分析...
+                </div>
+            </div>
+            <div id="analysis-pagination-container" style="margin-top: 20px; width: 100%; text-align: center;"></div>
+        </div>
+
+        <!-- CHART VIEW CONTAINER -->
+        <div id="analysis-chart-view"
+            style="display: none; flex: 1; flex-direction: row; background: #fff; min-height: 0;">
+
+            <!-- LEFT SIDEBAR: Columns Source -->
+            <div style="width: 260px; border-right: 1px solid #e2e8f0; display: flex; flex-direction: column; background: #f8fafc;">
+                <div style="padding: 15px; border-bottom: 1px solid #e2e8f0; background: #fff;">
+                    <div style="font-weight: bold; color: #1e293b; margin-bottom: 10px; font-size: 14px;">可用欄位</div>
+                    <div style="position: relative; margin-bottom: 12px;">
+                        <input type="text" id="chart-col-search" placeholder="搜尋欄位..."
+                            style="width: 100%; padding: 8px 30px 8px 8px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; box-sizing: border-box;"
+                            onkeyup="filterChartColumns(this.value)">
+                        <span onclick="clearChartColSearch()"
+                            style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); cursor: pointer; color: #94a3b8; font-size: 16px; font-weight: bold; padding: 2px;"
+                            title="清除">&times;</span>
+                    </div>
+                    <div id="adv-selection-container">
+                        <button onclick="openAdvancedModal()" class="btn-adv-selection">
+                            <span>🔍</span> 進階挑選 (分析影響力)
+                        </button>
+                    </div>
+                </div>
+                <div id="chart-column-source"
+                    style="flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 8px;">
+                </div>
+                <div style="padding: 10px; font-size: 12px; color: #64748b; text-align: center; border-top: 1px solid #e2e8f0; background: #f8fafc;">
+                    拖拽欄位至軸或分選區
+                </div>
+            </div>
+
+            <!-- CENTER: Main Chart Layout -->
+            <div style="flex: 1; display: flex; flex-direction: column; min-width: 0;">
+                <!-- Chart Toolbar -->
+                <div style="display: flex; gap: 10px; padding: 10px 20px; border-bottom: 1px solid #f1f5f9; background: #fff; align-items: center;">
+                    <span style="font-size: 13px; font-weight: 600; color: #64748b; margin-right: 5px;">圖表類型:</span>
+                    <button class="chart-type-btn active" id="btn-chart-scatter" onclick="setChartType('scatter')">散布圖</button>
+                    <button class="chart-type-btn" id="btn-chart-line" onclick="setChartType('line')">折線圖</button>
+                    <button class="chart-type-btn" id="btn-chart-boxplot" onclick="setChartType('boxplot')">盒鬚圖</button>
+                    <div style="flex: 1;"></div>
+                    <button id="btn-selection-mode" class="add-filter-btn" onclick="toggleSelectionMode()"
+                        style="background: #fff; color: #475569; border: 1px solid #cbd5e1; font-size: 12px; padding: 6px 12px; margin-right: 10px;">
+                        🖱️ 框選模式: 關閉
+                    </button>
+                    <button class="add-filter-btn" onclick="calculateCorrelation()"
+                        style="background: #fff; color: #475569; border: 1px solid #cbd5e1; font-size: 12px; padding: 6px 12px;">
+                        📈 相關係數分析
+                    </button>
+                    <div id="correlation-result"
+                        style="font-size: 13px; color: #1e293b; margin-left: 15px; display: flex; flex-direction: column; align-items: flex-start; border-left: 2px solid #e2e8f0; padding-left: 15px;">
+                    </div>
+                </div>
+
+                <div style="flex: 1; display: flex; align-items: stretch; padding: 20px 20px 0 20px;">
+                    <!-- Left Y-Axis Dropzone -->
+                    <div style="width: 50px; display: flex; flex-direction: column; align-items: center; justify-content: center; margin-right: 10px;">
+                        <div id="drop-y" class="axis-dropzone vertical" ondragover="allowDrop(event)"
+                            ondragleave="handleDragLeave(event)" ondrop="handleDrop(event, 'y')"
+                            style="width: 100%; height: 100%;">
+                            <span class="placeholder" style="transform: rotate(-90deg); white-space: nowrap; font-size: 11px; letter-spacing: 2px; display: inline-block;">拖曳至此</span>
+                        </div>
+                    </div>
+
+                    <!-- Chart Canvas Area -->
+                    <div ondrop="handleMainChartDrop(event)" ondragover="allowDrop(event)"
+                        style="flex: 1; position: relative; border: 1px solid #f1f5f9; border-radius: 8px; padding: 10px; box-shadow: inset 0 0 10px #f8fafc; overflow: hidden;">
+                        <canvas id="analysis-chart-canvas"></canvas>
+                        <div id="selection-box"
+                            style="position: absolute; border: 2px solid #2563eb; background: rgba(37, 99, 235, 0.15); pointer-events: none; display: none; z-index: 100; box-shadow: 0 0 8px rgba(37, 99, 235, 0.3);">
+                        </div>
+                        <div id="chart-info-overlay"
+                            style="position: absolute; top: 10px; right: 10px; font-size: 12px; color: #64748b; background: rgba(255,255,255,0.8); padding: 5px 10px; border-radius: 4px;">
+                            尚未繪圖
+                        </div>
+                    </div>
+
+                    <!-- Selection Details Modal -->
+                    <div id="selection-modal"
+                        style="display: none; position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 10000; pointer-events: auto; align-items: center; justify-content: center;">
+                        <div style="background: #fff; display: flex; align-items: center; gap: 15px; padding: 10px 20px; border-radius: 50px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); border: 1px solid #7c3aed;">
+                            <div id="selection-count-text" style="font-size: 14px; font-weight: 600; color: #1e293b; white-space: nowrap;">已選取 0 筆</div>
+                            <div style="display: flex; gap: 8px; border-left: 1px solid #e2e8f0; padding-left: 15px;">
+                                <button class="add-filter-btn" onclick="applySelectionAsFilter('keep')"
+                                    style="padding: 6px 15px; font-size: 13px; background: #16a34a; color: #fff; border: none; border-radius: 20px; cursor: pointer;">保留</button>
+                                <button class="add-filter-btn" onclick="applySelectionAsFilter('exclude')"
+                                    style="padding: 6px 15px; font-size: 13px; background: #dc2626; color: #fff; border: none; border-radius: 20px; cursor: pointer;">排除</button>
+                                <button onclick="clearChartSelection()"
+                                    style="background: #f1f5f9; border: none; width: 28px; height: 28px; border-radius: 50%; color: #64748b; cursor: pointer; font-size: 18px; display: flex; align-items: center; justify-content: center;">&times;</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Advanced Parameter Selection Modal -->
+                    <div id="advanced-param-modal" class="modal">
+                        <div class="modal-content"
+                            style="max-width: 480px; padding: 0; border: none; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); overflow: hidden;">
+                            <div style="background: linear-gradient(to right, #f8fafc, #fff); padding: 20px 25px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
+                                <div>
+                                    <h3 style="margin: 0; color: #0f172a; font-size: 18px; display: flex; align-items: center; gap: 8px;">進階參數挑選</h3>
+                                    <p style="margin: 5px 0 0 0; font-size: 13px; color: #64748b;">設定目標與分析方式，AI 將為您計算影響力排名</p>
+                                </div>
+                                <button class="close-modal" onclick="closeAdvancedModal()"
+                                    style="position: static; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 8px; transition: background 0.2s; font-size: 20px; color: #94a3b8;">&times;</button>
+                            </div>
+                            <div style="padding: 25px;">
+                                <div style="margin-bottom: 25px;">
+                                    <label style="display: block; margin-bottom: 10px; font-weight: 600; font-size: 14px; color: #334155; display: flex; justify-content: space-between;">
+                                        <span>1. 選擇觀測對象 (Target)</span>
+                                        <span style="font-size: 11px; color: #a855f7; background: #faf5ff; padding: 2px 8px; border-radius: 10px;">必填</span>
+                                    </label>
+                                    <div style="position: relative;">
+                                        <select id="adv-target-select"
+                                            style="width: 100%; padding: 12px 15px; border-radius: 8px; border: 1px solid #cbd5e1; background: #fff; font-size: 14px; outline: none; transition: border 0.2s; appearance: none; cursor: pointer;">
+                                        </select>
+                                        <div style="position: absolute; right: 15px; top: 50%; transform: translateY(-50%); pointer-events: none; color: #64748b;">▼</div>
+                                    </div>
+                                </div>
+                                <div style="margin-bottom: 25px;">
+                                    <label style="display: block; margin-bottom: 12px; font-weight: 600; font-size: 14px; color: #334155;">2. 選擇分析演算法</label>
+                                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                                        <label class="algo-card">
+                                            <input type="radio" name="adv-algo" value="xgboost" checked>
+                                            <div class="algo-content">
+                                                <div class="algo-info">
+                                                    <div class="algo-title">XGBoost (SHAP)</div>
+                                                    <div class="algo-desc">適合非線性關係，精準度高但較耗時</div>
+                                                </div>
+                                                <div class="check-circle"></div>
+                                            </div>
+                                        </label>
+                                        <label class="algo-card">
+                                            <input type="radio" name="adv-algo" value="correlation">
+                                            <div class="algo-content">
+                                                <div class="algo-info">
+                                                    <div class="algo-title">相關係數 (Abs)</div>
+                                                    <div class="algo-desc">適合線性關係，運算速度極快</div>
+                                                </div>
+                                                <div class="check-circle"></div>
+                                            </div>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div id="adv-status" style="margin-bottom: 20px; min-height: 24px; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 500; border-radius: 6px;"></div>
+                                <div style="display: flex; gap: 15px;">
+                                    <button onclick="closeAdvancedModal()"
+                                        style="flex: 1; padding: 12px; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; color: #64748b; font-weight: 600; cursor: pointer;">取消</button>
+                                    <button onclick="runAdvancedAnalysis()" class="btn-primary"
+                                        style="flex: 2; padding: 12px; background: linear-gradient(135deg, #7e22ce 0%, #9333ea 100%); border: none; border-radius: 10px; color: white; font-weight: 600; cursor: pointer; box-shadow: 0 4px 6px -1px rgba(126, 34, 206, 0.3); display: flex; align-items: center; justify-content: center; gap: 8px;">
+                                        <span id="adv-btn-text">開始智慧分析</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Right Y-Axis Dropzone -->
+                    <div style="width: 50px; display: flex; flex-direction: column; align-items: center; justify-content: center; margin-left: 10px;">
+                        <div id="drop-y2" class="axis-dropzone vertical" ondragover="allowDrop(event)"
+                            ondragleave="handleDragLeave(event)" ondrop="handleDrop(event, 'y2')"
+                            style="width: 100%; height: 100%;">
+                            <span class="placeholder" style="transform: rotate(-90deg); white-space: nowrap; font-size: 11px; letter-spacing: 2px; display: inline-block;">(選填)</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- X-Axis Dropzone -->
+                <div style="height: 36px; display: flex; align-items: center; justify-content: center; padding: 5px 10px; flex-shrink: 0;">
+                    <div style="font-size: 12px; color: #94a3b8; font-weight: bold; margin-right: 10px;">X 軸:</div>
+                    <div id="drop-x" class="axis-dropzone horizontal" ondragover="allowDrop(event)"
+                        ondragleave="handleDragLeave(event)" ondrop="handleDrop(event, 'x')"
+                        style="width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;">
+                        <span class="placeholder">拖曳至此</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Chart AI Assistant -->
+    <div class="ai-report-card" id="chart-ai-assistant-window" style="display: none;">
+        <div class="ai-report-header">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <div style="width: 32px; height: 32px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 18px; box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);">📊</div>
+                <h3 style="margin: 0; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; font-size: 16px; font-weight: 600;">圖表 AI 專家助手</h3>
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center;">
+                <button id="btn-chart-report" onclick="generateChartAIReport()"
+                    style="background: linear-gradient(135deg, #a78bfa 0%, #8b5cf6 100%); color: white; border: none; padding: 7px 14px; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 12px; box-shadow: 0 2px 6px rgba(139, 92, 246, 0.3);">✨ 生成報告</button>
+                <button onclick="toggleChartExpand()" title="切換寬度" style="background:none; border:none; cursor:pointer; font-size:16px; color:#94a3b8; padding: 0 4px;">↔️</button>
+                <button onclick="openChartChatPopup()" title="獨立視窗 (Pop-out)" style="background:none; border:none; cursor:pointer; font-size:16px; color:#94a3b8; padding: 0 4px;">❐</button>
+                <button onclick="toggleChartAssistant()" style="background:none; border:none; cursor:pointer; font-size:20px; color:#94a3b8; padding: 0 4px;">×</button>
+            </div>
+        </div>
+        <div id="chart-ai-report-content" class="ai-report-body"
+            style="background: linear-gradient(to bottom, #faf5ff 0%, #f5f3ff 100%);">
+            <div class="ai-bubble chat-bubble"
+                style="background: white; border-left: 4px solid #a78bfa; box-shadow: 0 2px 8px rgba(167, 139, 250, 0.15);">
+                👋 <strong>您好！</strong>我是您的圖表分析專家。點擊上方按鈕，我將根據您最近的圖表分析記錄生成深度報告。您也可以直接與我對話，詢問關於圖表的任何問題。
+            </div>
+        </div>
+        <div id="chart-file-preview" style="display: none;"></div>
+        <div class="chat-input-wrapper"
+            style="background: linear-gradient(to top, #f8f9fa 0%, #ffffff 100%); border-top: 1px solid #e9ecef; padding: 15px; min-height: 80px;">
+            <button onclick="document.getElementById('chart-chat-file').click()" title="附加檔案"
+                style="background: linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%); color: #7c3aed; border: 1.5px solid #c4b5fd; padding: 10px 14px; border-radius: 10px; font-size: 18px; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 3px rgba(124, 58, 237, 0.1);">
+                📎
+            </button>
+            <input type="file" id="chart-chat-file" style="display: none;" multiple
+                accept="image/*,.csv,.txt,.log" onchange="handleChartFileSelect(this)">
+            <textarea id="chart-chat-input" placeholder="對報告有疑問？在此輸入您的問題... (或是點擊左側夾帶圖標)"
+                onkeydown="handleChartChatKey(event)"
+                style="flex: 1; border: 1.5px solid #e9ecef; border-radius: 10px; padding: 12px 15px; font-size: 14px; resize: none; outline: none; min-height: 50px; line-height: 1.5;"></textarea>
+            <button onclick="sendChartChatMessage()" title="發送訊息"
+                style="background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); color: white; border: none; padding: 12px 24px; border-radius: 10px; cursor: pointer; font-weight: 600; font-size: 14px; box-shadow: 0 2px 8px rgba(124, 58, 237, 0.3);">
+                發送
+            </button>
+        </div>
+    </div>
+
+    <!-- Floating Chart Assistant FAB -->
+    <button class="assistant-fab" id="chart-assistant-trigger" onclick="toggleChartAssistant()"
+        style="display: block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);">
+        <span id="chart-fab-icon" style="font-size: 24px;">📊</span>
+    </button>
+
+    <!-- Internal File Selector Modal -->
+    <div id="internal-file-selector" class="modal">
+        <div class="modal-content" style="max-width: 500px;">
+            <button class="close-modal" onclick="closeInternalFileSelector()">&times;</button>
+            <h3 style="margin-top: 0; margin-bottom: 20px; color: #1e293b;">選擇分析檔案</h3>
+            <div id="internal-file-list" style="max-height: 400px; overflow-y: auto;">
+                <div style="text-align: center; color: #94a3b8; padding: 20px;">載入中...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Load analysis_manager.js as module + chart AI helpers -->
+    <script type="module">
+        import { SESSION_ID } from '/static/js/dashboard_modules/session.js';
+        import * as Analysis from '/static/js/dashboard_modules/analysis_manager.js';
+
+        // Expose SESSION_ID globally for chart AI helpers
+        window.SESSION_ID = SESSION_ID;
+
+        // Expose all analysis functions to window for onclick handlers
+        window.switchAnalysisMode = Analysis.switchAnalysisMode;
+        window.loadAnalysisPage = Analysis.loadAnalysisPage;
+        window.analyzeFile = Analysis.analyzeFile;
+        window.toggleFilterMenu = Analysis.toggleFilterMenu;
+        window.addFilterFromMenu = Analysis.addFilterFromMenu;
+        window.removeFilter = Analysis.removeFilter;
+        window.resetAllFilters = Analysis.resetAllFilters;
+        window.handleSort = Analysis.handleSort;
+        window.openColumnPicker = Analysis.openColumnPicker;
+        window.closeColumnPicker = Analysis.closeColumnPicker;
+        window.toggleColCheckbox = Analysis.toggleColCheckbox;
+        window.toggleAllColumns = Analysis.toggleAllColumns;
+        window.filterColumnList = Analysis.filterColumnList;
+        window.applyColumnVisibility = Analysis.applyColumnVisibility;
+        window.updateFilterBar = Analysis.updateFilterBar;
+        window.updateColSelectCount = Analysis.updateColSelectCount;
+        window.allowDrop = Analysis.allowDrop;
+        window.handleDragLeave = Analysis.handleDragLeave;
+        window.handleDrop = Analysis.handleDrop;
+        window.handleMainChartDrop = Analysis.handleMainChartDrop;
+        window.openAdvancedModal = Analysis.openAdvancedModal;
+        window.closeAdvancedModal = Analysis.closeAdvancedModal;
+        window.runAdvancedAnalysis = Analysis.runAdvancedAnalysis;
+        window.resetAdvancedResults = Analysis.resetAdvancedResults;
+        window.clearChartColSearch = Analysis.clearChartColSearch;
+        window.quickAnalysis = Analysis.quickAnalysis;
+        window.saveFilteredData = Analysis.saveFilteredData;
+        // Chart-specific functions
+        window.filterChartColumns = Analysis.filterChartColumns;
+        window.setChartType = Analysis.setChartType;
+        window.toggleSelectionMode = Analysis.toggleSelectionMode;
+        window.calculateCorrelation = Analysis.calculateCorrelation;
+        window.clearChartSelection = Analysis.clearChartSelection;
+        window.applySelectionAsFilter = Analysis.applySelectionAsFilter;
+        window.cycleChartAxis = Analysis.cycleChartAxis;
+        window.initChartColumns = Analysis.initChartColumns;
+        window.renderAnalysisChart = Analysis.renderAnalysisChart;
+        window.tryUpdateChart = Analysis.tryUpdateChart;
+        window.clearChartConfig = Analysis.clearChartConfig;
+        window.resetAxis = Analysis.resetAxis;
+
+        // Handle filter key (Enter to add)
+        window.handleFilterKey = function(event) {
+            if (event.key === 'Enter') Analysis.addFilterFromMenu();
+        };
+
+        // Listen for messages from parent
+        window.addEventListener('message', (e) => {
+            if (e.data?.type === 'sigma2:analyzeFile' && e.data.filename) {
+                Analysis.analyzeFile(e.data.filename);
+            }
+        });
+    </script>
+
+    <!-- Chart AI Helpers (non-module, uses globals) -->
+    <script src="/static/js/dashboard_modules/chart_ai_helpers.js"></script>
+    <script src="/static/js/dashboard_modules/chart_ai_dragdrop.js"></script>
+
+    <script>
+        // Internal file selector for analysis page
+        async function openInternalFileSelector() {
+            const modal = document.getElementById('internal-file-selector');
+            const listDiv = document.getElementById('internal-file-list');
+            modal.classList.add('show');
+
+            try {
+                const sid = window.SESSION_ID || localStorage.getItem('sigma2_session_id') || '';
+                const res = await fetch(`/api/list_files?session_id=${sid}`);
+                const data = await res.json();
+
+                if (!data.files || data.files.length === 0) {
+                    listDiv.innerHTML = '<div style="text-align: center; color: #94a3b8; padding: 20px;">尚無已上傳檔案</div>';
+                    return;
+                }
+
+                listDiv.innerHTML = data.files
+                    .sort((a, b) => b.uploaded_at.localeCompare(a.uploaded_at))
+                    .map(f => `
+                        <div onclick="selectFileForAnalysis('${f.filename}')"
+                            style="padding: 12px 15px; border-bottom: 1px solid #f1f5f9; cursor: pointer; display: flex; justify-content: space-between; align-items: center; transition: background 0.2s;"
+                            onmouseover="this.style.background='#eff6ff'"
+                            onmouseout="this.style.background='#fff'">
+                            <div>
+                                <div style="font-weight: 600; color: #1e293b; font-size: 14px;">${f.filename}</div>
+                                <div style="font-size: 12px; color: #94a3b8; margin-top: 2px;">${(f.size / 1024).toFixed(1)} KB · ${f.uploaded_at}</div>
+                            </div>
+                            <span style="color: #3b82f6; font-size: 13px; font-weight: 600;">選擇</span>
+                        </div>
+                    `).join('');
+            } catch (err) {
+                listDiv.innerHTML = `<div style="color: red; padding: 20px;">載入失敗: ${err.message}</div>`;
+            }
+        }
+
+        function closeInternalFileSelector() {
+            document.getElementById('internal-file-selector').classList.remove('show');
+        }
+
+        function selectFileForAnalysis(filename) {
+            closeInternalFileSelector();
+            if (window.analyzeFile) window.analyzeFile(filename);
+        }
+
+        // Also handle openFileSelector calls from analysis_manager.js
+        window.openFileSelector = openInternalFileSelector;
+        window.closeFileSelector = closeInternalFileSelector;
+    </script>
+</body>
+
+</html>

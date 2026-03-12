@@ -922,6 +922,11 @@
             background: #4338ca;
         }
 
+        #panel-mva {
+            flex-direction: column;
+            width: 100%;
+        }
+
         /* MVA Panel */
         .mva-container {
             flex: 1;
@@ -981,7 +986,6 @@
 
         .mva-chart-wrap canvas {
             display: block;
-            width: 100%;
         }
 
         .mva-brush-hint {
@@ -1144,13 +1148,13 @@
 
         .mva-body {
             display: flex;
-            gap: 0;
+            gap: 12px;
             flex: 1;
             min-height: 0;
         }
 
         .mva-main {
-            flex: 1;
+            flex: 1.5;
             min-width: 0;
         }
 
@@ -1161,11 +1165,6 @@
             background: #f8fafc;
             padding: 12px;
             overflow-y: auto;
-            display: none;
-        }
-
-        .mva-contrib-panel.open {
-            display: block;
         }
 
         .mva-contrib-title {
@@ -2124,7 +2123,9 @@
                             <span class="mva-act-close" onclick="mvaClearSelection()">✕</span>
                         </div>
                     </div>
-                    <div class="mva-contrib-panel" id="mva-contrib-panel"></div>
+                    <div class="mva-contrib-panel" id="mva-contrib-panel">
+                        <div style="display:flex;align-items:center;justify-content:center;height:100%;color:#94a3b8;font-size:12px;">選取數據點後按「分析」查看貢獻度</div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -2150,9 +2151,10 @@
                         </div>
                         <div id="gb-target-area" style="display:none;">
                             <label class="gb-label">Target 欄位</label>
-                            <div class="gb-searchable-select" id="gb-target-select-wrap">
+                            <div class="gb-searchable-select" id="gb-target-select-wrap" style="position:relative;">
                                 <input id="gb-target-input" placeholder="搜尋欄位..." autocomplete="off"
                                     onfocus="gbToggleTargetDd(true)" oninput="gbTargetSearch()">
+                                <span id="gb-target-clear" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);cursor:pointer;color:#94a3b8;font-size:14px;display:none;" onclick="gbClearTarget()">✕</span>
                                 <div class="gb-ss-dropdown" id="gb-target-dd"></div>
                                 <input type="hidden" id="gb-target-select" value="">
                             </div>
@@ -2346,7 +2348,7 @@
         }
 
         async function runMvaT2() {
-            if (!currentFileId) { alert('請先選擇檔案'); return; }
+            if (!currentFileId) { alert('請先選擇檔案'); return false; }
             const btn = document.querySelector('.mva-run-btn');
             btn.disabled = true; btn.textContent = '⏳ 計算中...';
             try {
@@ -2371,18 +2373,20 @@
                     let msg = 'T² 計算失敗';
                     try { const err = await resp.json(); msg = err.detail || msg; } catch (_) { msg = await resp.text(); }
                     alert(msg);
-                    return;
+                    return false;
                 }
                 _mvaT2Data = await resp.json();
                 _mvaSelected = [];
-                // Use backend-provided original indices mapping
                 _mvaOrigMap = _mvaT2Data.original_indices || Array.from({ length: _mvaT2Data.t2_values.length }, (_, i) => i);
+                console.log('[MVA DEBUG] API returned:', _mvaT2Data.t2_values.length, 'points, excluded:', _mvaExcludedIndices.length, 'indices');
                 drawMvaChart();
                 document.getElementById('mva-action-bar').style.display = 'none';
                 document.getElementById('mva-info').textContent =
                     `${_mvaT2Data.n_obs} 筆 | ${_mvaT2Data.n_anomalies} 異常 | ${_mvaT2Data.pca_used ? 'PCA ' + _mvaT2Data.n_components + ' comp' : _mvaT2Data.n_components + ' 維度'}`;
+                return true;
             } catch (e) {
                 if (e.name !== 'AbortError') alert('計算錯誤: ' + e.message);
+                return false;
             } finally {
                 btn.disabled = false; btn.textContent = '▶ 執行分析';
             }
@@ -2417,9 +2421,15 @@
         function drawMvaChart() {
             const canvas = document.getElementById('mva-canvas');
             const wrap = document.getElementById('mva-chart-wrap');
-            const W = wrap.clientWidth || 1000;
+            const mainEl = canvas.closest('.mva-main');
+            const bodyEl = document.querySelector('.mva-body');
+            // Use mainEl width for canvas pixel resolution
+            const W = (mainEl ? mainEl.clientWidth : 1000) - 2;
             const H = 340;
             canvas.width = W; canvas.height = H;
+            // Set CSS display size to match exactly
+            canvas.style.width = W + 'px';
+            canvas.style.height = H + 'px';
             const ctx = canvas.getContext('2d');
             ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
 
@@ -2435,31 +2445,51 @@
             const xScale = i => pad.l + (i / Math.max(vals.length - 1, 1)) * cw;
             const yScale = v => pad.t + ch - (v / maxVal) * ch;
 
+            // --- Unified style constants ---
+            const FONT = '10px -apple-system, "Segoe UI", sans-serif';
+            const FONT_BOLD = 'bold 10px -apple-system, "Segoe UI", sans-serif';
+            const CLR_GRID = '#eef1f5';
+            const CLR_AXIS = '#94a3b8';
+            const CLR_95 = '#f59e0b';
+            const CLR_99 = '#ef4444';
+            const CLR_LINE = '#93c5fd';
+            const CLR_POINT = '#3b82f6';
+            const CLR_ANOMALY = '#ef4444';
+            const CLR_SELECTED = '#6366f1';
+            const CLR_SELECTED_BORDER = '#4338ca';
+
             // Grid
-            ctx.strokeStyle = '#e2e8f0'; ctx.lineWidth = 0.5;
+            ctx.strokeStyle = CLR_GRID; ctx.lineWidth = 0.5;
             for (let i = 0; i <= 5; i++) {
                 const y = pad.t + (ch / 5) * i;
                 ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(pad.l + cw, y); ctx.stroke();
             }
 
-            // 95% line
+            // UCL lines
             ctx.setLineDash([6, 4]);
-            ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = 1.5;
+            ctx.font = FONT;
+
+            // 95% UCL — label right
+            ctx.strokeStyle = CLR_95; ctx.lineWidth = 1;
             const y95 = yScale(u95);
             ctx.beginPath(); ctx.moveTo(pad.l, y95); ctx.lineTo(pad.l + cw, y95); ctx.stroke();
-            ctx.fillStyle = '#f59e0b'; ctx.font = '11px sans-serif';
-            ctx.fillText(`95% UCL = ${u95.toFixed(1)}`, pad.l + 5, y95 - 5);
+            ctx.fillStyle = CLR_95;
+            ctx.textAlign = 'right';
+            ctx.fillText(`95% UCL = ${u95.toFixed(1)}`, pad.l + cw - 5, y95 - 4);
 
-            // 99% line
-            ctx.strokeStyle = '#dc2626'; ctx.lineWidth = 1.5;
+            // 99% UCL — label left
+            ctx.strokeStyle = CLR_99; ctx.lineWidth = 1;
             const y99 = yScale(u99);
             ctx.beginPath(); ctx.moveTo(pad.l, y99); ctx.lineTo(pad.l + cw, y99); ctx.stroke();
-            ctx.fillStyle = '#dc2626';
-            ctx.fillText(`99% UCL = ${u99.toFixed(1)}`, pad.l + 5, y99 - 5);
+            ctx.fillStyle = CLR_99;
+            ctx.textAlign = 'left';
+            ctx.fillText(`99% UCL = ${u99.toFixed(1)}`, pad.l + 5, y99 - 4);
+
             ctx.setLineDash([]);
+            ctx.textAlign = 'left';
 
             // T² line
-            ctx.strokeStyle = '#93c5fd'; ctx.lineWidth = 1;
+            ctx.strokeStyle = CLR_LINE; ctx.lineWidth = 1;
             ctx.beginPath();
             for (let i = 0; i < vals.length; i++) {
                 const x = xScale(i), y = yScale(Math.min(vals[i], maxVal));
@@ -2472,29 +2502,33 @@
                 const x = xScale(i), y = yScale(Math.min(vals[i], maxVal));
                 const isSelected = _mvaSelected.includes(i);
                 const isAnomaly = vals[i] > u99;
-                ctx.beginPath(); ctx.arc(x, y, isSelected ? 4 : 2.5, 0, Math.PI * 2);
+                const r = isSelected ? 4 : 2.5;
+                ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
                 if (isSelected) {
-                    ctx.fillStyle = '#6366f1'; ctx.fill();
-                    ctx.strokeStyle = '#4338ca'; ctx.lineWidth = 1.5; ctx.stroke();
+                    ctx.fillStyle = CLR_SELECTED; ctx.fill();
+                    ctx.strokeStyle = CLR_SELECTED_BORDER; ctx.lineWidth = 1.5; ctx.stroke();
                 } else if (isAnomaly) {
-                    ctx.fillStyle = '#dc2626'; ctx.fill();
+                    ctx.fillStyle = CLR_ANOMALY; ctx.fill();
                 } else {
-                    ctx.fillStyle = '#3b82f6'; ctx.fill();
+                    ctx.fillStyle = CLR_POINT; ctx.fill();
                 }
             }
 
             // Y axis ticks
-            ctx.fillStyle = '#94a3b8'; ctx.font = '9px sans-serif';
+            ctx.fillStyle = CLR_AXIS; ctx.font = FONT;
             for (let i = 0; i <= 5; i++) {
                 const v = (maxVal / 5) * (5 - i);
                 const y = pad.t + (ch / 5) * i;
-                ctx.fillText(v.toFixed(1), pad.l - 42, y + 3);
+                ctx.textAlign = 'right';
+                ctx.fillText(v.toFixed(1), pad.l - 6, y + 3);
             }
-            // X axis
-            ctx.fillStyle = '#64748b'; ctx.font = '10px sans-serif';
-            ctx.fillText('Index', pad.l + cw / 2 - 15, H - 5);
+
+            // Axis labels
+            ctx.textAlign = 'center';
+            ctx.fillStyle = CLR_AXIS; ctx.font = FONT;
+            ctx.fillText('Index', pad.l + cw / 2, H - 5);
             ctx.save(); ctx.translate(12, pad.t + ch / 2); ctx.rotate(-Math.PI / 2);
-            ctx.fillText('T² Value', -25, 0); ctx.restore();
+            ctx.fillText('T² Value', 0, 0); ctx.restore();
         }
 
         // Brush selection on MVA canvas
@@ -2593,24 +2627,26 @@
             });
         }
 
-        function mvaRemoveSelected() {
+        async function mvaRemoveSelected() {
             if (!_mvaSelected.length || !_mvaT2Data) return;
-            // Map current chart indices → original row indices
             const origIdxs = _mvaSelected.map(i => _mvaOrigMap[i]).filter(x => x !== undefined);
             const count = origIdxs.length;
-            // Add chip, rebuild, re-run
             _mvaFilters.push({ col: `排除 ${count} 筆`, keyword: '', excludeEmpty: false, isExclusion: true, origIndices: origIdxs });
             renderMvaFilterChips();
             _mvaSelected = [];
             document.getElementById('mva-action-bar').style.display = 'none';
             _rebuildExcluded();
-            runMvaT2();
+            const ok = await runMvaT2();
+            if (!ok) {
+                _mvaFilters.pop();
+                renderMvaFilterChips();
+                _rebuildExcluded();
+            }
         }
 
-        function mvaKeepSelected() {
+        async function mvaKeepSelected() {
             if (!_mvaSelected.length || !_mvaT2Data) return;
             const keepSet = new Set(_mvaSelected);
-            // Everything NOT selected → excluded
             const origIdxs = [];
             _mvaT2Data.t2_values.forEach((_, i) => {
                 if (!keepSet.has(i) && _mvaOrigMap[i] !== undefined) origIdxs.push(_mvaOrigMap[i]);
@@ -2622,7 +2658,12 @@
             _mvaSelected = [];
             document.getElementById('mva-action-bar').style.display = 'none';
             _rebuildExcluded();
-            runMvaT2();
+            const ok = await runMvaT2();
+            if (!ok) {
+                _mvaFilters.pop();
+                renderMvaFilterChips();
+                _rebuildExcluded();
+            }
         }
 
         let _mvaContribData = null;
@@ -2631,7 +2672,6 @@
         async function mvaAnalyzeSelected() {
             if (!_mvaSelected.length || !_mvaT2Data || !currentFileId) return;
             const panel = document.getElementById('mva-contrib-panel');
-            panel.classList.add('open');
             panel.innerHTML = '<div class="mva-contrib-title">⏳ 計算貢獻度中...</div>';
             try {
                 const sid = getSessionId();
@@ -2915,13 +2955,28 @@
             const mvaCanvas = document.getElementById('mva-canvas');
             if (mvaCanvas) mvaCanvas.getContext('2d').clearRect(0, 0, mvaCanvas.width, mvaCanvas.height);
             const mvaPanel = document.getElementById('mva-contrib-panel');
-            if (mvaPanel) { mvaPanel.innerHTML = ''; mvaPanel.classList.remove('open'); }
+            if (mvaPanel) { mvaPanel.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#94a3b8;font-size:12px;">選取數據點後按「分析」查看貢獻度</div>'; }
             const mvaActionBar = document.getElementById('mva-action-bar');
             if (mvaActionBar) mvaActionBar.style.display = 'none';
             // PCA scatter
             const pcaCanvas = document.getElementById('gb-scatter');
             if (pcaCanvas) pcaCanvas.getContext('2d').clearRect(0, 0, pcaCanvas.width, pcaCanvas.height);
             document.getElementById('gb-info').textContent = '';
+
+            // Pivot / analysis results
+            const rb = document.getElementById('result-body');
+            if (rb) rb.innerHTML = '<div class="result-empty"><div class="re-icon">📊</div><div class="re-text">拖曳欄位至上方區域開始分析</div></div>';
+            const ri = document.getElementById('result-info');
+            if (ri) ri.textContent = '';
+            const at = document.getElementById('analysis-toggles');
+            if (at) at.style.display = 'none';
+            selectedTargets = [];
+            const tcEl = document.getElementById('target-chips');
+            if (tcEl) tcEl.innerHTML = '';
+            const btnA = document.getElementById('btn-analyze');
+            if (btnA) btnA.disabled = true;
+            const tsInput = document.getElementById('target-search');
+            if (tsInput) tsInput.value = '';
 
             await loadColumns(fid);
         });
@@ -3053,6 +3108,18 @@
             pivotConfig.filters = [];
             renderAllChips();
             renderFieldList();
+            // Clear result table and info
+            const rb = document.getElementById('result-body');
+            if (rb) rb.innerHTML = '<div class="result-empty"><div class="re-icon">📊</div><div class="re-text">拖曳欄位至上方區域開始分析</div></div>';
+            const ri = document.getElementById('result-info');
+            if (ri) ri.textContent = '';
+            const at = document.getElementById('analysis-toggles');
+            if (at) at.style.display = 'none';
+            // Clear target chips
+            selectedTargets = [];
+            renderTargetChips();
+            const btnAnalyze = document.getElementById('btn-analyze');
+            if (btnAnalyze) btnAnalyze.disabled = true;
         }
 
         // ================================================================
@@ -3831,7 +3898,6 @@
         function resetPivot() {
             pivotConfig = { rows: [], cols: [], values: [], filters: [] };
             renderAllChips();
-            updateRunButton();
             document.getElementById('result-body').innerHTML = `
                 <div class="result-empty">
                     <div class="re-icon">📋</div>
@@ -4101,6 +4167,7 @@
             document.getElementById('gb-target-input').value = name;
             document.getElementById('gb-target-select').value = name;
             document.getElementById('gb-target-dd').classList.remove('show');
+            document.getElementById('gb-target-clear').style.display = '';
             gbTargetChanged();
         }
 
@@ -4108,6 +4175,19 @@
             const dd = document.getElementById('gb-target-dd');
             if (show) { gbTargetSearch(); }
             else { dd.classList.remove('show'); }
+        }
+
+        function gbClearTarget() {
+            document.getElementById('gb-target-input').value = '';
+            document.getElementById('gb-target-select').value = '';
+            document.getElementById('gb-target-clear').style.display = 'none';
+            // Clear trend chart
+            const trendCanvas = document.getElementById('gb-target-trend');
+            if (trendCanvas) trendCanvas.getContext('2d').clearRect(0, 0, trendCanvas.width, trendCanvas.height);
+            // Clear groups
+            _gbGroups = [];
+            document.getElementById('gb-group-chips').innerHTML = '';
+            document.getElementById('gb-actions').style.display = 'none';
         }
 
         // Close dropdown when clicking outside
@@ -4287,7 +4367,11 @@
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(body)
                 });
-                if (!resp.ok) { grid.innerHTML = '<div style="color:#ef4444;">❌ 檢定失敗</div>'; return; }
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({}));
+                    grid.innerHTML = `<div style="color:#ef4444;">❌ 檢定失敗：${err.detail || resp.statusText}</div>`;
+                    return;
+                }
                 _gbTestResult = await resp.json();
                 gbRenderResults();
             } catch (e) { grid.innerHTML = `<div style="color:#ef4444;">❌ ${e.message}</div>`; }

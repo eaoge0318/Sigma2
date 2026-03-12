@@ -83,12 +83,6 @@ export function switchView(viewName) {
         if (name === viewName) DOM.show(id);
         else DOM.hide(id);
     });
-
-    // Toggle Chart AI Assistant Button
-    const chartFab = DOM.get('chart-assistant-trigger');
-    if (chartFab) {
-        chartFab.style.display = (viewName === 'analysis') ? 'flex' : 'none';
-    }
 }
 
 /* --- Internal Helpers for Training Tabs --- */

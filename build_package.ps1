@@ -105,6 +105,18 @@ if (Test-Path $sysDLLsPath) {
     Write-Host "  Copied DLLs directory" -ForegroundColor Green
 }
 
+# Also copy user site-packages (some packages installed with --user end up here)
+$userPackagesPath = & $SystemPython -c "import site; print(site.getusersitepackages())" 2>&1
+$userPackagesPath = $userPackagesPath.Trim()
+if (Test-Path $userPackagesPath) {
+    Write-Host "  User site-packages: $userPackagesPath"
+    Write-Host "  Copying user site-packages..."
+    robocopy $userPackagesPath $targetSitePackages /E /NFL /NDL /NJH /NJS /NC /NS /NP /MT:8 | Out-Null
+    Write-Host "  Copied user site-packages" -ForegroundColor Green
+} else {
+    Write-Host "  No user site-packages found, skipping" -ForegroundColor DarkGray
+}
+
 # ==========================================
 # Step 4: Copy application code
 # ==========================================

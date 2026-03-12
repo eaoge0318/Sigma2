@@ -32,55 +32,13 @@ window.switchTrainingSubTab = UI.switchTrainingSubTab;
 window.updateDashboard = Dashboard.updateDashboard;
 window.renderDashboardData = Dashboard.renderDashboardData;
 
-// Files
-window.handleMainFileUpload = FileMgr.handleMainFileUpload;
-window.handleDroppedFiles = FileMgr.handleDroppedFiles;
-window.uploadFile = FileMgr.uploadFile;
-window.deleteFile = FileMgr.deleteFile;
-window.viewFile = FileMgr.viewFile;
-window.closeViewModal = FileMgr.closeViewModal;
-window.changeFileListPage = FileMgr.changeFileListPage; // Ensure this is exported in FileMgr
-window.openFileSelector = FileMgr.openFileSelector; // Needed for QuickAnalysis
+// Files (only fileSelectorModal/confirmFileSelection still used in parent for training)
+window.openFileSelector = FileMgr.openFileSelector;
 window.closeFileSelector = FileMgr.closeFileSelector;
-window.loadFileList = FileMgr.loadFileList; // For saveFilteredData refresh
-window.openUploadModal = FileMgr.openUploadModal;
-window.closeUploadModal = FileMgr.closeUploadModal;
+window.confirmFileSelection = FileMgr.confirmFileSelection;
 
-// Analysis
-window.loadAnalysisPage = Analysis.loadAnalysisPage;
-window.handleSort = Analysis.handleSort;
-window.updateFilterBar = Analysis.updateFilterBar;
-window.toggleFilterMenu = Analysis.toggleFilterMenu;
-window.addFilterFromMenu = Analysis.addFilterFromMenu;
-window.removeFilter = Analysis.removeFilter;
-window.resetAllFilters = Analysis.resetAllFilters;
-window.openColumnPicker = Analysis.openColumnPicker;
-window.closeColumnPicker = Analysis.closeColumnPicker;
-window.toggleColCheckbox = Analysis.toggleColCheckbox;
-window.toggleAllColumns = Analysis.toggleAllColumns;
-window.filterColumnList = Analysis.filterColumnList;
-window.applyColumnVisibility = Analysis.applyColumnVisibility;
-window.switchAnalysisMode = Analysis.switchAnalysisMode;
-window.allowDrop = Analysis.allowDrop;
-window.handleDragLeave = Analysis.handleDragLeave;
-window.handleDrop = Analysis.handleDrop;
-window.handleMainChartDrop = Analysis.handleMainChartDrop;
-window.resetAxis = Analysis.resetAxis;
-window.clearChartConfig = Analysis.clearChartConfig;
-window.resetAdvancedResults = Analysis.resetAdvancedResults;
+// Analysis (now in iframe — only analyzeFile needed for cross-iframe forwarding)
 window.analyzeFile = Analysis.analyzeFile;
-
-// Restored Analysis Functions
-window.quickAnalysis = Analysis.quickAnalysis;
-window.saveFilteredData = Analysis.saveFilteredData;
-window.openAdvancedModal = Analysis.openAdvancedModal;
-window.closeAdvancedModal = Analysis.closeAdvancedModal;
-window.runAdvancedAnalysis = Analysis.runAdvancedAnalysis;
-window.cycleChartAxis = Analysis.cycleChartAxis;
-window.setChartType = Analysis.setChartType;
-window.toggleSelectionMode = Analysis.toggleSelectionMode;
-window.filterChartColumns = Analysis.filterChartColumns;
-window.clearChartColSearch = Analysis.clearChartColSearch;
 
 // Chat / AI
 window.generateAIReport = Chat.generateAIReport;
@@ -142,16 +100,8 @@ window.deleteModel = Models.deleteModel;
 window.toggleLogAutoRefresh = Models.toggleLogAutoRefresh;
 window.closeLogViewer = Models.closeLogViewer;
 
-// File Manager
-window.openFileSelector = FileMgr.openFileSelector;
-window.closeFileSelector = FileMgr.closeFileSelector;
+// File Manager (parent still needs file selector for training context)
 window.confirmFileSelection = FileMgr.confirmFileSelection;
-window.openUploadModal = FileMgr.openUploadModal;
-window.closeUploadModal = FileMgr.closeUploadModal;
-window.deleteFile = FileMgr.deleteFile;
-window.viewFile = FileMgr.viewFile;
-window.changeFileListPage = FileMgr.changeFileListPage;
-window.handleMainFileUpload = FileMgr.handleMainFileUpload;
 
 // Simulator
 window.runFullSimulation = Simulator.runFullSimulation;
@@ -269,8 +219,7 @@ timerWorker.postMessage({ cmd: 'start_dashboard', sessionId: window.SESSION_ID }
 // Initialization
 // =========================
 document.addEventListener('DOMContentLoaded', () => {
-    // 1. Initial Data Load
-    FileMgr.loadFileList();
+    // 1. Initial Data Load (file list now loads in iframe)
     Models.loadModelRegistry();
 
     // 2. Training & Chart Init
@@ -329,23 +278,13 @@ function initListeners() {
         });
     });
 
-    // Keyboard Shortcuts
+    // Keyboard Shortcuts (analysis-specific shortcuts now live in analysis iframe)
     document.addEventListener('keydown', (e) => {
-        // Shift+S Save
-        if (e.shiftKey && e.key.toLowerCase() === 's' && document.getElementById('view-analysis').style.display === 'block') {
-            e.preventDefault();
-            Analysis.saveFilteredData();
-        }
         // Escape
         if (e.key === 'Escape') {
-            FileMgr.closeUploadModal();
             FileMgr.closeFileSelector();
-            FileMgr.closeViewModal();
-            Analysis.closeAdvancedModal();
-            Analysis.closeColumnPicker();
-            Models.closeLogViewer(); // ✨ Added this
-            Training.closeTrainingContextModal(); // ✨ Added this
-            // Don't call toggleSelectionMode here, let Analysis module handle it
+            Models.closeLogViewer();
+            Training.closeTrainingContextModal();
         }
     });
 
@@ -355,43 +294,4 @@ function initListeners() {
         // ...
     });
 
-    // Chart Cycle Axes (Analysis Mode) - Ported from dashboard_full.js
-    document.addEventListener('keydown', (event) => {
-        // Only trigger if no input is focused
-        const tag = document.activeElement.tagName.toLowerCase();
-        const isInput = tag === 'input' || tag === 'textarea' || document.activeElement.isContentEditable;
-
-        // Only in Analysis > Chart view
-        const chartView = document.getElementById('analysis-chart-view');
-        const isChartView = chartView && chartView.style.display !== 'none';
-
-        if (!isInput && isChartView) {
-            switch (event.key) {
-                case 'ArrowLeft':
-                    event.preventDefault(); // Prevent scrolling
-                    Analysis.cycleChartAxis('x', -1);
-                    break;
-                case 'ArrowRight':
-                    event.preventDefault();
-                    Analysis.cycleChartAxis('x', 1);
-                    break;
-                case 'ArrowUp':
-                    event.preventDefault();
-                    if (event.shiftKey) {
-                        Analysis.cycleChartAxis('y2', -1);
-                    } else {
-                        Analysis.cycleChartAxis('y', -1);
-                    }
-                    break;
-                case 'ArrowDown':
-                    event.preventDefault();
-                    if (event.shiftKey) {
-                        Analysis.cycleChartAxis('y2', 1);
-                    } else {
-                        Analysis.cycleChartAxis('y', 1);
-                    }
-                    break;
-            }
-        }
-    });
 }

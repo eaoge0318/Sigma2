@@ -1737,9 +1737,9 @@ async def gb_test(
             else:
                 stat, pval = 0, 1.0
 
-            if np.isnan(pval):
+            if np.isnan(pval) or np.isinf(pval):
                 pval = 1.0
-            if np.isnan(stat):
+            if np.isnan(stat) or np.isinf(stat):
                 stat = 0.0
         except Exception:
             stat, pval = 0.0, 1.0
