@@ -54,6 +54,13 @@ export async function uploadFile(file) {
         const data = await res.json();
 
         if (res.ok) {
+            // Multi-sheet Excel: show sheet selection dialog
+            if (data.needs_sheet_selection && data.sheets) {
+                statusDiv.innerText = `📑 Excel 包含 ${data.sheets.length} 個工作表，請選擇`;
+                statusDiv.style.color = '#f59e0b';
+                showSheetSelector(data.filename, data.sheets, sid);
+                return;
+            }
             statusDiv.innerText = `✅ ${data.filename} 上傳成功`;
             statusDiv.style.color = '#22c55e';
             await loadFileList(); // Refresh list
@@ -65,6 +72,101 @@ export async function uploadFile(file) {
         statusDiv.innerText = `❌ 上傳錯誤: ${err.message}`;
         statusDiv.style.color = '#ef4444';
     }
+}
+
+function showSheetSelector(filename, sheets, sessionId) {
+    // Close upload modal so dialog is visible
+    if (typeof closeUploadModal === 'function') closeUploadModal();
+    let existing = document.getElementById('sheet-selector-modal');
+    if (existing) existing.remove();
+
+    const overlay = document.createElement('div');
+    overlay.id = 'sheet-selector-modal';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.45);z-index:10001;display:flex;align-items:center;justify-content:center;';
+
+    let html = `<div style="background:#fff;border-radius:14px;padding:28px;min-width:420px;max-width:540px;box-shadow:0 24px 64px rgba(0,0,0,0.25);">
+        <h3 style="margin:0 0 6px;font-size:17px;color:#1e293b;">📑 選擇要匯入的工作表</h3>
+        <p style="margin:0 0 4px;font-size:12px;color:#94a3b8;">${filename} — ${sheets.length} 個工作表（可多選）</p>
+        <div style="display:flex;gap:8px;margin-bottom:12px;">
+            <a href="#" id="sSelectAll" style="font-size:11px;color:#818cf8;text-decoration:none;">全選</a>
+            <a href="#" id="sSelectNone" style="font-size:11px;color:#818cf8;text-decoration:none;">全不選</a>
+        </div>
+        <div style="max-height:340px;overflow-y:auto;padding-right:4px;">`;
+
+    sheets.forEach((s, i) => {
+        html += `<label class="sheet-opt" style="padding:10px 14px;border:1.5px solid #e2e8f0;border-radius:8px;margin-bottom:6px;cursor:pointer;transition:all 0.15s;display:flex;align-items:center;gap:10px;"
+            onmouseenter="this.style.background='#f8fafc'" onmouseleave="if(!this.querySelector('input').checked)this.style.background='#fff'">
+            <input type="checkbox" value="${s.name.replace(/"/g, '&quot;')}" style="width:16px;height:16px;accent-color:#818cf8;flex-shrink:0;">
+            <div style="flex:1;min-width:0;">
+                <div style="font-weight:600;color:#334155;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${s.name}</div>
+                <div style="font-size:11px;color:#94a3b8;margin-top:1px;">${s.rows.toLocaleString()} 筆 × ${s.cols} 欄</div>
+            </div>
+            <span style="font-size:11px;color:#cbd5e1;flex-shrink:0;">${i + 1}</span>
+        </label>`;
+    });
+
+    html += `</div>
+        <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end;align-items:center;">
+            <span id="sCount" style="font-size:12px;color:#94a3b8;margin-right:auto;">已選 0 個</span>
+            <button id="sCancel" style="padding:8px 16px;border:1px solid #e2e8f0;border-radius:8px;background:#fff;color:#64748b;font-size:13px;cursor:pointer;">取消</button>
+            <button id="sConfirm" disabled style="padding:8px 20px;border:none;border-radius:8px;background:#818cf8;color:#fff;font-size:13px;font-weight:600;cursor:pointer;opacity:0.5;">匯入選定工作表</button>
+        </div></div>`;
+
+    overlay.innerHTML = html;
+    document.body.appendChild(overlay);
+
+    const cfm = overlay.querySelector('#sConfirm');
+    const countEl = overlay.querySelector('#sCount');
+    const checkboxes = overlay.querySelectorAll('input[type="checkbox"]');
+
+    function updateCount() {
+        const n = overlay.querySelectorAll('input[type="checkbox"]:checked').length;
+        countEl.textContent = `已選 ${n} 個`;
+        cfm.disabled = n === 0;
+        cfm.style.opacity = n > 0 ? '1' : '0.5';
+        overlay.querySelectorAll('.sheet-opt').forEach(o => {
+            const cb = o.querySelector('input');
+            o.style.borderColor = cb.checked ? '#818cf8' : '#e2e8f0';
+            o.style.background = cb.checked ? '#f5f3ff' : '#fff';
+        });
+    }
+    checkboxes.forEach(cb => cb.addEventListener('change', updateCount));
+    overlay.querySelector('#sSelectAll').addEventListener('click', e => { e.preventDefault(); checkboxes.forEach(cb => cb.checked = true); updateCount(); });
+    overlay.querySelector('#sSelectNone').addEventListener('click', e => { e.preventDefault(); checkboxes.forEach(cb => cb.checked = false); updateCount(); });
+    if (checkboxes.length > 0) { checkboxes[0].checked = true; updateCount(); }
+
+    overlay.querySelector('#sCancel').addEventListener('click', () => overlay.remove());
+    cfm.addEventListener('click', async () => {
+        const selected = Array.from(overlay.querySelectorAll('input[type="checkbox"]:checked')).map(cb => cb.value);
+        if (selected.length === 0) return;
+        cfm.textContent = '⏳ 匯入中...'; cfm.disabled = true;
+
+        let successCount = 0, failMsg = '';
+        for (let si = 0; si < selected.length; si++) {
+            const sheetName = selected[si];
+            const isLast = si === selected.length - 1;
+            const form = new FormData();
+            form.append('filename', filename);
+            form.append('sheet_name', sheetName);
+            form.append('session_id', sessionId);
+            if (isLast) form.append('delete_excel', 'true');
+            try {
+                const resp = await fetch('/api/convert_sheet', { method: 'POST', body: form });
+                if (resp.ok) successCount++;
+                else { const r = await resp.json(); failMsg += `${sheetName}: ${r.detail}\n`; }
+            } catch (err) { failMsg += `${sheetName}: ${err.message}\n`; }
+        }
+        overlay.remove();
+        if (successCount > 0) {
+            const toast = document.createElement('div');
+            toast.style.cssText = 'position:fixed;top:20px;right:20px;background:#22c55e;color:#fff;padding:12px 20px;border-radius:10px;font-size:14px;font-weight:600;z-index:10002;box-shadow:0 4px 12px rgba(0,0,0,0.15);';
+            toast.textContent = `✅ 已匯入 ${successCount} 個工作表`;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+            await loadFileList();
+        }
+        if (failMsg) alert('部分工作表匯入失敗:\n' + failMsg);
+    });
 }
 
 export async function deleteFile(filename) {

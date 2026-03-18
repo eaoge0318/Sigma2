@@ -54,10 +54,29 @@ export let originalTableData = []; // Export for external access if needed
 export let tableHeaders = [];
 export let analysisTotalLines = 0;
 
+// Allow external modules to refresh the table display
+export function refreshTableDisplay() {
+    renderTable(tableHeaders, originalTableData, 1, analysisTotalLines);
+}
+
+export function addVisibleColumn(idx) {
+    if (!visibleColumnIndices.includes(idx)) visibleColumnIndices.push(idx);
+}
+
 let currentSortColumn = -1;
 let currentSortOrder = 'asc';
 let activeFilters = [];
 let visibleColumnIndices = [];
+
+// --- Loading Overlay Helpers ---
+function _showLoading() {
+    const el = document.getElementById('global-loading-overlay');
+    if (el) el.style.display = 'flex';
+}
+function _hideLoading() {
+    const el = document.getElementById('global-loading-overlay');
+    if (el) el.style.display = 'none';
+}
 
 // Chart State
 let chartConfig = { x: null, y: null, y2: null, type: 'scatter' };
@@ -99,6 +118,7 @@ export async function analyzeFile(filename) {
 }
 
 export async function loadAnalysisPage(page) {
+    _showLoading();
     analysisCurrentPage = page;
     DOM.setText('analysis-filename', analysisFilename);
     const contentDiv = DOM.get('analysis-content');
@@ -116,23 +136,74 @@ export async function loadAnalysisPage(page) {
                 tableHeaders = _parseCsvLine(infoData.content.trim().split('\n')[0]);
                 visibleColumnIndices = tableHeaders.map((_, i) => i);
 
-                const fullRes = await fetch(`/api/view_file/${analysisFilename}?page=1&page_size=1000000&session_id=${sid}`);
-                const fullData = await fullRes.json();
-                const lines = fullData.content.trim().split('\n');
-                originalTableData = lines.slice(1).map((row, idx) => {
-                    const arr = _parseCsvLine(row);
-                    arr.__idx = idx;
-                    return arr;
-                });
+                const totalRows = analysisTotalLines - 1; // Exclude header
+                const totalCells = totalRows * tableHeaders.length;
+                const isLargeFile = totalCells > 5000000;
+
+                if (isLargeFile) {
+                    // Show control bar + load with default settings
+                    const previewCount = window._largePreviewCount || 1000;
+                    const previewMode = window._largePreviewMode || 'sample'; // 'head' or 'sample'
+
+                    contentDiv.innerHTML = `<div style="text-align:center;padding:20px;color:#64748b;">⏳ 載入預覽中...</div>`;
+
+                    // Insert control bar (only once)
+                    let ctrlBar = document.getElementById('large-preview-ctrl');
+                    if (!ctrlBar) {
+                        ctrlBar = document.createElement('div');
+                        ctrlBar.id = 'large-preview-ctrl';
+                        ctrlBar.style.cssText = 'background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:10px 16px;margin-bottom:8px;font-size:13px;color:#92400e;display:flex;align-items:center;gap:10px;flex-wrap:wrap;';
+                        ctrlBar.innerHTML = `
+                            <span>⚠️ 大型資料集 (${totalRows.toLocaleString()} 行 × ${tableHeaders.length} 欄)</span>
+                            <select id="preview-mode-select" style="padding:3px 6px;border-radius:4px;border:1px solid #fde68a;font-size:12px;">
+                                <option value="head" ${previewMode==='head'?'selected':''}>前 N 筆</option>
+                                <option value="sample" ${previewMode==='sample'?'selected':''}>等距取樣</option>
+                            </select>
+                            <input id="preview-count-input" type="number" value="${previewCount}" min="10" max="10000" step="50"
+                                style="width:70px;padding:3px 6px;border-radius:4px;border:1px solid #fde68a;font-size:12px;text-align:center;">
+                            <span style="font-size:11px;color:#b45309;">筆</span>
+                            <button onclick="window.applyLargePreview()" style="padding:3px 10px;border-radius:4px;border:1px solid #d97706;background:#fef3c7;color:#92400e;font-size:12px;cursor:pointer;font-weight:600;">套用</button>
+                        `;
+                        contentDiv.parentElement.insertBefore(ctrlBar, contentDiv);
+                    }
+
+                    // Fetch data based on mode
+                    let fetchUrl;
+                    if (previewMode === 'sample') {
+                        fetchUrl = `/api/view_file/${analysisFilename}?page=1&page_size=1000000&sample_count=${previewCount}&session_id=${sid}`;
+                    } else {
+                        fetchUrl = `/api/view_file/${analysisFilename}?page=1&page_size=${previewCount + 1}&session_id=${sid}`;
+                    }
+                    const previewRes = await fetch(fetchUrl);
+                    const previewData = await previewRes.json();
+                    const lines = previewData.content.trim().split('\n');
+                    originalTableData = lines.slice(1).map((row, idx) => {
+                        const arr = _parseCsvLine(row);
+                        arr.__idx = idx;
+                        return arr;
+                    });
+                } else {
+                    // Normal file: load all at once
+                    const fullRes = await fetch(`/api/view_file/${analysisFilename}?page=1&page_size=1000000&session_id=${sid}`);
+                    const fullData = await fullRes.json();
+                    const lines = fullData.content.trim().split('\n');
+                    originalTableData = lines.slice(1).map((row, idx) => {
+                        const arr = _parseCsvLine(row);
+                        arr.__idx = idx;
+                        return arr;
+                    });
+                }
             } else {
                 const res = await fetch(`/api/view_file/${analysisFilename}?page=1&page_size=5000&session_id=${sid}`);
                 const data = await res.json();
                 contentDiv.innerHTML = `<div class="analysis-table-container"><pre style="font-family: monospace; white-space: pre-wrap; padding: 15px;">${data.content}</pre></div>`;
                 renderPagination(1, analysisTotalLines, 0);
+                _hideLoading();
                 return;
             }
         } catch (err) {
             contentDiv.innerHTML = `<div style="color: red; text-align: center; padding: 40px;">載入失敗: ${err.message}</div>`;
+            _hideLoading();
             return;
         }
     }
@@ -140,6 +211,7 @@ export async function loadAnalysisPage(page) {
     analysisCurrentPage = page === -1 ? 1 : page;
     renderTable(tableHeaders, originalTableData, analysisCurrentPage, analysisTotalLines);
     updateFilterBar();
+    _hideLoading();
 }
 
 function getFilteredRows(data) {
@@ -201,7 +273,7 @@ function renderTable(headers, rows, currentPage, totalLines) {
 
     const headerCount = DOM.get('analysis-header-count');
     if (headerCount) {
-        headerCount.innerHTML = `(目前顯示: <b style="color: #3b82f6;">${filteredRows.length}</b> / 總計: ${totalLines - 1})`;
+        headerCount.innerHTML = `(目前顯示: <b style="color: #3b82f6;">${filteredRows.length}</b> / 總計: ${totalLines - 1} | 欄位: ${headers.length})`;
     }
 
     if (currentSortColumn !== -1) {
@@ -467,42 +539,46 @@ export function applyColumnVisibility() {
 export function switchAnalysisMode(mode) {
     const btnTable = document.getElementById('btn-mode-table');
     const btnChart = document.getElementById('btn-mode-chart');
-    const viewTable = document.getElementById('analysis-table-container') || document.getElementById('analysis-table-view'); // Align with HTML ID
+    const btnHeatmap = document.getElementById('btn-mode-heatmap');
+    const viewTable = document.getElementById('analysis-table-container') || document.getElementById('analysis-table-view');
     const viewChart = document.getElementById('analysis-chart-view');
-    // const filterBar = document.getElementById('filter-bar-area'); // Keep visible
+    const viewHeatmap = document.getElementById('analysis-heatmap-view');
+
+    // Reset all buttons
+    [btnTable, btnChart, btnHeatmap].forEach(btn => {
+        if (btn) { btn.style.background = 'transparent'; btn.style.color = '#64748b'; btn.style.boxShadow = 'none'; }
+    });
+    // Hide all views
+    if (viewTable) viewTable.style.display = 'none';
+    if (viewChart) viewChart.style.display = 'none';
+    if (viewHeatmap) viewHeatmap.style.display = 'none';
+
+    // Hide/show chart AI FAB
+    const chartFab = document.getElementById('chart-assistant-trigger');
+    const chartAiWindow = document.getElementById('chart-ai-assistant-window');
 
     if (mode === 'table') {
         if (viewTable) viewTable.style.display = 'block';
-        if (viewChart) viewChart.style.display = 'none';
-        if (btnTable) {
-            btnTable.style.background = '#fff';
-            btnTable.style.color = '#3b82f6';
-            btnTable.style.boxShadow = '0 1px 2px rgba(0,0,0,0.1)';
-        }
-        if (btnChart) {
-            btnChart.style.background = 'transparent';
-            btnChart.style.color = '#64748b';
-            btnChart.style.boxShadow = 'none';
-        }
-    } else {
-        if (viewTable) viewTable.style.display = 'none';
-        if (viewChart) viewChart.style.display = 'flex'; // Flex for layout
-        if (btnChart) {
-            btnChart.style.background = '#fff';
-            btnChart.style.color = '#7e22ce';
-            btnChart.style.boxShadow = '0 1px 2px rgba(0,0,0,0.1)';
-        }
-        if (btnTable) {
-            btnTable.style.background = 'transparent';
-            btnTable.style.color = '#64748b';
-            btnTable.style.boxShadow = 'none';
-        }
+        if (btnTable) { btnTable.style.background = '#fff'; btnTable.style.color = '#3b82f6'; btnTable.style.boxShadow = '0 1px 2px rgba(0,0,0,0.1)'; }
+        if (chartFab) chartFab.style.display = 'none';
+        if (chartAiWindow) chartAiWindow.style.display = 'none';
+    } else if (mode === 'chart') {
+        if (viewChart) viewChart.style.display = 'flex';
+        if (btnChart) { btnChart.style.background = '#fff'; btnChart.style.color = '#7e22ce'; btnChart.style.boxShadow = '0 1px 2px rgba(0,0,0,0.1)'; }
         initChartColumns();
-        // Ensure chart is fresh and resized
         setTimeout(() => {
             renderAnalysisChart();
             if (analysisChart) analysisChart.resize();
         }, 50);
+    } else if (mode === 'heatmap') {
+        if (viewHeatmap) viewHeatmap.style.display = 'flex';
+        if (btnHeatmap) { btnHeatmap.style.background = '#fff'; btnHeatmap.style.color = '#ef4444'; btnHeatmap.style.boxShadow = '0 1px 2px rgba(0,0,0,0.1)'; }
+        if (chartFab) chartFab.style.display = 'none';
+        if (chartAiWindow) chartAiWindow.style.display = 'none';
+        // Init heatmap with current data
+        if (typeof window.initHeatmap === 'function') {
+            setTimeout(() => window.initHeatmap(tableHeaders, originalTableData, analysisFilename), 50);
+        }
     }
 }
 
@@ -1434,6 +1510,20 @@ window.filterChartColumns = filterChartColumns;
 window.applySelectionAsFilter = applySelectionAsFilter;
 window.clearChartSelection = clearChartSelection;
 window.quickAnalysis = quickAnalysis;
+
+// Large file preview control
+export function applyLargePreview() {
+    const mode = document.getElementById('preview-mode-select')?.value || 'head';
+    const count = parseInt(document.getElementById('preview-count-input')?.value) || 100;
+    window._largePreviewMode = mode;
+    window._largePreviewCount = Math.max(10, Math.min(10000, count));
+    // Remove old ctrl bar so it gets re-created with updated values
+    const old = document.getElementById('large-preview-ctrl');
+    if (old) old.remove();
+    originalTableData = [];
+    loadAnalysisPage(-1);
+}
+window.applyLargePreview = applyLargePreview;
 
 function updateSelectionUI() {
     const modal = document.getElementById('selection-modal');

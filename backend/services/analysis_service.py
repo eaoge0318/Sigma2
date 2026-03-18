@@ -80,14 +80,18 @@ class AnalysisService:
                     )
 
             # 準備 X and y
-            y = numeric_df[req.target_column].ffill().bfill()
-            X = numeric_df.drop(columns=[req.target_column]).fillna(0)
+            y = numeric_df[req.target_column].replace([np.inf, -np.inf], np.nan)
+            X = numeric_df.drop(columns=[req.target_column]).replace([np.inf, -np.inf], np.nan)
+            # Drop NaN in target
+            valid_mask = y.notna()
+            y = y[valid_mask].values
+            X = X[valid_mask].fillna(0)
 
             results = []
 
             if req.algorithm == "correlation":
                 # 計算皮爾森相關係數
-                raw_corrs = X.corrwith(y)
+                raw_corrs = X.corrwith(pd.Series(y, index=X.index))
                 sorted_cols = raw_corrs.abs().sort_values(ascending=False).index
 
                 for col in sorted_cols:

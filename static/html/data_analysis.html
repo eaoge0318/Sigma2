@@ -69,6 +69,14 @@
             transition: all 0.2s;
         }
         .btn-adv-selection:hover { background: #ede9fe; border-color: #c4b5fd; }
+
+        /* Spinner & Dots Animations */
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .loading-dots::after {
+            content: '';
+            animation: dots 1.5s steps(5, end) infinite;
+        }
+        @keyframes dots { 0%, 20% { content: ''; } 40% { content: '.'; } 60% { content: '..'; } 80%, 100% { content: '...'; } }
     </style>
 </head>
 
@@ -93,8 +101,18 @@
                     style="padding: 6px 12px; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; background: #fff; color: #3b82f6; box-shadow: 0 1px 2px rgba(0,0,0,0.1);">表格數據</button>
                 <button id="btn-mode-chart" onclick="switchAnalysisMode('chart')"
                     style="padding: 6px 12px; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; background: transparent; color: #64748b;">繪圖分析</button>
+                <button id="btn-mode-heatmap" onclick="switchAnalysisMode('heatmap')"
+                    style="padding: 6px 12px; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; background: transparent; color: #64748b;">熱力圖</button>
             </div>
         </div>
+
+            <!-- Global Loading Overlay -->
+            <div id="global-loading-overlay" style="display: none; position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(255, 255, 255, 0.7); backdrop-filter: blur(2px); z-index: 9999; align-items: center; justify-content: center; flex-direction: column; border-radius: 12px;">
+                <div class="processing-spinner" style="width: 40px; height: 40px; border-width: 4px; border-color: #cbd5e1; border-top-color: #3b82f6; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+                <div style="margin-top: 15px; color: #1e293b; font-weight: 600; font-size: 15px; display: flex; align-items: center;">
+                    資料載入中 <span class="loading-dots"></span>
+                </div>
+            </div>
 
         <!-- TABLE VIEW CONTAINER -->
         <div id="analysis-table-view">
@@ -131,6 +149,10 @@
                     </div>
                     <span class="reset-filter-btn" onclick="resetAllFilters()"
                         style="font-size: 13px; color: #94a3b8; cursor: pointer; text-decoration: underline; margin-left: 15px;">重設</span>
+                    <button onclick="window.showAddColumnModal()"
+                        style="margin-left: 15px; padding: 4px 12px; border: 1px dashed #3b82f6; border-radius: 6px; background: #eff6ff; color: #3b82f6; font-size: 12px; font-weight: 600; cursor: pointer;">
+                        + 新增欄位
+                    </button>
                     <span id="filter-bar-count-display" style="display: none;"></span>
                 </div>
                 <div class="filter-actions-right">
@@ -355,6 +377,115 @@
                 </div>
             </div>
         </div>
+
+        <!-- HEATMAP VIEW CONTAINER -->
+        <div id="analysis-heatmap-view" style="display: none; flex: 1; flex-direction: row; background: #fff; min-height: 0;">
+            <!-- Left: Column Selector -->
+            <div style="width: 260px; border-right: 1px solid #e2e8f0; display: flex; flex-direction: column; background: #f8fafc;">
+                <div style="padding: 12px; border-bottom: 1px solid #e2e8f0; background: #fff;">
+                    <div style="font-weight: bold; color: #1e293b; margin-bottom: 8px; font-size: 13px;">X 軸 (時間)</div>
+                    <select id="hm-x-select" onchange="window.setHeatmapXCol(this.value)"
+                        style="width: 100%; padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 12px;"></select>
+                </div>
+                <div style="padding: 12px; border-bottom: 1px solid #e2e8f0; background: #fff;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                        <span style="font-weight: bold; color: #1e293b; font-size: 13px;">數值欄位</span>
+                        <span id="hm-col-count" style="font-size: 11px; color: #64748b;"></span>
+                    </div>
+                    <div style="display: flex; gap: 6px; margin-bottom: 8px;">
+                        <button onclick="window.selectAllHeatmapCols()" style="flex:1;padding:4px;border:1px solid #cbd5e1;border-radius:4px;background:#fff;cursor:pointer;font-size:11px;color:#334155;">全選</button>
+                        <button onclick="window.clearAllHeatmapCols()" style="flex:1;padding:4px;border:1px solid #cbd5e1;border-radius:4px;background:#fff;cursor:pointer;font-size:11px;color:#334155;">全不選</button>
+                        <button onclick="window.invertHeatmapCols()" style="flex:1;padding:4px;border:1px solid #cbd5e1;border-radius:4px;background:#fff;cursor:pointer;font-size:11px;color:#334155;">反選</button>
+                    </div>
+                    <input type="text" placeholder="搜尋欄位..." oninput="window.filterHeatmapCols(this.value)"
+                        style="width: 100%; padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 12px; box-sizing: border-box; margin-bottom: 6px;">
+                </div>
+                <div id="hm-col-list" style="flex: 1; overflow-y: auto; padding: 8px 12px; user-select: none;"></div>
+                <div style="padding: 10px 12px; border-top: 1px solid #e2e8f0; background: #fff; position: relative;">
+                    <div style="display: flex; gap: 8px;">
+                        <button onclick="document.getElementById('hm-settings-panel').style.display = document.getElementById('hm-settings-panel').style.display === 'none' ? 'block' : 'none'"
+                            style="flex: 1; padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px; background: #f8fafc; color: #475569; font-size: 12px; font-weight: 600; cursor: pointer;">
+                            ⚙ 設定
+                        </button>
+                        <button onclick="window.drawHeatmap()"
+                            style="flex: 2; padding: 8px; background: linear-gradient(135deg, #3b82f6, #2563eb); color: #fff; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; box-shadow: 0 2px 6px rgba(37,99,235,0.3);">
+                            ▶ 繪製熱力圖
+                        </button>
+                    </div>
+                    <!-- Settings Popover -->
+                    <div id="hm-settings-panel" style="display:none; position: absolute; bottom: 100%; left: 12px; right: 12px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 10px; box-shadow: 0 -4px 20px rgba(0,0,0,0.15); padding: 16px; margin-bottom: 8px; z-index: 50;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px;">
+                            <div style="font-size: 14px; font-weight: 700; color: #1e293b;">⚙ 熱力圖設定</div>
+                            <span onclick="document.getElementById('hm-settings-panel').style.display='none'" style="cursor:pointer;color:#94a3b8;font-size:16px;">✕</span>
+                        </div>
+                        <div style="font-size: 11px; color: #64748b; margin-bottom: 4px;">正規化</div>
+                        <select id="hm-normalize" style="width: 100%; padding: 4px 6px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 11px; margin-bottom: 8px;">
+                            <option value="raw">原始值</option>
+                            <option value="zscore">Z-score 標準化</option>
+                        </select>
+                        <div style="font-size: 11px; color: #64748b; margin-bottom: 4px;">色階</div>
+                        <select id="hm-color-scheme" onchange="window.setHeatmapColorScheme(this.value)"
+                            style="width: 100%; padding: 4px 6px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 11px; margin-bottom: 8px;">
+                            <option value="bluered">藍 → 白 → 紅</option>
+                            <option value="viridis">Viridis</option>
+                        </select>
+                        <div style="display: flex; gap: 6px; margin-bottom: 8px;">
+                            <div style="flex:1;">
+                                <div style="font-size: 10px; color: #94a3b8; margin-bottom: 2px;">色階最小值</div>
+                                <input type="number" id="hm-color-min" placeholder="自動" oninput="this.dataset.userModified='1'; window.drawHeatmap();"
+                                    style="width: 100%; padding: 4px 6px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 11px; box-sizing: border-box;">
+                            </div>
+                            <div style="flex:1;">
+                                <div style="font-size: 10px; color: #94a3b8; margin-bottom: 2px;">色階最大值</div>
+                                <input type="number" id="hm-color-max" placeholder="自動" oninput="this.dataset.userModified='1'; window.drawHeatmap();"
+                                    style="width: 100%; padding: 4px 6px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 11px; box-sizing: border-box;">
+                            </div>
+                        </div>
+                        <div style="margin-bottom: 8px;">
+                            <div style="font-size: 10px; color: #94a3b8; margin-bottom: 2px;">每行高度(px) <span style="color:#cbd5e1">空白=自動適配</span></div>
+                            <input type="number" id="hm-row-height" placeholder="自動" min="0.5" max="20" step="0.5" oninput="this.dataset.userModified='1'" onchange="window.drawHeatmap()"
+                                style="width: 100%; padding: 4px 6px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 11px; box-sizing: border-box;">
+                        </div>
+                        <div style="margin-bottom: 4px;">
+                            <div style="font-size: 10px; color: #94a3b8; margin-bottom: 4px;">標記顏色</div>
+                            <input type="hidden" id="hm-pin-color" value="#f59e0b">
+                            <div style="display:flex;gap:5px;" id="hm-pin-swatches">
+                                <span class="hm-swatch" onclick="document.getElementById('hm-pin-color').value=this.dataset.c; document.querySelectorAll('#hm-pin-swatches .hm-swatch').forEach(s=>s.style.outline='none'); this.style.outline='2px solid #3b82f6'" data-c="#f59e0b" style="width:22px;height:22px;border-radius:50%;background:#f59e0b;cursor:pointer;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.2);outline:2px solid #3b82f6"></span>
+                                <span class="hm-swatch" onclick="document.getElementById('hm-pin-color').value=this.dataset.c; document.querySelectorAll('#hm-pin-swatches .hm-swatch').forEach(s=>s.style.outline='none'); this.style.outline='2px solid #3b82f6'" data-c="#ef4444" style="width:22px;height:22px;border-radius:50%;background:#ef4444;cursor:pointer;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.2)"></span>
+                                <span class="hm-swatch" onclick="document.getElementById('hm-pin-color').value=this.dataset.c; document.querySelectorAll('#hm-pin-swatches .hm-swatch').forEach(s=>s.style.outline='none'); this.style.outline='2px solid #3b82f6'" data-c="#22c55e" style="width:22px;height:22px;border-radius:50%;background:#22c55e;cursor:pointer;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.2)"></span>
+                                <span class="hm-swatch" onclick="document.getElementById('hm-pin-color').value=this.dataset.c; document.querySelectorAll('#hm-pin-swatches .hm-swatch').forEach(s=>s.style.outline='none'); this.style.outline='2px solid #3b82f6'" data-c="#3b82f6" style="width:22px;height:22px;border-radius:50%;background:#3b82f6;cursor:pointer;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.2)"></span>
+                                <span class="hm-swatch" onclick="document.getElementById('hm-pin-color').value=this.dataset.c; document.querySelectorAll('#hm-pin-swatches .hm-swatch').forEach(s=>s.style.outline='none'); this.style.outline='2px solid #3b82f6'" data-c="#a855f7" style="width:22px;height:22px;border-radius:50%;background:#a855f7;cursor:pointer;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.2)"></span>
+                                <span class="hm-swatch" onclick="document.getElementById('hm-pin-color').value=this.dataset.c; document.querySelectorAll('#hm-pin-swatches .hm-swatch').forEach(s=>s.style.outline='none'); this.style.outline='2px solid #3b82f6'" data-c="#ffffff" style="width:22px;height:22px;border-radius:50%;background:#ffffff;cursor:pointer;border:2px solid #cbd5e1;box-shadow:0 1px 3px rgba(0,0,0,.2)"></span>
+                            </div>
+                        </div>
+                        <div style="margin-bottom: 12px;">
+                            <div style="font-size: 10px; color: #94a3b8; margin-bottom: 4px;">卡片背景</div>
+                            <input type="hidden" id="hm-tip-bg-color" value="#0f172a">
+                            <div style="display:flex;gap:5px;" id="hm-tip-swatches">
+                                <span class="hm-swatch" onclick="document.getElementById('hm-tip-bg-color').value=this.dataset.c; document.querySelectorAll('#hm-tip-swatches .hm-swatch').forEach(s=>s.style.outline='none'); this.style.outline='2px solid #3b82f6'" data-c="#0f172a" style="width:22px;height:22px;border-radius:50%;background:#0f172a;cursor:pointer;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.2);outline:2px solid #3b82f6"></span>
+                                <span class="hm-swatch" onclick="document.getElementById('hm-tip-bg-color').value=this.dataset.c; document.querySelectorAll('#hm-tip-swatches .hm-swatch').forEach(s=>s.style.outline='none'); this.style.outline='2px solid #3b82f6'" data-c="#ffffff" style="width:22px;height:22px;border-radius:50%;background:#ffffff;cursor:pointer;border:2px solid #cbd5e1;box-shadow:0 1px 3px rgba(0,0,0,.2)"></span>
+                                <span class="hm-swatch" onclick="document.getElementById('hm-tip-bg-color').value=this.dataset.c; document.querySelectorAll('#hm-tip-swatches .hm-swatch').forEach(s=>s.style.outline='none'); this.style.outline='2px solid #3b82f6'" data-c="#fef3c7" style="width:22px;height:22px;border-radius:50%;background:#fef3c7;cursor:pointer;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.2)"></span>
+                                <span class="hm-swatch" onclick="document.getElementById('hm-tip-bg-color').value=this.dataset.c; document.querySelectorAll('#hm-tip-swatches .hm-swatch').forEach(s=>s.style.outline='none'); this.style.outline='2px solid #3b82f6'" data-c="#dcfce7" style="width:22px;height:22px;border-radius:50%;background:#dcfce7;cursor:pointer;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.2)"></span>
+                                <span class="hm-swatch" onclick="document.getElementById('hm-tip-bg-color').value=this.dataset.c; document.querySelectorAll('#hm-tip-swatches .hm-swatch').forEach(s=>s.style.outline='none'); this.style.outline='2px solid #3b82f6'" data-c="#dbeafe" style="width:22px;height:22px;border-radius:50%;background:#dbeafe;cursor:pointer;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.2)"></span>
+                                <span class="hm-swatch" onclick="document.getElementById('hm-tip-bg-color').value=this.dataset.c; document.querySelectorAll('#hm-tip-swatches .hm-swatch').forEach(s=>s.style.outline='none'); this.style.outline='2px solid #3b82f6'" data-c="#ef4444" style="width:22px;height:22px;border-radius:50%;background:#ef4444;cursor:pointer;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.2)"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <!-- Right: Heatmap Canvas -->
+            <div style="flex: 1; display: flex; flex-direction: column; min-width: 0; overflow: auto;">
+                <div id="hm-canvas-wrap" style="position: relative; flex: 1; padding: 10px;">
+                    <button onclick="window._hmUnpin()" title="清除所有標籤"
+                        style="position: absolute; top: 15px; right: 80px; z-index: 100; padding: 4px 10px; border: 1px solid rgba(203, 213, 225, 0.8); border-radius: 6px; background: rgba(248, 250, 252, 0.65); backdrop-filter: blur(2px); color: #475569; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,0.05);"
+                        onmouseover="this.style.background='rgba(255, 255, 255, 0.95)';this.style.color='#ef4444';this.style.borderColor='#fca5a5';"
+                        onmouseout="this.style.background='rgba(248, 250, 252, 0.65)';this.style.color='#475569';this.style.borderColor='rgba(203, 213, 225, 0.8)';">
+                        🗑 清除所有標籤
+                    </button>
+                    <canvas id="hm-canvas"></canvas>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Chart AI Assistant -->
@@ -400,7 +531,7 @@
 
     <!-- Floating Chart Assistant FAB -->
     <button class="assistant-fab" id="chart-assistant-trigger" onclick="toggleChartAssistant()"
-        style="display: block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);">
+        style="display: none; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);">
         <span id="chart-fab-icon" style="font-size: 24px;">📊</span>
     </button>
 
@@ -419,9 +550,22 @@
     <script type="module">
         import { SESSION_ID } from '/static/js/dashboard_modules/session.js';
         import * as Analysis from '/static/js/dashboard_modules/analysis_manager.js';
+        import * as Heatmap from '/static/js/dashboard_modules/heatmap_manager.js';
+        import * as ComputedCol from '/static/js/dashboard_modules/computed_column_manager.js';
 
         // Expose SESSION_ID globally for chart AI helpers
         window.SESSION_ID = SESSION_ID;
+
+        // Expose computed column functions
+        window.showAddColumnModal = ComputedCol.showAddColumnModal;
+        window.hideAddColumnModal = ComputedCol.hideAddColumnModal;
+        window.applyComputedColumn = ComputedCol.applyComputedColumn;
+        window.previewComputedColumn = ComputedCol.previewComputedColumn;
+        window.insertColRef = ComputedCol.insertColRef;
+        window._ccFilterCols = ComputedCol._ccFilterCols;
+        window._ccAddCondRow = ComputedCol._ccAddCondRow;
+        window._ccRemoveCondRow = ComputedCol._ccRemoveCondRow;
+        window._ccGenFormula = ComputedCol._ccGenFormula;
 
         // Expose all analysis functions to window for onclick handlers
         window.switchAnalysisMode = Analysis.switchAnalysisMode;
@@ -464,6 +608,18 @@
         window.tryUpdateChart = Analysis.tryUpdateChart;
         window.clearChartConfig = Analysis.clearChartConfig;
         window.resetAxis = Analysis.resetAxis;
+
+        // Heatmap functions
+        window.setHeatmapXCol = Heatmap.setHeatmapXCol;
+        window.toggleHeatmapCol = Heatmap.toggleHeatmapCol;
+        window.selectAllHeatmapCols = Heatmap.selectAllHeatmapCols;
+        window.clearAllHeatmapCols = Heatmap.clearAllHeatmapCols;
+        window.invertHeatmapCols = Heatmap.invertHeatmapCols;
+        window.setHeatmapColorScheme = Heatmap.setHeatmapColorScheme;
+        window.filterHeatmapCols = Heatmap.filterHeatmapCols;
+        window.initHeatmap = Heatmap.initHeatmap;
+        window.drawHeatmap = Heatmap.drawHeatmap;
+        window._hmUnpin = Heatmap.unpinHeatmapTooltip;
 
         // Handle filter key (Enter to add)
         window.handleFilterKey = function(event) {

@@ -287,8 +287,8 @@ def filter_dead_columns(
         # 條件 1: std 接近 0 (完全常數)
         if std_val <= min_std:
             is_dead = True
-        # 條件 2: MAD / |median| < min_cv (近似常數，變異極小)
-        elif abs(median_val) > 1e-10 and (mad_val / abs(median_val)) < min_cv:
+        # 條件 2: MAD / |median| < min_cv (近似常數，變異極小) 但若 std > 0.01 則豁免 (避免大量常數但有極端峰值的特徵被誤刪)
+        elif abs(median_val) > 1e-10 and (mad_val / abs(median_val)) < min_cv and std_val < 0.01:
             is_dead = True
 
         if is_dead:

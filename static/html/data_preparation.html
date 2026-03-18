@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>資料整理</title>
+    <title>資料分析</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
         * {
@@ -74,7 +74,7 @@
         }
 
         .tool-sidebar .ts-section {
-            font-size: 10px;
+            font-size: 13px;
             font-weight: 800;
             color: #94a3b8;
             text-transform: uppercase;
@@ -91,7 +91,7 @@
             padding: 7px 10px;
             border: 1.5px solid #e2e8f0;
             border-radius: 8px;
-            font-size: 11px;
+            font-size: 13px;
             font-weight: 500;
             color: #334155;
             background: #fff;
@@ -165,6 +165,118 @@
 
         .ts-tool-item.active .ts-desc {
             color: #818cf8;
+        }
+
+        /* Dataset items in sidebar */
+        .ts-datasets {
+            padding: 0 8px;
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        .ts-ds-item {
+            margin-bottom: 8px;
+            background: #f8fafc;
+            border-radius: 8px;
+            border-left: 3px solid #e2e8f0;
+            padding: 2px 0;
+        }
+        .ts-ds-item + .ts-ds-item {
+            margin-top: 4px;
+        }
+        /* Sub-datasets get accent border */
+        .ts-ds-item[data-ds-type="pivot"] {
+            background: #fefce8;
+            border-left-color: #f59e0b;
+        }
+
+        .ts-ds-header {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 7px 10px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+            color: #475569;
+            transition: all 0.15s;
+            user-select: none;
+        }
+
+        .ts-ds-header:hover {
+            background: #f8fafc;
+        }
+
+        .ts-ds-header.active {
+            background: #f0fdf4;
+            color: #16a34a;
+        }
+
+        .ts-ds-header .ts-ds-icon {
+            font-size: 14px;
+            flex-shrink: 0;
+        }
+
+        .ts-ds-header .ts-ds-name {
+            flex: 1;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .ts-ds-header .ts-ds-count {
+            font-size: 11px;
+            color: #94a3b8;
+            font-weight: 500;
+            flex-shrink: 0;
+        }
+
+        .ts-ds-header .ts-ds-close {
+            font-size: 13px;
+            color: #cbd5e1;
+            cursor: pointer;
+            flex-shrink: 0;
+            display: none;
+        }
+
+        .ts-ds-header:hover .ts-ds-close {
+            display: inline;
+        }
+
+        .ts-ds-close:hover {
+            color: #ef4444;
+        }
+
+        .ts-ds-tools {
+            display: none;
+            padding: 2px 0 4px 20px;
+        }
+
+        .ts-ds-item.expanded .ts-ds-tools {
+            display: block;
+        }
+
+        .ts-ds-tool {
+            padding: 5px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            color: #64748b;
+            transition: all 0.15s;
+        }
+
+        .ts-ds-tool:hover {
+            background: #f1f5f9;
+            color: #334155;
+        }
+
+        .ts-ds-tool.active {
+            background: #eef2ff;
+            color: #4f46e5;
+            font-weight: 600;
         }
 
         /* ==================== Left: Field List ==================== */
@@ -255,7 +367,7 @@
             padding: 7px 10px;
             border-radius: 6px;
             cursor: grab;
-            font-size: 12px;
+            font-size: 13px;
             font-weight: 500;
             color: #334155;
             transition: background 0.1s;
@@ -372,7 +484,7 @@
         }
 
         .drop-zone .dz-label {
-            font-size: 10px;
+            font-size: 13px;
             font-weight: 800;
             text-transform: uppercase;
             letter-spacing: 0.8px;
@@ -398,7 +510,7 @@
         }
 
         .drop-zone .dz-hint {
-            font-size: 10px;
+            font-size: 12px;
             color: #94a3b8;
             font-style: italic;
         }
@@ -416,7 +528,7 @@
             gap: 5px;
             padding: 4px 8px 4px 10px;
             border-radius: 6px;
-            font-size: 11px;
+            font-size: 13px;
             font-weight: 600;
             cursor: default;
             user-select: none;
@@ -474,7 +586,7 @@
         }
 
         .dz-values .dz-chip .agg-select {
-            font-size: 10px;
+            font-size: 12px;
             border: 1px solid rgba(0, 0, 0, 0.1);
             border-radius: 4px;
             padding: 1px 3px;
@@ -497,7 +609,7 @@
         }
 
         .target-selector .ts-label {
-            font-size: 10px;
+            font-size: 13px;
             font-weight: 800;
             color: #0f766e;
             text-transform: uppercase;
@@ -510,7 +622,7 @@
             padding: 5px 8px;
             border: 1px solid #e2e8f0;
             border-radius: 6px;
-            font-size: 11px;
+            font-size: 13px;
             font-weight: 600;
             color: #1e293b;
             outline: none;
@@ -544,7 +656,7 @@
 
         .ts-dropdown-item {
             padding: 5px 8px;
-            font-size: 11px;
+            font-size: 13px;
             cursor: pointer;
             color: #334155;
         }
@@ -922,6 +1034,152 @@
             background: #4338ca;
         }
 
+        /* Cleaning Panel */
+        #panel-cleaning {
+            flex-direction: column;
+            width: 100%;
+        }
+        .cl-container {
+            display: flex; flex-direction: column; height: 100%; padding: 16px 20px;
+            overflow: hidden;
+        }
+        .cl-header {
+            display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-shrink: 0;
+        }
+        .cl-title { font-size: 16px; font-weight: 700; color: #1e293b; }
+        .cl-badge {
+            font-size: 11px; padding: 2px 8px; border-radius: 10px;
+            background: #f1f5f9; color: #64748b; font-weight: 500;
+        }
+        .cl-badge.warn { background: #fef3c7; color: #92400e; }
+        .cl-controls { margin-left: auto; display: flex; gap: 8px; }
+        .cl-btn {
+            padding: 6px 14px; border-radius: 6px; border: 1px solid #e2e8f0;
+            background: #fff; font-size: 12px; cursor: pointer; color: #475569;
+            transition: all 0.15s;
+        }
+        .cl-btn:hover { border-color: #94a3b8; background: #f8fafc; }
+        .cl-btn.primary {
+            background: #4f46e5; color: #fff; border-color: #4f46e5;
+        }
+        .cl-btn.primary:hover { background: #4338ca; }
+        .cl-body {
+            display: flex; gap: 16px; flex: 1; overflow: hidden;
+        }
+        .cl-col-list {
+            width: 420px; min-width: 300px; max-width: 70%; flex-shrink: 0; overflow-y: auto;
+            border: 1px solid #e2e8f0; border-radius: 8px; background: #fff;
+            resize: horizontal; overflow: auto;
+        }
+        .cl-col-header {
+            display: grid; grid-template-columns: 28px 1fr 50px 60px 60px 60px;
+            padding: 6px 10px; font-size: 10px; font-weight: 600; color: #94a3b8;
+            border-bottom: 1px solid #e2e8f0; background: #f8fafc; position: sticky; top: 0;
+            z-index: 1;
+        }
+        .cl-col-header span { cursor: pointer; user-select: none; }
+        .cl-col-header span:hover { color: #475569; }
+        .cl-col-row {
+            display: grid; grid-template-columns: 28px 1fr 50px 60px 60px 60px;
+            padding: 8px 10px; font-size: 12px; color: #475569; border-bottom: 1px solid #f1f5f9;
+            align-items: center; cursor: pointer; transition: background 0.1s;
+        }
+        .cl-col-row.selected { background: #eef2ff; outline: 2px solid #6366f1; outline-offset: -2px; }
+        .cl-col-row:hover { background: #f8fafc; }
+        .cl-col-row.excluded { opacity: 0.4; text-decoration: line-through; }
+        .cl-col-row.has-outlier { background: #fffbeb; }
+        .cl-cb {
+            width: 18px; height: 18px; border: 2px solid #cbd5e1; border-radius: 4px;
+            cursor: pointer; flex-shrink: 0; display: flex; align-items: center;
+            justify-content: center; transition: all 0.15s; background: #fff;
+        }
+        .cl-cb:hover { border-color: #6366f1; }
+        .cl-cb.checked { background: #4f46e5; border-color: #4f46e5; }
+        .cl-cb.checked::after { content: '✓'; color: #fff; font-size: 12px; font-weight: 700; }
+        .cl-col-name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .cl-col-type { color: #94a3b8; font-size: 10px; text-align: center; }
+        .cl-col-stat { text-align: right; font-variant-numeric: tabular-nums; }
+        .cl-col-stat.bad { color: #dc2626; font-weight: 600; }
+        .cl-preview {
+            flex: 1; min-width: 0; border: 1px solid #e2e8f0; border-radius: 8px;
+            background: #fff; display: flex; flex-direction: column; overflow: hidden;
+        }
+        .cl-preview-title {
+            padding: 8px 12px; font-size: 12px; font-weight: 600; color: #475569;
+            border-bottom: 1px solid #e2e8f0; background: #f8fafc;
+        }
+        .cl-preview-body {
+            flex: 1; display: flex; align-items: center; justify-content: center;
+            padding: 12px; overflow: hidden;
+        }
+        .cl-summary {
+            display: flex; gap: 20px; padding-top: 12px; flex-shrink: 0;
+            font-size: 13px; color: #64748b;
+        }
+        .cl-summary b { color: #1e293b; }
+
+        /* Pipeline Panel */
+        .cl-pipeline {
+            flex: 1; overflow-y: auto;
+            border: 1px solid #e2e8f0; border-radius: 8px; background: #fff;
+        }
+        .cl-pipeline-header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 6px 12px; font-size: 11px; font-weight: 600; color: #475569;
+            border-bottom: 1px solid #e2e8f0; background: #f8fafc;
+            position: sticky; top: 0; z-index: 1;
+        }
+        .cl-pipeline-header .pipe-count { color: #94a3b8; font-weight: 400; }
+
+        /* Tabs */
+        .cl-tabs {
+            display: flex; gap: 0; border-bottom: 2px solid #e2e8f0; flex-shrink: 0;
+            margin-bottom: 0;
+        }
+        .cl-tab {
+            padding: 8px 18px; font-size: 14px; font-weight: 600; color: #94a3b8;
+            background: none; border: none; cursor: pointer; border-bottom: 2px solid transparent;
+            margin-bottom: -2px; transition: all 0.15s;
+        }
+        .cl-tab:hover { color: #475569; }
+        .cl-tab.active { color: #4f46e5; border-bottom-color: #4f46e5; }
+        .cl-tab-page { display: none; flex: 1; flex-direction: column; overflow: hidden; }
+        .cl-tab-page.active { display: flex; }
+        .cl-rule-toolbar {
+            display: flex; gap: 8px; padding: 10px 0; flex-shrink: 0; flex-wrap: wrap;
+        }
+        .cl-rule {
+            display: flex; align-items: center; gap: 10px; padding: 8px 14px;
+            font-size: 13px; color: #475569; border-bottom: 1px solid #f1f5f9;
+            transition: background 0.1s;
+        }
+        .cl-rule:hover { background: #f8fafc; }
+        .cl-rule .rule-order {
+            width: 22px; height: 22px; border-radius: 50%; background: #e0e7ff;
+            color: #4f46e5; font-size: 11px; font-weight: 700; display: flex;
+            align-items: center; justify-content: center; flex-shrink: 0;
+        }
+        .cl-rule-badge {
+            font-size: 10px; padding: 2px 8px; border-radius: 8px; font-weight: 600;
+            flex-shrink: 0;
+        }
+        .cl-rule-badge.cols { background: #dbeafe; color: #1d4ed8; }
+        .cl-rule-badge.rows { background: #fef3c7; color: #92400e; }
+        .cl-rule-badge.brush { background: #ede9fe; color: #6d28d9; }
+        .cl-rule .rule-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+        .cl-edit-val { color: #4f46e5; font-weight: 700; cursor: pointer; border-bottom: 1px dashed #6366f1; padding: 0 1px; }
+        .cl-rule .rule-count { font-size: 12px; color: #94a3b8; flex-shrink: 0; font-weight: 600; }
+        .cl-rule .rule-del {
+            width: 18px; height: 18px; border: none; background: none; color: #cbd5e1;
+            cursor: pointer; font-size: 14px; display: flex; align-items: center;
+            justify-content: center; border-radius: 4px; flex-shrink: 0;
+            transition: all 0.15s;
+        }
+        .cl-rule .rule-del:hover { color: #ef4444; background: #fef2f2; }
+        .cl-pipe-empty {
+            padding: 16px; text-align: center; font-size: 13px; color: #94a3b8;
+        }
+
         #panel-mva {
             flex-direction: column;
             width: 100%;
@@ -991,10 +1249,13 @@
         .mva-brush-hint {
             position: absolute;
             bottom: 6px;
-            right: 10px;
+            right: 12px;
             font-size: 10px;
             color: #94a3b8;
             pointer-events: none;
+            background: rgba(255,255,255,0.7);
+            padding: 0 4px;
+            border-radius: 4px;
         }
 
         .mva-brush-rect {
@@ -1573,15 +1834,16 @@
         }
 
         .gb-left {
-            flex: 1;
+            flex: 1.5;
             min-width: 0;
             display: flex;
             flex-direction: column;
             gap: 8px;
+            overflow-y: auto;
         }
 
         .gb-right {
-            flex: 1.5;
+            flex: 1;
             min-width: 0;
             overflow-y: auto;
         }
@@ -1601,7 +1863,7 @@
             background: #fff;
             display: block;
             width: 100%;
-            height: auto;
+            max-height: 55vh;
         }
 
         .gb-box-card canvas {
@@ -1926,13 +2188,30 @@
 
 <body>
     <!-- Header -->
-    <div class="page-header">
+    <div class="page-header" style="position:relative;">
         <div class="icon-box">🔧</div>
         <div>
-            <h1>資料整理工具</h1>
+            <h1>資料分析工具</h1>
             <p class="subtitle">資料前處理與樞紐分析</p>
         </div>
+        <div style="margin-left:auto;position:relative;">
+            <button id="tool-settings-btn" onclick="toggleToolSettings()" style="background:none;border:1px solid #e2e8f0;border-radius:8px;padding:6px 10px;cursor:pointer;font-size:16px;color:#64748b;" title="功能設定">⚙️</button>
+            <div id="tool-settings-popup" style="display:none;position:absolute;right:0;top:40px;background:#fff;border:1px solid #e2e8f0;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,0.12);padding:12px 16px;z-index:999;min-width:180px;">
+                <div style="font-size:13px;font-weight:700;color:#1e293b;margin-bottom:8px;">📋 功能開關</div>
+                <label class="tool-toggle-item"><input type="checkbox" data-tool="pivot" checked onchange="onToolToggle()"> 📊 樞紐分析表</label>
+                <label class="tool-toggle-item"><input type="checkbox" data-tool="cleaning" checked onchange="onToolToggle()"> 🧹 資料清洗</label>
+                <label class="tool-toggle-item"><input type="checkbox" data-tool="mva" checked onchange="onToolToggle()"> 🎯 多變量分析</label>
+                <label class="tool-toggle-item"><input type="checkbox" data-tool="gb" checked onchange="onToolToggle()"> ⚖️ G/B 檢定</label>
+                <label class="tool-toggle-item"><input type="checkbox" data-tool="maineffect" onchange="onToolToggle()"> 📊 主效應圖</label>
+                <label class="tool-toggle-item"><input type="checkbox" data-tool="rsm" onchange="onToolToggle()"> 🌐 多項式特徵</label>
+            </div>
+        </div>
     </div>
+    <style>
+        .tool-toggle-item { display:flex;align-items:center;gap:6px;padding:4px 0;font-size:13px;color:#334155;cursor:pointer; }
+        .tool-toggle-item:hover { color:#2563eb; }
+        .tool-toggle-item input { margin:0; }
+    </style>
 
     <!-- Main -->
     <div class="main-layout">
@@ -1945,29 +2224,8 @@
                     <option value="" disabled selected>-- 選擇檔案 --</option>
                 </select>
             </div>
-            <div class="ts-section">整理工具</div>
-            <div class="ts-tools">
-                <div class="ts-tool-item active" data-tool="pivot" onclick="switchTool('pivot')">
-                    <div class="ts-icon" style="background: #eff6ff;">📊</div>
-                    <div class="ts-text">
-                        <div class="ts-name">樞紐分析表</div>
-                        <div class="ts-desc">多維度交叉分析</div>
-                    </div>
-                </div>
-                <div class="ts-tool-item" data-tool="mva" onclick="switchTool('mva')">
-                    <div class="ts-icon" style="background: #fef2f2;">🎯</div>
-                    <div class="ts-text">
-                        <div class="ts-name">多變量分析</div>
-                        <div class="ts-desc">控制圖與框選</div>
-                    </div>
-                </div>
-                <div class="ts-tool-item" data-tool="gb" onclick="switchTool('gb')">
-                    <div class="ts-icon" style="background: #ecfdf5;">⚖️</div>
-                    <div class="ts-text">
-                        <div class="ts-name">G/B 檢定</div>
-                        <div class="ts-desc">多組統計檢定</div>
-                    </div>
-                </div>
+            <div class="ts-datasets" id="ts-datasets">
+                <!-- Dynamically populated -->
             </div>
         </div>
 
@@ -1979,7 +2237,13 @@
                 <div class="field-panel-header">
                     <div class="fp-title"
                         style="display:flex;align-items:center;justify-content:space-between;width:100%;">
-                        <span>欄位清單 <span class="count" id="field-count">0</span></span>
+                        <span style="display:flex;align-items:center;gap:6px;">
+                            欄位清單 <span class="count" id="field-count">0</span>
+                            <span id="pivot-clean-toggle"
+                                onclick="pivotToggleCleanMode()"
+                                style="font-size:10px;padding:2px 8px;border-radius:10px;cursor:pointer;
+                                       background:#fed7aa;color:#c2410c;font-weight:600;user-select:none;">原始</span>
+                        </span>
                         <span style="font-size:10px;color:#94a3b8;cursor:pointer;" onclick="clearAll()"
                             title="清空所有區域">🗑
                             清空</span>
@@ -2096,11 +2360,89 @@
             </div>
         </div> <!-- /panel-pivot -->
 
+        <!-- Cleaning Panel -->
+        <div id="panel-cleaning" class="tool-panel" style="display:none;">
+            <div class="cl-container">
+                <div class="cl-header">
+                    <div class="cl-title">資料清洗</div>
+                    <span class="cl-badge" id="cl-badge-cols">0 欄位</span>
+                    <span class="cl-badge" id="cl-badge-rows">0 筆</span>
+                    <span class="cl-badge warn" id="cl-badge-outliers" style="display:none;">0 異常</span>
+                    <span id="cl-clean-info" style="font-size:13px;font-weight:600;color:#22c55e;margin-left:4px;"></span>
+                </div>
+                <div class="cl-tabs">
+                    <button class="cl-tab active" data-tab="rules" onclick="clSwitchTab('rules')">📋 規則 <span id="cl-tab-rule-count" style="color:#94a3b8;">(0)</span></button>
+                    <button class="cl-tab" data-tab="result" onclick="clSwitchTab('result')">📊 可視化</button>
+                </div>
+                <div class="cl-tab-page active" id="cl-tab-rules">
+                    <div class="cl-rule-toolbar">
+                        <button class="cl-btn" onclick="clPromptMissingCol()">📋 欄位缺值%</button>
+                        <button class="cl-btn" onclick="clAddConstantRule()">🔒 定值排除</button>
+                        <button class="cl-btn" onclick="clPromptLowCv()">📉 低CV(MAD)</button>
+                        <button class="cl-btn" onclick="clPromptMissingRow()">🧹 樣本缺值%</button>
+                        <button class="cl-btn" onclick="clClearPipeline()" style="margin-left:auto;color:#94a3b8;">🗑️ 清空</button>
+                    </div>
+                    <div class="cl-pipeline" id="cl-pipeline">
+                        <div id="cl-pipe-body">
+                            <div class="cl-pipe-empty">尚無清洗規則</div>
+                        </div>
+                    </div>
+                    <div class="cl-summary" id="cl-summary">
+                        <span>總欄位: <b id="cl-total-cols">-</b></span>
+                        <span>已排除欄位: <b id="cl-excluded-cols">0</b></span>
+                        <span>總樣本: <b id="cl-total-rows">-</b></span>
+                        <span>異常樣本: <b id="cl-outlier-rows">0</b></span>
+                    </div>
+                </div>
+                <div class="cl-tab-page" id="cl-tab-result" style="display:none;">
+                    <div class="cl-body">
+                        <div class="cl-col-list" tabindex="0" id="cl-col-list">
+                            <div class="cl-col-header">
+                                <span onclick="clToggleCheckFilter()" style="cursor:pointer;font-size:16px;" title="無篩選" id="cl-check-filter-btn">≡</span>
+                                <span onclick="clSortBy('col')">欄位名稱 <span id="cl-sort-col"></span></span>
+                                <span style="text-align:center;" onclick="clSortBy('dtype')">類型 <span id="cl-sort-dtype"></span></span>
+                                <span style="text-align:right;" onclick="clSortBy('pct_missing')">缺值% <span id="cl-sort-pct_missing"></span></span>
+                                <span style="text-align:right;" onclick="clSortBy('n_outlier')">異常值 <span id="cl-sort-n_outlier"></span></span>
+                                <span style="text-align:right;" onclick="clSortBy('std')">標準差 <span id="cl-sort-std"></span></span>
+                            </div>
+                            <div id="cl-col-body">
+                                <div style="padding:24px;color:#94a3b8;font-size:12px;text-align:center;">
+                                    選擇檔案後載入欄位清單
+                                </div>
+                            </div>
+                        </div>
+                        <div class="cl-preview">
+                            <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;padding-bottom:4px;">
+                                <div class="cl-preview-title" id="cl-preview-title" style="flex:1;">點擊欄位查看趨勢圖</div>
+                                <select id="cl-algo-select" style="font-size:11px;padding:3px 6px;border:1px solid #e2e8f0;border-radius:4px;">
+                                    <option value="iqr">IQR</option>
+                                    <option value="mad_zscore">MAD Z-score</option>
+                                    <option value="isolation_forest">Isolation Forest</option>
+                                    <option value="lof">LOF (KNN)</option>
+                                </select>
+                                <button class="cl-btn" onclick="clPreviewAlgo()" style="font-size:11px;padding:4px 10px;">🔍 掃描</button>
+                                <button class="cl-btn" id="cl-preview-confirm" onclick="clConfirmPreview()" style="font-size:11px;padding:4px 10px;background:#4f46e5;color:#fff;border-color:#4f46e5;display:none;">+ 加入規則</button>
+                                <button class="cl-btn" id="cl-preview-clear" onclick="clClearPreview()" style="font-size:11px;padding:4px 10px;color:#94a3b8;display:none;">✕</button>
+                            </div>
+                            <div class="cl-preview-body" id="cl-preview-body">
+                                <canvas id="cl-trend-canvas" style="width:100%;height:100%;"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- MVA Panel -->
         <div id="panel-mva" class="tool-panel" style="display:none;">
             <div class="mva-container">
                 <div class="mva-header">
-                    <div class="mva-title">多變量控制圖</div>
+                    <div class="mva-title" style="display:flex;align-items:center;gap:8px;">多變量控制圖
+                        <span id="mva-clean-toggle" class="cl-mode-toggle-btn"
+                            onclick="pivotToggleCleanMode()"
+                            style="font-size:10px;padding:2px 8px;border-radius:10px;cursor:pointer;
+                                   font-weight:600;user-select:none;"></span>
+                    </div>
                     <div class="mva-controls">
                         <button class="filter-add-btn" onclick="openMvaFilter()">+ 篩選條件</button>
                         <button class="mva-run-btn" onclick="runMvaT2()">▶ 執行分析</button>
@@ -2134,7 +2476,12 @@
         <div id="panel-gb" class="tool-panel" style="display:none;">
             <div class="gb-container">
                 <div class="gb-header">
-                    <span class="gb-title">G/B 檢定</span>
+                    <span class="gb-title" style="display:flex;align-items:center;gap:8px;">G/B 檢定
+                        <span id="gb-clean-toggle" class="cl-mode-toggle-btn"
+                            onclick="pivotToggleCleanMode()"
+                            style="font-size:10px;padding:2px 8px;border-radius:10px;cursor:pointer;
+                                   font-weight:600;user-select:none;"></span>
+                    </span>
                     <div class="gb-mode-toggle">
                         <button class="gb-mode-btn active" data-mode="pca" onclick="gbSwitchMode('pca')">PCA
                             散佈圖</button>
@@ -2145,11 +2492,11 @@
                 </div>
                 <div class="gb-body">
                     <div class="gb-left">
-                        <div id="gb-pca-area">
-                            <canvas id="gb-scatter" width="420" height="380"></canvas>
+                        <div id="gb-pca-area" style="position:relative;">
+                            <canvas id="gb-scatter" width="420" height="240"></canvas>
                             <div class="gb-scatter-hint">拖曳框選區域以建立群組</div>
                         </div>
-                        <div id="gb-target-area" style="display:none;">
+                        <div id="gb-target-area" style="display:none;position:relative;">
                             <label class="gb-label">Target 欄位</label>
                             <div class="gb-searchable-select" id="gb-target-select-wrap" style="position:relative;">
                                 <input id="gb-target-input" placeholder="搜尋欄位..." autocomplete="off"
@@ -2197,6 +2544,172 @@
                     </div>
                 </div>
             </div>
+        </div>
+
+        <!-- Main Effect Plot Panel -->
+        <div id="panel-maineffect" class="tool-panel" style="display:none;">
+            <div style="flex:1;display:flex;flex-direction:column;padding:16px;gap:12px;">
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <span style="font-size:18px;font-weight:700;color:#1e293b;">📊 主效應圖</span>
+                    <span id="me-clean-toggle" class="cl-mode-toggle-btn"
+                        style="font-size:11px;padding:2px 8px;border-radius:10px;cursor:pointer;border:1px solid #cbd5e1;color:#94a3b8;"
+                        onclick="toggleCleanMode(this)">
+                        原始
+                    </span>
+                </div>
+                <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;">
+                    <div style="flex:1;min-width:180px;">
+                        <label style="font-size:12px;color:#64748b;font-weight:600;">Target (Y)</label>
+                        <select id="me-target" style="width:100%;padding:6px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;margin-top:4px;">
+                            <option value="">— 選擇 Target —</option>
+                        </select>
+                    </div>
+                    <div style="flex:1;min-width:180px;">
+                        <label style="font-size:12px;color:#64748b;font-weight:600;">Factor (X)</label>
+                        <select id="me-factor" style="width:100%;padding:6px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;margin-top:4px;">
+                            <option value="">— 選擇 Factor —</option>
+                        </select>
+                    </div>
+                    <button onclick="meRun()" style="padding:6px 16px;background:#2563eb;color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;">▶ 繪製</button>
+                </div>
+                <div id="me-chart-area" style="flex:1;display:flex;align-items:center;justify-content:center;border:1px solid #e2e8f0;border-radius:10px;background:#fff;min-height:300px;">
+                    <div style="text-align:center;color:#94a3b8;">
+                        <div style="font-size:36px;margin-bottom:8px;">📊</div>
+                        <div>選擇 Target 與 Factor 後按「繪製」</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Response Surface Methodology Panel -->
+        <div id="panel-rsm" class="tool-panel" style="display:none;background:#f1f5f9;padding:16px;flex:1;flex-direction:column;">
+            <div style="flex:1;width:100%;height:100%;display:flex;overflow:hidden;background:#fff;border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,0.05);border:1px solid #e2e8f0;">
+                <!-- Left Step Sidebar -->
+                <div style="width:160px;min-width:160px;display:flex;flex-direction:column;background:#f8fafc;border-right:1px solid #e2e8f0;">
+                    <div id="rsm-tab-1" onclick="rsmGotoStep(1)" class="rsm-step-tab rsm-step-active">
+                        <div class="rsm-step-num">STEP 01</div>
+                        <div class="rsm-step-label">選擇 Target<span class="rsm-step-done-text"> </span></div>
+                    </div>
+                    <div id="rsm-tab-2" onclick="rsmGotoStep(2)" class="rsm-step-tab">
+                        <div class="rsm-step-num">STEP 02</div>
+                        <div class="rsm-step-label">選擇 Factors<span class="rsm-step-done-text"> </span></div>
+                    </div>
+                    <div id="rsm-tab-3" onclick="rsmGotoStep(3)" class="rsm-step-tab">
+                        <div class="rsm-step-num">STEP 03</div>
+                        <div class="rsm-step-label">分析結果<span class="rsm-step-done-text"> </span></div>
+                    </div>
+                    <div style="flex:1;">
+                        <!-- Submit area -->
+                        <div style="padding:20px 16px;margin-top:auto;">
+                            <button onclick="rsmRun()" style="width:100%;padding:10px;background:#e2e8f0;color:#64748b;border:none;border-radius:8px;font-weight:700;cursor:not-allowed;" id="rsm-sidebar-run-btn">分析</button>
+                        </div>
+                    </div>
+                </div>
+                <!-- Right Content Area -->
+                <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;background:#fff;position:relative;">
+                    
+                    <!-- Content Header Decoration (Left Blue Bar) -->
+                    <div id="rsm-content-hdr" style="display:flex;align-items:center;padding:16px 20px;border-bottom:1px solid #f1f5f9;">
+                        <div style="width:4px;height:20px;background:#3b82f6;border-radius:10px;margin-right:12px;"></div>
+                        <div id="rsm-content-title" style="font-size:15px;font-weight:700;color:#1e293b;">第一步: 🎯 任務標的</div>
+                    </div>
+
+                    <!-- Step 1: Target -->
+                    <div id="rsm-step1" style="flex:1;display:flex;flex-direction:column;padding:20px;gap:16px;overflow:hidden;background:#fafafa;">
+                        <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:16px;flex-shrink:0;">
+                            <div style="font-size:12px;font-weight:600;color:#64748b;margin-bottom:8px;">🎯 選擇標的欄位 (Goal Column)</div>
+                            <select id="rsm-target-select" style="width:100%;padding:8px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;color:#1e293b;">
+                                <option value="">— 請先選擇數據源 —</option>
+                            </select>
+                        </div>
+                        <div style="height:320px;flex-shrink:0;border:1px solid #e2e8f0;border-radius:10px;background:#fff;display:flex;flex-direction:column;padding:16px;">
+                            <div style="font-size:12px;font-weight:600;color:#64748b;margin-bottom:12px;flex-shrink:0;">🔵 數據分佈即時預覽 (SCATTER PREVIEW)</div>
+                            <div id="rsm-trend-area" style="flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;">
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Step 2: Factors dual-list -->
+                    <div id="rsm-step2" style="flex:1;display:none;flex-direction:column;padding:20px;gap:16px;overflow:hidden;">
+                        <style>
+                            .dual-list-grid { display: grid; grid-template-columns: 1fr 50px 1fr 1.3fr; grid-template-rows: minmax(0, 1fr); gap: 12px; flex: 1; min-height: 0; width: 100%; }
+                            .list-col { display: flex; flex-direction: column; border: 1px solid #e2e8f0; border-radius: 10px; background: #fff; overflow: hidden; height: 100%; min-height: 0; }
+                            .list-header { padding: 10px 14px; background: #0047ab; color: white; font-size: 13px; font-weight: 700; text-align: center; }
+                            .list-search { padding: 8px; border-bottom: 1px solid #f1f5f9; background: #fafafa; }
+                            .list-search input { width: 100%; padding: 6px 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 12px; outline: none; }
+                            .list-content { flex: 1 1 0; overflow-y: auto; padding: 6px; min-height: 0; }
+                            .list-item { padding: 9px 12px; margin: 3px 0; border-radius: 8px; font-size: 12px; color: #475569; cursor: pointer; border: 1px solid transparent; transition: all 0.2s; }
+                            .list-item:hover { background: #f1f5f9; color: #1e293b; }
+                            .list-item.selected { background: #eff6ff !important; color: #2563eb !important; border: 1px solid #3b82f6 !important; box-shadow: none; }
+                            .list-btns { display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 12px; }
+                            .move-btn { width: 32px; height: 32px; border-radius: 50%; background: #fff; border: 1px solid #e2e8f0; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05); color: #64748b; }
+                            .move-btn:hover { background: #f8fafc; color: #3b82f6; border-color: #3b82f6; }
+                            .preview-col { border: 1px solid #e2e8f0; border-radius: 12px; background: #fff; padding: 12px; display: flex; flex-direction: column; }
+                            .custom-scroll::-webkit-scrollbar { width: 6px; }
+                            .custom-scroll::-webkit-scrollbar-track { background: transparent; }
+                            .custom-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+                            .custom-scroll::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+                        </style>
+                        <div class="dual-list-grid">
+                            <div class="list-col">
+                                <div class="list-header" style="background: #0047ab;">可用參數</div>
+                                <div class="list-search"><input type="text" placeholder="搜尋..." oninput="rsmFilterAvail(this.value)"></div>
+                                <div id="rsm-avail-list" class="list-content custom-scroll" tabindex="0" onclick="rsmAvailClick(event)" onkeydown="rsmListKeyDown(event, this)" style="outline: none;"></div>
+                            </div>
+                            <div class="list-btns">
+                                <div id="rsm-to-selected-btn" class="move-btn" onclick="rsmMoveRight()">&rarr;</div>
+                                <div id="rsm-to-avail-btn" class="move-btn" onclick="rsmMoveLeft()">&larr;</div>
+                            </div>
+                            <div class="list-col">
+                                <div id="rsm-sel-header" class="list-header" style="background: #2563eb; display:flex; justify-content: space-between; align-items: center;">
+                                    <span>已選因子</span>
+                                    <span id="rsm-sel-count" style="font-weight:600; background:rgba(255,255,255,0.2); padding:2px 8px; border-radius:10px; font-size:11px;">0</span>
+                                </div>
+                                <div class="list-search"><input type="text" placeholder="搜尋..." oninput="rsmFilterSel(this.value)"></div>
+                                <div id="rsm-sel-list" class="list-content custom-scroll" tabindex="0" onclick="rsmSelClick(event)" onkeydown="rsmListKeyDown(event, this)" style="outline: none;"></div>
+                            </div>
+                            <div class="preview-col flex-1">
+                                <div style="font-size: 11px; font-weight: 700; color: #64748b; margin-bottom: 8px;">數據分佈預覽</div>
+                                <div style="flex: 1; position: relative;">
+                                    <canvas id="rsm-control-preview-chart"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Step 3: Results -->
+                    <div id="rsm-step3" style="flex:1;display:none;flex-direction:column;padding:20px;gap:16px;overflow-y:auto;">
+                        <div id="rsm-result-area" style="flex:1;">
+                            <div style="display:flex;align-items:center;justify-content:center;height:100%;color:#94a3b8;font-size:14px;">
+                                請先完成設定並點擊左下方「分析」按鈕
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <style>
+                .rsm-step-tab { padding:20px 16px; cursor:pointer; border-bottom:1px solid #f1f5f9; transition:all .2s; border-left:3px solid transparent; position:relative; }
+                .rsm-step-tab:hover { background:#f1f5f9; }
+                .rsm-step-tab.rsm-step-active { background:#fff; border-left:3px solid #2563eb; }
+                .rsm-step-tab.rsm-step-done { border-left:3px solid transparent; }
+                .rsm-step-tab.rsm-step-done::before { content:''; position:absolute; left:-3px; top:0; bottom:0; width:3px; background:#10b981; }
+                
+                .rsm-step-num { font-size:10px; color:#94a3b8; font-weight:700; letter-spacing:0.5px; opacity:0.8; }
+                .rsm-step-active .rsm-step-num { color:#2563eb; opacity:1; }
+                .rsm-step-done .rsm-step-num { color:#10b981; opacity:1; }
+                
+                .rsm-step-label { font-size:13px; font-weight:700; color:#64748b; margin-top:4px; transition:color 0.2s; }
+                .rsm-step-active .rsm-step-label { color:#1e293b; }
+                .rsm-step-done .rsm-step-label { color:#10b981; }
+                
+                .rsm-step-done-text { font-size:11px; font-weight:600; opacity:0; transition:opacity 0.2s; }
+                .rsm-step-done .rsm-step-done-text { opacity:1; }
+                
+                .rsm-pick-item { padding:6px 10px; font-size:12px; border-radius:6px; cursor:pointer; user-select:none; margin-bottom:4px; transition:all 0.1s; color:#334155; border:1px solid transparent; }
+                .rsm-pick-item:hover { background:#f1f5f9; border-color:#e2e8f0; }
+                .rsm-pick-item.selected { background:#eff6ff; color:#1d4ed8; font-weight:600; border-color:#bfdbfe; }
+                
+                .rsm-arrow-btn { width:38px;height:32px;border:1px solid #e2e8f0;border-radius:6px;background:#fff;cursor:pointer;font-size:14px;color:#64748b;transition:all 0.1s;box-shadow:0 1px 2px rgba(0,0,0,0.05); }
+                .rsm-arrow-btn:hover { background:#f8fafc;border-color:#cbd5e1;color:#1e293b; }
+            </style>
         </div>
     </div>
 
@@ -2272,18 +2785,1586 @@
             filters: []
         };
 
-        // ================================================================
-        // Tool Sidebar Switching
-        // ================================================================
-        function switchTool(toolName) {
-            document.querySelectorAll('.ts-tool-item').forEach(item => {
-                item.classList.toggle('active', item.dataset.tool === toolName);
+        // Tool visibility state
+        let _toolVisible = { pivot: true, cleaning: true, mva: true, gb: true, maineffect: false, rsm: false };
+
+        function toggleToolSettings() {
+            const popup = document.getElementById('tool-settings-popup');
+            popup.style.display = popup.style.display === 'none' ? 'block' : 'none';
+        }
+        // Close popup on outside click
+        document.addEventListener('click', e => {
+            const popup = document.getElementById('tool-settings-popup');
+            const btn = document.getElementById('tool-settings-btn');
+            if (popup && popup.style.display === 'block' && !popup.contains(e.target) && e.target !== btn) {
+                popup.style.display = 'none';
+            }
+        });
+        function onToolToggle() {
+            document.querySelectorAll('#tool-settings-popup input[data-tool]').forEach(cb => {
+                _toolVisible[cb.dataset.tool] = cb.checked;
             });
+            renderDatasetsSidebar();
+        }
+
+        // ================================================================
+        // ================================================================
+        // Dataset Management
+        // ================================================================
+        let _datasets = [];      // [{id, name, type:'file'|'pivot'|'cleaned', source, rowCount, fileId}]
+        let _activeDataset = null;  // current active dataset object
+        let _activeTool = 'pivot';  // 'pivot' | 'mva' | 'gb' | 'cleaning'
+        let _mvaDatasetId = null;   // which dataset's MVA data is loaded
+        let _gbDatasetId = null;    // which dataset's G/B data is loaded
+
+        function addDataset(ds) {
+            // Avoid duplicates
+            if (_datasets.find(d => d.id === ds.id)) return;
+            _datasets.push(ds);
+            _expandedDatasets.add(ds.id); // auto-expand new datasets
+            renderDatasetsSidebar();
+        }
+
+        function removeDataset(dsId) {
+            if (dsId === 'original') return; // Never remove original
+            _datasets = _datasets.filter(d => d.id !== dsId);
+            _expandedDatasets.delete(dsId);
+            if (_activeDataset && _activeDataset.id === dsId) {
+                // Switch back to original or pivot
+                const orig = _datasets.find(d => d.id === 'original');
+                if (orig) switchDataset(orig.id, 'mva');
+                else switchTool('pivot');
+            }
+            renderDatasetsSidebar();
+        }
+
+        let _expandedDatasets = new Set(); // track which datasets are expanded
+
+        function toggleDatasetExpand(dsId) {
+            if (_expandedDatasets.has(dsId)) _expandedDatasets.delete(dsId);
+            else _expandedDatasets.add(dsId);
+            renderDatasetsSidebar();
+        }
+
+        function renderDatasetsSidebar() {
+            const container = document.getElementById('ts-datasets');
+            if (!container) return;
+            if (_datasets.length === 0) {
+                container.innerHTML = '<div style="padding:8px 12px;color:#cbd5e1;font-size:10px;">尚無資料集</div>';
+                return;
+            }
+            container.innerHTML = _datasets.map(ds => {
+                const isActive = _activeDataset && _activeDataset.id === ds.id;
+                const isExpanded = _expandedDatasets.has(ds.id);
+                const icon = ds.type === 'file' ? '📂' : ds.type === 'pivot' ? '📄' : '✨';
+                const canClose = ds.type !== 'file';
+                const chevron = isExpanded ? '▾' : '▸';
+                return `
+                <div class="ts-ds-item${isExpanded ? ' expanded' : ''}" data-ds-id="${ds.id}" data-ds-type="${ds.type}">
+                    <div class="ts-ds-header${isActive ? ' active' : ''}" onclick="toggleDatasetExpand('${ds.id}')">
+                        <span style="font-size:8px;color:#94a3b8;width:10px;">${chevron}</span>
+                        <span class="ts-ds-icon">${icon}</span>
+                        <span class="ts-ds-name" title="${ds.name}">${ds.name}</span>
+                        <span class="ts-ds-count">${ds.rowCount || ''}筆</span>
+                        ${canClose ? `<span class="ts-ds-close" onclick="event.stopPropagation();removeDataset('${ds.id}')">✕</span>` : ''}
+                    </div>
+                    <div class="ts-ds-tools">
+                        ${ds.type === 'file' && _toolVisible.pivot ? `<div class="ts-ds-tool${isActive && _activeTool === 'pivot' ? ' active' : ''}" onclick="event.stopPropagation();switchTool('pivot')">📊 樞紐分析表</div>` : ''}
+                        ${_toolVisible.cleaning ? `<div class="ts-ds-tool${isActive && _activeTool === 'cleaning' ? ' active' : ''}" onclick="event.stopPropagation();switchDataset('${ds.id}','cleaning')">🧹 資料清洗 <span id="cl-sidebar-info-${ds.id}" style="color:#22c55e;font-size:11px;">${ds._cleanInfo || ''}</span></div>` : ''}
+                        ${_toolVisible.mva ? `<div class="ts-ds-tool${isActive && _activeTool === 'mva' ? ' active' : ''}" onclick="event.stopPropagation();switchDataset('${ds.id}','mva')">🎯 多變量分析</div>` : ''}
+                        ${_toolVisible.gb ? `<div class="ts-ds-tool${isActive && _activeTool === 'gb' ? ' active' : ''}" onclick="event.stopPropagation();switchDataset('${ds.id}','gb')">⚖️ G/B 檢定</div>` : ''}
+                        ${_toolVisible.maineffect ? `<div class="ts-ds-tool${isActive && _activeTool === 'maineffect' ? ' active' : ''}" onclick="event.stopPropagation();switchDataset('${ds.id}','maineffect')">📊 主效應圖</div>` : ''}
+                        ${_toolVisible.rsm ? `<div class="ts-ds-tool${isActive && _activeTool === 'rsm' ? ' active' : ''}" onclick="event.stopPropagation();switchDataset('${ds.id}','rsm')">🌐 多項式特徵</div>` : ''}
+                        <div class="ts-ds-tool" onclick="event.stopPropagation();exportCleanedData('${ds.id}')" style="color:#059669;border-top:1px dashed #e2e8f0;margin-top:2px;padding-top:4px;">📤 匯至檔案管理</div>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        function _clClearVisiblePanels(includesPivot) {
+            // Pivot (only for root dataset)
+            if (includesPivot !== false) {
+                const rb = document.getElementById('result-body');
+                if (rb) rb.innerHTML = '<div class="result-empty"><div class="re-icon">📊</div><div class="re-text">清洗規則已更新，請重新執行分析</div></div>';
+                const ri = document.getElementById('result-info');
+                if (ri) ri.textContent = '';
+            }
+            // MVA
+            const mvaCanvas = document.getElementById('mva-canvas');
+            if (mvaCanvas) mvaCanvas.getContext('2d').clearRect(0, 0, mvaCanvas.width, mvaCanvas.height);
+            const mvaInfo = document.getElementById('mva-info');
+            if (mvaInfo) mvaInfo.textContent = '';
+            const mvaActionBar = document.getElementById('mva-action-bar');
+            if (mvaActionBar) mvaActionBar.style.display = 'none';
+            // G/B
+            gbRenderGroupChips();
+            const gbGrid = document.getElementById('gb-result-grid');
+            if (gbGrid) gbGrid.innerHTML = '';
+            const ttCanvas = document.getElementById('gb-target-trend');
+            if (ttCanvas) ttCanvas.getContext('2d').clearRect(0, 0, ttCanvas.width, ttCanvas.height);
+            const pcaCanvas = document.getElementById('gb-scatter');
+            if (pcaCanvas) pcaCanvas.getContext('2d').clearRect(0, 0, pcaCanvas.width, pcaCanvas.height);
+            const gbInfo = document.getElementById('gb-info');
+            if (gbInfo) gbInfo.textContent = '';
+        }
+
+        function switchTool(toolName) {
+            _activeTool = toolName;
+            if (toolName === 'pivot') {
+                // Set active dataset to original file
+                const orig = _datasets.find(d => d.id === 'original');
+                if (orig) _activeDataset = orig;
+                _expandedDatasets.add('original');
+            }
             document.getElementById('panel-pivot').style.display = toolName === 'pivot' ? 'contents' : 'none';
+            document.getElementById('panel-cleaning').style.display = toolName === 'cleaning' ? 'flex' : 'none';
             document.getElementById('panel-mva').style.display = toolName === 'mva' ? 'flex' : 'none';
             document.getElementById('panel-gb').style.display = toolName === 'gb' ? 'flex' : 'none';
+            document.getElementById('panel-maineffect').style.display = toolName === 'maineffect' ? 'flex' : 'none';
+            document.getElementById('panel-rsm').style.display = toolName === 'rsm' ? 'flex' : 'none';
+            if (toolName === 'maineffect' && currentFileId) meLoadColumns(toolName);
+            if (toolName === 'rsm' && currentFileId && typeof rsmInit === 'function') rsmInit();
+            // If cleaning rules changed, clear visible panels now
+            if (window._cleaningDirty) {
+                window._cleaningDirty = false;
+                _clClearVisiblePanels();
+            }
             if (toolName === 'gb' && currentFileId && !_gbScatterData) gbLoadScatter();
+            renderDatasetsSidebar();
         }
+
+        function switchDataset(dsId, tool) {
+            const ds = _datasets.find(d => d.id === dsId);
+            if (!ds) return;
+            const prevDs = _activeDataset;
+            _activeDataset = ds;
+            _activeTool = tool || 'mva';
+            _expandedDatasets.add(dsId);
+            // Deactivate pivot button
+            document.querySelectorAll('.ts-tool-item').forEach(item => {
+                item.classList.remove('active');
+            });
+            // Show the right panel
+            document.getElementById('panel-pivot').style.display = 'none';
+            document.getElementById('panel-cleaning').style.display = _activeTool === 'cleaning' ? 'flex' : 'none';
+            document.getElementById('panel-mva').style.display = _activeTool === 'mva' ? 'flex' : 'none';
+            document.getElementById('panel-gb').style.display = _activeTool === 'gb' ? 'flex' : 'none';
+            document.getElementById('panel-maineffect').style.display = _activeTool === 'maineffect' ? 'flex' : 'none';
+            document.getElementById('panel-rsm').style.display = _activeTool === 'rsm' ? 'flex' : 'none';
+            if (ds.fileId) currentFileId = ds.fileId;
+            if (_activeTool === 'maineffect' && currentFileId) meLoadColumns(_activeTool);
+            if (_activeTool === 'rsm' && currentFileId && typeof rsmInit === 'function') rsmInit();
+
+            // If cleaning rules changed, clear visible panels now
+            if (window._cleaningDirty) {
+                window._cleaningDirty = false;
+                _clClearVisiblePanels();
+            }
+
+            // Reload if dataset changed OR if this tool's data is from a different dataset
+            const clNeeded = !_clColumnStats || _clDatasetId !== dsId;
+            const mvaNeeded = _activeTool === 'mva' && (!_mvaT2Data || _mvaDatasetId !== dsId);
+            const gbNeeded = _activeTool === 'gb' && (!_gbScatterData || _gbDatasetId !== dsId);
+
+            if (clNeeded) {
+                _clDatasetId = dsId;
+                loadCleaningPanel().then(() => {
+                    renderDatasetsSidebar();
+                    syncCleanToggleUI();
+                });
+                if (_activeTool !== 'cleaning') {
+                    // silent background load — don't show panel
+                }
+            }
+
+            if (mvaNeeded) {
+                _mvaDatasetId = dsId;
+                // Clear existing MVA state
+                _mvaT2Data = null; _mvaSelected = [];
+                _mvaFilters.length = 0;
+                _mvaExcludedCols.length = 0;
+                if (typeof _mvaExcludedIndices !== 'undefined') _mvaExcludedIndices = [];
+                const mvaCanvas = document.getElementById('mva-canvas');
+                if (mvaCanvas) mvaCanvas.getContext('2d').clearRect(0, 0, mvaCanvas.width, mvaCanvas.height);
+                const mvaPanel = document.getElementById('mva-contrib-panel');
+                if (mvaPanel) mvaPanel.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#94a3b8;font-size:12px;">選取數據點後按「分析」查看貢獻度</div>';
+                document.getElementById('mva-action-bar').style.display = 'none';
+                document.getElementById('mva-info').textContent = '';
+                // Apply dataset filters
+                if (ds.filters && ds.filters.length > 0) {
+                    ds.filters.forEach(f => {
+                        if (f.value != null && String(f.value).trim()) {
+                            _mvaFilters.push({ col: f.col, keyword: '==' + String(f.value), excludeEmpty: false });
+                        }
+                    });
+                }
+                renderMvaFilterChips();
+                runMvaT2();
+            }
+            if (gbNeeded) {
+                _gbDatasetId = dsId;
+                _gbGroups = {};
+                _gbTestResult = null;
+                _gbScatterData = null;
+                gbRenderGroupChips();
+                document.getElementById('gb-result-grid').innerHTML = '';
+                document.getElementById('gb-info').textContent = ds.name;
+                gbLoadScatter();
+            }
+            renderDatasetsSidebar();
+        }
+
+        // ================================================================
+        // Data Cleaning
+        // ================================================================
+        let _clColumnStats = null;
+        let _clDatasetId = null;
+        let _clExcludedCols = new Set();
+        let _clKeepCols = new Set(); // Whitelist: override rule exclusions
+        let _clOutlierIndices = [];
+        let _clSelectedCol = null;
+        let _clPreviewOutliers = null;  // { indices: Set, label: string } — preview before confirm
+        let _clRestoring = false;       // true while restoring saved pipeline (skip clearing)
+
+        // ======== Pipeline ========
+        let _clPipeline = [];
+        let _clRuleIdCounter = 0;
+        let _clCheckFilter = 'all'; // 'all' | 'checked' | 'unchecked'
+
+        function clToggleCheckFilter() {
+            const cycle = { all: 'checked', checked: 'unchecked', unchecked: 'all' };
+            const icons = { all: '≡', checked: '✅', unchecked: '🚫' };
+            const tips  = { all: '無篩選', checked: '僅保留', unchecked: '僅排除' };
+            _clCheckFilter = cycle[_clCheckFilter] || 'all';
+            const btn = document.getElementById('cl-check-filter-btn');
+            if (btn) { btn.textContent = icons[_clCheckFilter]; btn.title = tips[_clCheckFilter]; }
+            renderCleaningColumns();
+        }
+
+        async function clAddRule(type, params, label) {
+            const id = 'r' + (++_clRuleIdCounter);
+            const rule = { id, type, params, label };
+            _clPipeline.push(rule);
+            
+            // Recompute this new rule specifically before syncing
+            await clRecomputeRule(rule);
+
+            clSyncPipelineState();
+            renderPipeline();
+            return id;
+        }
+
+        async function clRemoveRule(ruleId) {
+            if (window.event) window.event.stopPropagation();
+            const originalLength = _clPipeline.length;
+            // Remove the target rule by ID
+            _clPipeline = _clPipeline.filter(r => r.id !== ruleId);
+            if (_clPipeline.length === originalLength) return;
+
+            // Recompute all remaining rules to ensure state across the pipeline is clean
+            for (const rule of _clPipeline) {
+                await clRecomputeRule(rule);
+            }
+
+            clSyncPipelineState();
+            renderPipeline();
+            renderCleaningColumns();
+        }
+
+        async function clClearPipeline() {
+            _clPipeline = [];
+            clSyncPipelineState();
+            renderPipeline();
+            renderCleaningColumns();
+        }
+
+        // Compute aggregated result from all pipeline rules
+        function clComputePipelineResult() {
+            const excludedCols = new Set();
+            const excludedRows = new Set();
+
+            _clPipeline.forEach(rule => {
+                // Rule params (cols/indices) are already computed by clRecomputeRule
+                if (rule.type.startsWith('exclude_cols_')) {
+                    (rule.params.cols || []).forEach(c => excludedCols.add(c));
+                } else if (rule.type.startsWith('exclude_rows_')) {
+                    (rule.params.indices || []).forEach(i => excludedRows.add(i));
+                }
+            });
+            // Apply whitelist: remove kept columns from exclusion
+            _clKeepCols.forEach(c => excludedCols.delete(c));
+            return { excludedCols, excludedRows };
+        }
+
+        // Sync pipeline result to existing state (_clExcludedCols, _clOutlierIndices)
+        function clSyncPipelineState() {
+            const result = clComputePipelineResult();
+            _clExcludedCols = result.excludedCols;
+            _clOutlierIndices = [...result.excludedRows];
+            // Update summary
+            document.getElementById('cl-excluded-cols').textContent = _clExcludedCols.size;
+            document.getElementById('cl-outlier-rows').textContent = _clOutlierIndices.length;
+
+            // Auto-apply: save to dataset + push to MVA state
+            const excludedCols = [..._clExcludedCols];
+            if (_activeDataset) {
+                _activeDataset.excludedCols = excludedCols.slice();
+                _activeDataset.excludedIndices = _clOutlierIndices.slice();
+                _activeDataset.pipeline = JSON.parse(JSON.stringify(_clPipeline));
+            }
+            if (typeof _mvaExcludedCols !== 'undefined') {
+                _mvaExcludedCols.length = 0;
+                excludedCols.forEach(c => _mvaExcludedCols.push(c));
+            }
+            if (typeof _mvaExcludedIndices !== 'undefined') {
+                _mvaExcludedIndices = _clOutlierIndices.slice();
+            }
+
+            // Update green cleaned info + sidebar
+            const stats = _clColumnStats;
+            const infoEl = document.getElementById('cl-clean-info');
+            if (stats && infoEl) {
+                const totalCols = stats.columns ? stats.columns.length : 0;
+                const totalRows = stats.n_rows || 0;
+                const cleanCols = totalCols - _clExcludedCols.size;
+                const cleanRows = totalRows - _clOutlierIndices.length;
+                if (_clExcludedCols.size > 0 || _clOutlierIndices.length > 0) {
+                    infoEl.textContent = `→ ${cleanCols} 欄位, ${cleanRows} 筆`;
+                } else {
+                    infoEl.textContent = '';
+                }
+                const sidebarEl = document.getElementById('cl-sidebar-info-' + (_activeDataset ? _activeDataset.id : ''));
+                const cleanText = (_clExcludedCols.size > 0 || _clOutlierIndices.length > 0)
+                    ? `(${cleanCols}, ${cleanRows})` : '';
+                if (_activeDataset) _activeDataset._cleanInfo = cleanText;
+                if (sidebarEl) sidebarEl.textContent = cleanText;
+            }
+
+            // When cleaning rules change, clear analysis for THIS dataset (skip during restore)
+            if (_pivotCleanMode && !_clRestoring) {
+                const isRoot = !_activeDataset || _activeDataset.id === 'original';
+                if (isRoot) renderFieldList();
+                clearTimeout(window._clClearDebounce);
+                window._clClearDebounce = setTimeout(() => {
+                    // Nullify MVA/G/B data
+                    _mvaT2Data = null; _mvaSelected = [];
+                    _gbGroups = {}; _gbTestResult = null; _gbScatterData = null; _gbTargetValues = null;
+                    _meColsLoaded = false;
+                    if (typeof rsmResetCols === 'function') rsmResetCols();
+                    _clClearVisiblePanels(false); // clear MVA/G/B panels
+                    if (isRoot) {
+                        // Auto-re-run pivot instead of clearing
+                        autoRunPivot();
+                    }
+                }, 600);
+            }
+        }
+
+        function clGetRuleAffectedCount(rule) {
+            const stats = _clColumnStats;
+            if (!stats || !stats.columns) return 0;
+            switch (rule.type) {
+                case 'exclude_cols_missing':
+                    return stats.columns.filter(c => (c.pct_missing || 0) > rule.params.threshold && !_clKeepCols.has(c.col)).length;
+                case 'exclude_cols_manual':
+                case 'exclude_cols_constant':
+                case 'exclude_cols_lowcv':
+                    return (rule.params.cols || []).filter(c => !_clKeepCols.has(c)).length;
+                case 'exclude_rows_iqr':
+                case 'exclude_rows_algo':
+                case 'exclude_rows_brush':
+                case 'exclude_rows_missing':
+                    return (rule.params.indices || []).length;
+                default: return 0;
+            }
+        }
+
+        function clGetRuleBadge(type) {
+            switch (type) {
+                case 'exclude_cols_missing': return '<span class="cl-rule-badge cols">欄位</span>';
+                case 'exclude_cols_manual': return '<span class="cl-rule-badge cols">欄位</span>';
+                case 'exclude_cols_constant': return '<span class="cl-rule-badge cols">定值</span>';
+                case 'exclude_cols_lowcv': return '<span class="cl-rule-badge cols">CV</span>';
+                case 'exclude_rows_iqr': return '<span class="cl-rule-badge rows">樣本</span>';
+                case 'exclude_rows_algo': return '<span class="cl-rule-badge rows">演算</span>';
+                case 'exclude_rows_brush': return '<span class="cl-rule-badge brush">框選</span>';
+                case 'exclude_rows_missing': return '<span class="cl-rule-badge rows">缺值</span>';
+                default: return '';
+            }
+        }
+
+        function clSwitchTab(tab) {
+            document.querySelectorAll('.cl-tab').forEach(t => t.classList.remove('active'));
+            document.querySelector(`.cl-tab[data-tab="${tab}"]`)?.classList.add('active');
+            const rulesPage = document.getElementById('cl-tab-rules');
+            const resultPage = document.getElementById('cl-tab-result');
+            if (tab === 'rules') {
+                rulesPage.style.display = 'flex'; rulesPage.classList.add('active');
+                resultPage.style.display = 'none'; resultPage.classList.remove('active');
+            } else {
+                rulesPage.style.display = 'none'; rulesPage.classList.remove('active');
+                resultPage.style.display = 'flex'; resultPage.classList.add('active');
+            }
+        }
+
+        function renderPipeline() {
+            const body = document.getElementById('cl-pipe-body');
+            const tabCount = document.getElementById('cl-tab-rule-count');
+            if (!body) return;
+            if (tabCount) tabCount.textContent = `(${_clPipeline.length})`;
+
+            if (_clPipeline.length === 0) {
+                body.innerHTML = '<div class="cl-pipe-empty">尚無清洗規則</div>';
+                return;
+            }
+            let html = '';
+            _clPipeline.forEach((rule, i) => {
+                const count = clGetRuleAffectedCount(rule);
+                const badge = clGetRuleBadge(rule.type);
+                // Build editable label
+                let labelHtml = rule.label;
+                const rid = rule.id;
+                if (rule.type === 'exclude_cols_missing') {
+                    const t = rule.params.threshold;
+                    labelHtml = `排除欄位缺值 ><span class="cl-edit-val" onclick="clEditThreshold(event,'${rid}')" data-rule="${rid}">${t}</span>% (${count} 欄)`;
+                } else if (rule.type === 'exclude_cols_constant') {
+                    labelHtml = `排除定值欄位 (${count} 欄)`;
+                } else if (rule.type === 'exclude_cols_lowcv') {
+                    const t = rule.params.madThreshold;
+                    labelHtml = `排除低CV欄位 MAD/Median<<span class="cl-edit-val" onclick="clEditThreshold(event,'${rid}')" data-rule="${rid}">${t}</span> (${count} 欄)`;
+                } else if (rule.type === 'exclude_cols_manual') {
+                    labelHtml = `手動排除 ${count} 欄位`;
+                } else if (rule.type === 'exclude_rows_missing') {
+                    const t = rule.params.threshold;
+                    labelHtml = `排除樣本缺值 ><span class="cl-edit-val" onclick="clEditThreshold(event,'${rid}')" data-rule="${rid}">${t}</span>% (${count} 筆)`;
+                }
+                html += `<div class="cl-rule" data-rule-id="${rid}">
+                    <span class="rule-order">${i + 1}</span>
+                    ${badge}
+                    <span class="rule-label">${labelHtml}</span>
+                    <span class="rule-count">${count}</span>
+                    <button class="rule-del" onclick="event.stopPropagation(); clRemoveRule('${rid}')" title="移除">✕</button>
+                </div>`;
+            });
+            body.innerHTML = html;
+        }
+
+        function clEditThreshold(event, ruleId) {
+            event.stopPropagation();
+            const span = event.target;
+            const oldVal = span.textContent;
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.value = oldVal;
+            input.style.cssText = 'width:50px;font-size:inherit;font-weight:700;color:#4f46e5;border:1px solid #6366f1;border-radius:3px;padding:0 3px;text-align:center;background:#eef2ff;';
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+                if (e.key === 'Escape') { span.textContent = oldVal; span.style.display = ''; input.remove(); }
+            });
+            input.addEventListener('blur', () => {
+                const newVal = parseFloat(input.value);
+                if (isNaN(newVal) || newVal <= 0) {
+                    span.textContent = oldVal;
+                } else {
+                    clUpdateRuleThreshold(ruleId, newVal);
+                }
+                input.remove();
+                span.style.display = '';
+            });
+            span.style.display = 'none';
+            span.parentNode.insertBefore(input, span.nextSibling);
+            input.focus();
+            input.select();
+        }
+
+        async function clUpdateRuleThreshold(ruleId, newVal) {
+            const idx = _clPipeline.findIndex(r => r.id === ruleId);
+            if (idx < 0) return;
+            // Recompute this rule and all subsequent
+            for (let i = idx; i < _clPipeline.length; i++) {
+                const rule = _clPipeline[i];
+                if (i === idx) {
+                    // Update the edited rule's threshold
+                    if (rule.type === 'exclude_cols_missing') {
+                        rule.params.threshold = newVal;
+                    } else if (rule.type === 'exclude_cols_lowcv') {
+                        rule.params.madThreshold = newVal;
+                    } else if (rule.type === 'exclude_rows_missing') {
+                        rule.params.threshold = newVal;
+                    }
+                }
+                // Recompute affected items based on current pipeline state
+                await clRecomputeRule(rule);
+            }
+            renderPipeline();
+            clSyncPipelineState();
+            renderCleaningColumns();
+        }
+
+        async function clRecomputeRule(rule) {
+            if (!_clColumnStats) return;
+
+            // Compute which items (cols and rows) are excluded by PREVIOUS rules
+            const prevExcluded = new Set();
+            const prevRowIndices = new Set();
+            for (const r of _clPipeline) {
+                if (r.id === rule.id) break;
+                if (r.type.startsWith('exclude_cols_')) {
+                    (r.params.cols || []).forEach(c => prevExcluded.add(c));
+                } else if (r.type.startsWith('exclude_rows_')) {
+                    (r.params.indices || []).forEach(idx => prevRowIndices.add(idx));
+                }
+            }
+
+            // [RESPECT RULE ORDER] If there are previous row exclusions, 
+            // we should technically recalculate stats for column rules.
+            let stats = _clColumnStats;
+            const isColRule = rule.type === 'exclude_cols_missing' || rule.type === 'exclude_cols_constant' || rule.type === 'exclude_cols_lowcv';
+            if (isColRule && prevRowIndices.size > 0) {
+                try {
+                    const sid = getSessionId();
+                    const ds = _activeDataset;
+                    const dsFilters = (ds && ds.filters || []).map(f => ({
+                        column: f.col, keyword: '==' + String(f.value || ''), exclude_empty: false
+                    }));
+                    const resp = await fetch(`/api/data-prep/column-stats?session_id=${sid}`, {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ 
+                            file_id: currentFileId, 
+                            filters: dsFilters,
+                            exclude_indices: Array.from(prevRowIndices)
+                        })
+                    });
+                    if (resp.ok) stats = await resp.json();
+                } catch (e) {
+                    console.error("Failed to fetch intermediate context-aware stats", e);
+                }
+            }
+
+            switch (rule.type) {
+                case 'exclude_cols_missing': {
+                    const t = rule.params.threshold;
+                    const cols = stats.columns
+                        .filter(c => !prevExcluded.has(c.col) && (c.pct_missing || 0) > t)
+                        .map(c => c.col);
+                    rule.params.cols = cols;
+                    rule.label = `排除欄位缺值 >${t}% (${cols.length} 欄)`;
+                    break;
+                }
+                case 'exclude_cols_constant': {
+                    const cols = stats.columns
+                        .filter(c => !prevExcluded.has(c.col) && c.dtype === 'number' && (c.std === 0 || c.n_unique === 1))
+                        .map(c => c.col);
+                    rule.params.cols = cols;
+                    rule.label = `排除定值欄位 (${cols.length} 欄)`;
+                    break;
+                }
+                case 'exclude_cols_lowcv': {
+                    const t = rule.params.madThreshold;
+                    const cols = stats.columns
+                        .filter(c => {
+                            if (prevExcluded.has(c.col) || c.dtype !== 'number' || c.mad == null || c.median == null) return false;
+                            const madCv = c.mad / Math.abs(c.median || 1e-9);
+                            return madCv < t && c.std < 0.01;
+                        })
+                        .map(c => c.col);
+                    rule.params.cols = cols;
+                    rule.label = `排除低CV欄位 MAD/Median<${t} (${cols.length} 欄)`;
+                    break;
+                }
+                case 'exclude_rows_missing': {
+                    const t = rule.params.threshold;
+                    try {
+                        const sid = getSessionId();
+                        const ds = _activeDataset;
+                        const dsFilters = (ds && ds.filters || []).map(f => ({
+                            column: f.col, keyword: '==' + String(f.value || ''), exclude_empty: false
+                        }));
+                        const resp = await fetch(`/api/data-prep/row-missing?session_id=${sid}`, {
+                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ 
+                                file_id: currentFileId, 
+                                filters: dsFilters, 
+                                threshold: t,
+                                exclude_columns: Array.from(prevExcluded)
+                            })
+                        });
+                        if (resp.ok) {
+                            const result = await resp.json();
+                            rule.params.indices = result.indices || [];
+                            rule.params.threshold = t;
+                        }
+                    } catch (e) { console.error(e); }
+                    rule.label = `排除樣本缺值 >${t}% (${(rule.params.indices || []).length} 筆)`;
+                    break;
+                }
+            }
+        }
+
+        async function clPromptMissingCol() {
+            const v = prompt('欄位缺值門檻 (%)', '30');
+            if (v === null) return;
+            const n = parseFloat(v);
+            if (isNaN(n) || n <= 0 || n > 100) { alert('請輸入 0~100 的數字'); return; }
+            await clAddMissingColRule(n);
+        }
+        async function clPromptLowCv() {
+            const v = prompt('MAD 門檻 (低於此值排除)', '0.001');
+            if (v === null) return;
+            const n = parseFloat(v);
+            if (isNaN(n) || n < 0) { alert('請輸入有效數字'); return; }
+            await clAddLowCvRule(n);
+        }
+        async function clPromptMissingRow() {
+            const v = prompt('樣本缺值門檻 (%)', '50');
+            if (v === null) return;
+            const n = parseFloat(v);
+            if (isNaN(n) || n <= 0 || n > 100) { alert('請輸入 0~100 的數字'); return; }
+            await clAddMissingRowRule(n);
+        }
+
+        async function clAddMissingColRule(threshold) {
+            if (!_clColumnStats) { alert('請先載入資料'); return; }
+            const existing = _clPipeline.find(r => r.type === 'exclude_cols_missing' && r.params.threshold === threshold);
+            if (existing) { alert(`已有欄位缺值>${threshold}%規則`); return; }
+            const cols = _clColumnStats.columns.filter(c => (c.pct_missing || 0) > threshold).map(c => c.col);
+            await clAddRule('exclude_cols_missing', { threshold, cols }, `排除欄位缺值 >${threshold}% (${cols.length} 欄)`);
+            renderCleaningColumns();
+        }
+
+        async function clAddConstantRule() {
+            if (!_clColumnStats) { alert('請先載入資料'); return; }
+            if (_clPipeline.find(r => r.type === 'exclude_cols_constant')) { alert('已有定值排除規則'); return; }
+            await clAddRule('exclude_cols_constant', { cols: [] }, `排除定值欄位`);
+            renderCleaningColumns();
+        }
+
+        async function clAddLowCvRule(madThreshold) {
+            if (!_clColumnStats) { alert('請先載入資料'); return; }
+            if (_clPipeline.find(r => r.type === 'exclude_cols_lowcv')) { alert('已有低CV規則'); return; }
+            await clAddRule('exclude_cols_lowcv', { cols: [], madThreshold }, `排除低CV欄位 MAD/Median<${madThreshold} (配合 Std<0.01)`);
+            renderCleaningColumns();
+        }
+
+        async function clAddMissingRowRule(threshold) {
+            if (!_clColumnStats) { alert('請先載入資料'); return; }
+            if (_clPipeline.find(r => r.type === 'exclude_rows_missing')) { alert('已有樣本缺值規則'); return; }
+            // Compute from backend: rows where >threshold% of numeric columns are missing
+            const sid = getSessionId();
+            const ds = _activeDataset;
+            const dsFilters = (ds && ds.filters || []).map(f => ({
+                column: f.col, keyword: '==' + String(f.value || ''), exclude_empty: false
+            }));
+            try {
+                const excludedCols = [..._clExcludedCols];
+                const resp = await fetch(`/api/data-prep/row-missing?session_id=${sid}`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        file_id: currentFileId, 
+                        filters: dsFilters, 
+                        threshold,
+                        exclude_columns: excludedCols
+                    })
+                });
+                if (!resp.ok) throw new Error('Failed');
+                const result = await resp.json();
+                const indices = result.indices || [];
+                clAddRule('exclude_rows_missing', { indices, threshold }, `排除樣本缺值 >${threshold}% (${indices.length} 筆)`);
+            } catch (e) {
+                console.error(e);
+                alert('計算失敗');
+            }
+        }
+
+        async function clApplyDefaultRules() {
+            if (!_clColumnStats) return;
+            // 1. 欄位缺值 >30%
+            await clAddMissingColRule(30);
+            // 2. 定值排除
+            await clAddConstantRule();
+            // 3. 低CV MAD/Median<0.0001
+            await clAddLowCvRule(0.0001);
+            
+            // Force intermediate sync BEFORE querying backend for missing rows
+            // to ensure excluded columns from the first 3 rules are passed to the backend.
+            clSyncPipelineState();
+            
+            // 4. 樣本缺值 >50% (async — must await)
+            await clAddMissingRowRule(50);
+        }
+
+        async function loadCleaningPanel() {
+            if (!currentFileId) return;
+            _clExcludedCols.clear();
+            _clKeepCols.clear();
+            _clOutlierIndices = [];
+            _clSelectedCol = null;
+            _clPipeline = [];
+            _clRuleIdCounter = 0;
+            _clManualExcludedCols = new Set();
+            _clTrendState = null;
+            _clPreviewOutliers = null;
+            // Clear scatter chart from previous dataset
+            const trendCanvas = document.getElementById('cl-trend-canvas');
+            if (trendCanvas) {
+                const ctx = trendCanvas.getContext('2d');
+                ctx.clearRect(0, 0, trendCanvas.width, trendCanvas.height);
+            }
+            const sid = getSessionId();
+            const ds = _activeDataset;
+            const dsFilters = (ds && ds.filters || []).map(f => ({
+                column: f.col, keyword: '==' + String(f.value || ''), exclude_empty: false
+            }));
+            try {
+                document.getElementById('cl-col-body').innerHTML = '<div style="padding:24px;color:#94a3b8;font-size:12px;text-align:center;">⏳ 載入中...</div>';
+                const resp = await fetch(`/api/data-prep/column-stats?session_id=${sid}`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ file_id: currentFileId, filters: dsFilters })
+                });
+                if (!resp.ok) throw new Error('Failed');
+                _clColumnStats = await resp.json();
+                renderCleaningColumns();
+                // Restore saved pipeline or apply defaults on first visit
+                if (ds && ds.pipeline && ds.pipeline.length > 0) {
+                    _clPipeline = JSON.parse(JSON.stringify(ds.pipeline));
+                    _clRuleIdCounter = _clPipeline.reduce((max, r) => {
+                        const num = parseInt(String(r.id).replace(/\D/g, ''));
+                        return isNaN(num) ? max : Math.max(max, num);
+                    }, 0) + 1;
+                    _clManualExcludedCols = new Set(
+                        _clPipeline.filter(r => r.type === 'exclude_cols_manual')
+                            .flatMap(r => r.params.cols || [])
+                    );
+                    renderPipeline();
+                    _clRestoring = true;
+                    clSyncPipelineState();
+                    _clRestoring = false;
+                    renderCleaningColumns();
+                } else {
+                    renderPipeline();
+                    await clApplyDefaultRules();
+                }
+            } catch (e) {
+                console.error(e);
+                document.getElementById('cl-col-body').innerHTML = '<div style="padding:24px;color:#ef4444;font-size:12px;text-align:center;">載入失敗</div>';
+            }
+        }
+
+        let _clSortKey = null;   // 'col' | 'dtype' | 'pct_missing' | 'n_outlier' | 'std'
+        let _clSortAsc = true;
+        let _clSelectedIdx = -1; // keyboard nav index
+
+        function clSortBy(key) {
+            if (_clSortKey === key) _clSortAsc = !_clSortAsc;
+            else { _clSortKey = key; _clSortAsc = true; }
+            renderCleaningColumns();
+        }
+
+        function renderCleaningColumns() {
+            const stats = _clColumnStats;
+            if (!stats || !stats.columns) return;
+            let cols = stats.columns.slice(); // copy for sort
+            const nRows = stats.n_rows || 0;
+            document.getElementById('cl-badge-cols').textContent = `${cols.length} 欄位`;
+            document.getElementById('cl-badge-rows').textContent = `${nRows} 筆`;
+            document.getElementById('cl-total-cols').textContent = cols.length;
+            document.getElementById('cl-total-rows').textContent = nRows;
+            document.getElementById('cl-excluded-cols').textContent = _clExcludedCols.size;
+
+            // Sort
+            if (_clSortKey) {
+                cols.sort((a, b) => {
+                    let va = a[_clSortKey], vb = b[_clSortKey];
+                    if (va == null) va = _clSortAsc ? Infinity : -Infinity;
+                    if (vb == null) vb = _clSortAsc ? Infinity : -Infinity;
+                    if (typeof va === 'string') return _clSortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
+                    return _clSortAsc ? va - vb : vb - va;
+                });
+            }
+            // Update sort indicators
+            ['col', 'dtype', 'pct_missing', 'n_outlier', 'std'].forEach(k => {
+                const el = document.getElementById('cl-sort-' + k);
+                if (el) el.textContent = _clSortKey === k ? (_clSortAsc ? '▲' : '▼') : '';
+            });
+
+            let html = '';
+            // Pre-compute which rule excludes which column
+            const colRuleMap = {};
+            _clPipeline.forEach(rule => {
+                if (rule.type === 'exclude_cols_constant') {
+                    (rule.params.cols || []).forEach(c => { if (!colRuleMap[c]) colRuleMap[c] = '定值'; });
+                } else if (rule.type === 'exclude_cols_lowcv') {
+                    (rule.params.cols || []).forEach(c => { if (!colRuleMap[c]) colRuleMap[c] = 'CV'; });
+                } else if (rule.type === 'exclude_cols_missing') {
+                    const t = rule.params.threshold;
+                    if (_clColumnStats && _clColumnStats.columns) {
+                        _clColumnStats.columns.forEach(c => {
+                            if ((c.pct_missing || 0) > t && !colRuleMap[c.col]) colRuleMap[c.col] = '缺值';
+                        });
+                    }
+                } else if (rule.type === 'exclude_cols_manual') {
+                    (rule.params.cols || []).forEach(c => { if (!colRuleMap[c]) colRuleMap[c] = '手動'; });
+                }
+            });
+
+            cols.forEach((c, i) => {
+                const excluded = _clExcludedCols.has(c.col);
+                const kept = _clKeepCols.has(c.col);
+                // Filter by check state
+                if (_clCheckFilter === 'checked' && excluded) return;
+                if (_clCheckFilter === 'unchecked' && !excluded) return;
+                const hasOutlier = (c.n_outlier || 0) > 0;
+                const selected = i === _clSelectedIdx;
+                const pctMissing = c.pct_missing != null ? c.pct_missing.toFixed(1) : '-';
+                const typeLabel = c.dtype === 'number' ? '#' : 'Aa';
+                const stdVal = c.std != null ? c.std.toFixed(2) : '-';
+                // Rule tag for excluded columns
+                let ruleTag = '';
+                if (excluded && colRuleMap[c.col]) {
+                    const tagColors = { '定值': '#f59e0b', 'CV': '#8b5cf6', '缺值': '#ef4444', '手動': '#64748b' };
+                    const bg = tagColors[colRuleMap[c.col]] || '#94a3b8';
+                    ruleTag = `<span style="font-size:9px;color:#fff;background:${bg};padding:0 4px;border-radius:3px;margin-left:4px;flex-shrink:0;">${colRuleMap[c.col]}</span>`;
+                } else if (kept && colRuleMap[c.col]) {
+                    ruleTag = `<span style="font-size:9px;color:#16a34a;background:#dcfce7;padding:0 4px;border-radius:3px;margin-left:4px;flex-shrink:0;" title="白名單保留">🛡️</span>`;
+                }
+                html += `<div class="cl-col-row${excluded ? ' excluded' : ''}${hasOutlier ? ' has-outlier' : ''}${selected ? ' selected' : ''}" data-col-name="${escapeAttr(c.col)}">
+                    <div class="cl-cb${excluded ? '' : ' checked'}"></div>
+                    <span class="cl-col-name" title="${c.col}" style="display:flex;align-items:center;">${c.col}${ruleTag}</span>
+                    <span class="cl-col-type">${typeLabel}</span>
+                    <span class="cl-col-stat${parseFloat(pctMissing) > 20 ? ' bad' : ''}">${pctMissing}%</span>
+                    <span class="cl-col-stat${hasOutlier ? ' bad' : ''}">${c.n_outlier || 0}</span>
+                    <span class="cl-col-stat">${stdVal}</span>
+                </div>`;
+            });
+            document.getElementById('cl-col-body').innerHTML = html;
+
+            // Init event delegation + drag listeners once
+            const body = document.getElementById('cl-col-body');
+            if (!body._delegateInit) {
+                body.addEventListener('click', clBodyClickHandler);
+                body.addEventListener('dblclick', function(e) {
+                    const nameEl = e.target.closest('.cl-col-name');
+                    if (!nameEl) return;
+                    e.preventDefault();
+                    const isExpanded = nameEl.style.whiteSpace === 'normal';
+                    nameEl.style.whiteSpace = isExpanded ? '' : 'normal';
+                    nameEl.style.overflow = isExpanded ? '' : 'visible';
+                    nameEl.style.textOverflow = isExpanded ? '' : 'unset';
+                    nameEl.style.wordBreak = isExpanded ? '' : 'break-all';
+                });
+                body._delegateInit = true;
+            }
+            clInitDragListeners();
+
+            // Init keyboard listener once
+            const list = document.getElementById('cl-col-list');
+            if (!list._kbInit) {
+                list.addEventListener('keydown', clKeyNav);
+                list._kbInit = true;
+            }
+        }
+
+        // --- Shift key tracking (iframe-aware) ---
+        let _clShiftHeld = false;
+        let _clLastCheckCol = null;
+        function _clTrackShift(doc) {
+            try {
+                doc.addEventListener('keydown', e => { if (e.key === 'Shift') _clShiftHeld = true; }, true);
+                doc.addEventListener('keyup', e => { if (e.key === 'Shift') _clShiftHeld = false; }, true);
+            } catch(e) {} // cross-origin will fail silently
+        }
+        _clTrackShift(document);
+        try { if (window.parent && window.parent.document !== document) _clTrackShift(window.parent.document); } catch(e) {}
+        window.addEventListener('blur', () => { _clShiftHeld = false; });
+
+        // --- Drag-to-toggle state ---
+        let _clDragging = false;
+        let _clDragAction = null; // 'include' or 'exclude'
+        let _clDragVisited = new Set();
+        let _clManualExcludedCols = new Set();
+
+        function clSyncManualColRule() {
+            _clPipeline = _clPipeline.filter(r => r.type !== 'exclude_cols_manual');
+            if (_clManualExcludedCols.size > 0) {
+                const cols = [..._clManualExcludedCols];
+                _clPipeline.push({
+                    id: 'manual_cols',
+                    type: 'exclude_cols_manual',
+                    params: { cols },
+                    label: `手動排除 ${cols.length} 欄位`
+                });
+            }
+            clSyncPipelineState();
+            renderPipeline();
+        }
+
+        function clInitDragListeners() {
+            const body = document.getElementById('cl-col-body');
+            if (body._dragInit) return;
+            body._dragInit = true;
+
+            body.addEventListener('mousedown', e => {
+                const cb = e.target.closest('.cl-cb');
+                if (!cb) return;
+                e.preventDefault(); // prevent text selection
+                const row = cb.closest('.cl-col-row');
+                if (!row) return;
+                const colName = row.dataset.colName;
+                // Use _clExcludedCols (includes rule exclusions) not just _clManualExcludedCols
+                const wasExcluded = _clExcludedCols.has(colName);
+                _clDragAction = wasExcluded ? 'include' : 'exclude';
+                _clDragging = true;
+                _clDragVisited = new Set();
+                clApplyDragToggle(colName);
+            });
+
+            body.addEventListener('mousemove', e => {
+                if (!_clDragging) return;
+                const row = e.target.closest('.cl-col-row');
+                if (!row) return;
+                const colName = row.dataset.colName;
+                if (_clDragVisited.has(colName)) return;
+                clApplyDragToggle(colName);
+            });
+
+            document.addEventListener('mouseup', () => {
+                if (_clDragging) {
+                    _clDragging = false;
+                    clSyncManualColRule();
+                    renderCleaningColumns();
+                }
+                _clDragVisited = new Set();
+            });
+        }
+
+        function clApplyDragToggle(colName) {
+            _clDragVisited.add(colName);
+            // Check if column was excluded by a rule (not manually)
+            const isRuleExcluded = _clExcludedCols.has(colName) && !_clManualExcludedCols.has(colName);
+
+            if (_clDragAction === 'include') {
+                if (isRuleExcluded || _clKeepCols.has(colName) === false) {
+                    // Rule excluded → add to keep-list
+                    _clKeepCols.add(colName);
+                }
+                _clManualExcludedCols.delete(colName);
+            } else {
+                // Excluding: remove from keep-list if it was kept
+                _clKeepCols.delete(colName);
+                if (!isRuleExcluded) {
+                    _clManualExcludedCols.add(colName);
+                }
+            }
+            // Instant visual feedback: update this row's checkbox
+            const rows = document.querySelectorAll('#cl-col-body .cl-col-row');
+            rows.forEach(r => {
+                if (r.dataset.colName === colName) {
+                    const cb = r.querySelector('.cl-cb');
+                    if (cb) {
+                        if (_clDragAction === 'include') {
+                            cb.classList.add('checked');
+                            r.classList.remove('excluded');
+                        } else {
+                            cb.classList.remove('checked');
+                            r.classList.add('excluded');
+                        }
+                    }
+                }
+            });
+            document.getElementById('cl-excluded-cols').textContent = _clExcludedCols.size;
+        }
+
+        function clBodyClickHandler(e) {
+            if (_clDragVisited.size > 0) return; // Drag handler already handled this
+            const row = e.target.closest('.cl-col-row');
+            if (!row) return;
+            const colName = row.dataset.colName;
+            if (!colName) return;
+            const clickedCb = e.target.closest('.cl-cb');
+
+            if (clickedCb) {
+                // === CHECKBOX CLICK ===
+                const isShift = _clShiftHeld || e.shiftKey || e.ctrlKey;
+                const wasExcluded = _clExcludedCols.has(colName);
+                const wantInclude = wasExcluded;
+
+                // Determine if this column was excluded by a rule (not manually)
+                const ruleExcluded = wasExcluded && !_clManualExcludedCols.has(colName) && !_clKeepCols.has(colName);
+
+                if (ruleExcluded) {
+                    // Column was excluded by rule → add to keep-list to override
+                    _clKeepCols.add(colName);
+                } else if (_clKeepCols.has(colName)) {
+                    // Was kept by whitelist → remove from keep-list (re-exclude by rule)
+                    _clKeepCols.delete(colName);
+                } else {
+                    // Normal manual toggle
+                    if (_clManualExcludedCols.has(colName)) {
+                        _clManualExcludedCols.delete(colName);
+                    } else {
+                        _clManualExcludedCols.add(colName);
+                        _clKeepCols.delete(colName);
+                    }
+                }
+
+                if (isShift && _clLastCheckCol && _clLastCheckCol !== colName) {
+                    const rows = Array.from(document.querySelectorAll('#cl-col-body .cl-col-row'));
+                    const lastIdx = rows.findIndex(r => r.dataset.colName === _clLastCheckCol);
+                    const curIdx = rows.indexOf(row);
+                    if (lastIdx >= 0 && curIdx >= 0) {
+                        const lo = Math.min(lastIdx, curIdx);
+                        const hi = Math.max(lastIdx, curIdx);
+                        for (let i = lo; i <= hi; i++) {
+                            const name = rows[i].dataset.colName;
+                            if (wantInclude) {
+                                _clManualExcludedCols.delete(name);
+                                _clKeepCols.add(name);
+                            } else {
+                                _clManualExcludedCols.add(name);
+                                _clKeepCols.delete(name);
+                            }
+                        }
+                    }
+                }
+                _clLastCheckCol = colName;
+                clSyncManualColRule();
+                renderCleaningColumns();
+            } else {
+                // === ROW CLICK: select + load chart ===
+                const rows = document.querySelectorAll('#cl-col-body .cl-col-row');
+                const idx = Array.from(rows).indexOf(row);
+                _clSelectedIdx = idx;
+                rows.forEach(r => r.classList.remove('selected'));
+                row.classList.add('selected');
+                clClickColumn(colName);
+            }
+        }
+
+        function clSelectAllCols(include) {
+            if (!_clColumnStats || !_clColumnStats.columns) return;
+            _clColumnStats.columns.forEach(c => {
+                if (include) _clExcludedCols.delete(c.col);
+                else _clExcludedCols.add(c.col);
+            });
+            document.getElementById('cl-excluded-cols').textContent = _clExcludedCols.size;
+            renderCleaningColumns();
+        }
+
+        function clKeyNav(e) {
+            if (!_clColumnStats || !_clColumnStats.columns) return;
+            const rows = document.querySelectorAll('.cl-col-row');
+            if (rows.length === 0) return;
+
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                _clSelectedIdx = Math.min(_clSelectedIdx + 1, rows.length - 1);
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                _clSelectedIdx = Math.max(_clSelectedIdx - 1, 0);
+            } else if (e.key === 'Enter') {
+                if (_clSelectedIdx >= 0 && _clSelectedIdx < rows.length) {
+                    const row = rows[_clSelectedIdx];
+                    clRowClick(row);
+                }
+                return;
+            } else return;
+
+            // Update highlight
+            rows.forEach(r => r.classList.remove('selected'));
+            if (_clSelectedIdx >= 0 && _clSelectedIdx < rows.length) {
+                rows[_clSelectedIdx].classList.add('selected');
+                rows[_clSelectedIdx].scrollIntoView({ block: 'nearest' });
+                // Auto-click to load chart
+                const colName = rows[_clSelectedIdx].dataset.colName;
+                if (colName) clClickColumn(colName);
+            }
+        }
+
+
+
+        async function clClickColumn(colName) {
+            if (!_clColumnStats || !currentFileId) return;
+            _clSelectedCol = colName;
+            document.getElementById('cl-preview-title').textContent = colName + ' ⏳';
+            const sid = getSessionId();
+            const ds = _activeDataset;
+            const dsFilters = (ds && ds.filters || []).map(f => ({
+                column: f.col, keyword: '==' + String(f.value || ''), exclude_empty: false
+            }));
+            try {
+                const fid = (ds && ds.fileId) ? ds.fileId : currentFileId;
+                const resp = await fetch(`/api/data-prep/column-data?session_id=${sid}`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ file_id: fid, column: colName, filters: dsFilters })
+                });
+                if (!resp.ok) throw new Error('Failed');
+                const data = await resp.json();
+                document.getElementById('cl-preview-title').textContent = colName;
+                if (data.type === 'text') {
+                    clDrawTextBarChart(data, colName);
+                } else {
+                    const c = _clColumnStats.columns.find(x => x.col === colName);
+                    clDrawTrendChart(data, c);
+                }
+            } catch (e) {
+                console.error(e);
+                document.getElementById('cl-preview-title').textContent = colName + ' (載入失敗)';
+            }
+        }
+
+        function clDrawTextBarChart(data, colName) {
+            const canvas = document.getElementById('cl-trend-canvas');
+            const dpr = window.devicePixelRatio || 1;
+            const items = data.value_counts || [];
+            if (items.length === 0) return;
+
+            const barH = 22, gap = 4, padT = 8, padB = 8, padL = 12, padR = 50;
+            const totalH = padT + items.length * (barH + gap) + padB;
+            const w = canvas.offsetWidth;
+            const h = Math.max(canvas.offsetHeight, totalH);
+            canvas.width = w * dpr;
+            canvas.height = h * dpr;
+            canvas.style.height = h + 'px';
+            const ctx = canvas.getContext('2d');
+            ctx.scale(dpr, dpr);
+            ctx.clearRect(0, 0, w, h);
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(0, 0, w, h);
+
+            const maxCount = Math.max(...items.map(d => d.count), 1);
+            // Determine label width from longest name
+            ctx.font = '12px sans-serif';
+            const maxLabelW = Math.min(
+                Math.max(...items.map(d => ctx.measureText(d.name).width), 40) + 8,
+                w * 0.4
+            );
+            const barAreaW = w - padL - maxLabelW - 10 - padR;
+
+            items.forEach((d, i) => {
+                const y = padT + i * (barH + gap);
+                const barW = Math.max((d.count / maxCount) * barAreaW, 2);
+                const x0 = padL + maxLabelW + 10;
+
+                // Label
+                ctx.fillStyle = '#475569';
+                ctx.font = '12px sans-serif';
+                ctx.textAlign = 'right';
+                ctx.textBaseline = 'middle';
+                const label = d.name.length > 20 ? d.name.slice(0, 18) + '…' : d.name;
+                ctx.fillText(label, padL + maxLabelW, y + barH / 2);
+
+                // Bar
+                ctx.fillStyle = '#818cf8';
+                ctx.beginPath();
+                ctx.roundRect(x0, y + 2, barW, barH - 4, 4);
+                ctx.fill();
+
+                // Count text
+                ctx.fillStyle = '#64748b';
+                ctx.font = '11px sans-serif';
+                ctx.textAlign = 'left';
+                ctx.fillText(d.count.toString(), x0 + barW + 6, y + barH / 2);
+            });
+
+            // Summary
+            ctx.fillStyle = '#94a3b8';
+            ctx.font = '11px sans-serif';
+            ctx.textAlign = 'right';
+            ctx.fillText(`共 ${data.n_unique} 種值, ${data.n_total} 筆`, w - 8, h - 4);
+
+            // Reset trend state (no brush for text)
+            _clTrendState = null;
+        }
+
+        let _clTrendState = null; // {values, outliers, stats, pad, w, h, xOf, yOf}
+        let _clBrush = null; // {startX, startY, endX, endY}
+
+        function clDrawTrendChart(data, colStats) {
+            const canvas = document.getElementById('cl-trend-canvas');
+            const dpr = window.devicePixelRatio || 1;
+            const w = canvas.offsetWidth;
+            const h = canvas.offsetHeight;
+            canvas.width = w * dpr;
+            canvas.height = h * dpr;
+            const ctx = canvas.getContext('2d');
+            ctx.scale(dpr, dpr);
+            ctx.clearRect(0, 0, w, h);
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(0, 0, w, h);
+
+            const values = data.values || [];
+            const outliers = data.outliers || [];
+            const stats = data.stats || {};
+            if (values.length === 0) return;
+
+            // Filter out both null and non-finite values (NaN, Inf)
+            const validVals = values.filter(v => v !== null && isFinite(v));
+            if (validVals.length === 0) {
+                ctx.fillStyle = '#94a3b8'; ctx.font = '14px sans-serif'; ctx.textAlign = 'center';
+                ctx.fillText('無數值資料', w / 2, h / 2);
+                return;
+            }
+
+            const pad = { t: 16, b: 32, l: 56, r: 20 };
+            const cw = w - pad.l - pad.r;
+            const ch = h - pad.t - pad.b;
+
+            const vMin = Math.min(...validVals);
+            const vMax = Math.max(...validVals);
+            const range = Math.max(vMax - vMin, 1e-9);
+            const margin = range * 0.08;
+
+            const yOf = v => pad.t + (1 - (v - (vMin - margin)) / (range + 2 * margin)) * ch;
+            const xOf = i => pad.l + (i / Math.max(values.length - 1, 1)) * cw;
+
+            // Save state for brush
+            _clTrendState = { values, outliers, stats, pad, w, h, xOf, yOf, colName: _clSelectedCol };
+
+            // Y-axis grid
+            ctx.strokeStyle = '#f1f5f9'; ctx.lineWidth = 0.5;
+            const nTicks = 5;
+            for (let i = 0; i <= nTicks; i++) {
+                const v = vMin + (range * i / nTicks);
+                const y = yOf(v);
+                ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(w - pad.r, y); ctx.stroke();
+                ctx.fillStyle = '#64748b'; ctx.font = '12px sans-serif'; ctx.textAlign = 'right';
+                ctx.fillText(v.toFixed(1), pad.l - 6, y + 4);
+            }
+
+            // X-axis
+            ctx.fillStyle = '#64748b'; ctx.font = '12px sans-serif'; ctx.textAlign = 'center';
+            const xTicks = Math.min(values.length, 8);
+            for (let i = 0; i < xTicks; i++) {
+                const idx = Math.round(i * (values.length - 1) / Math.max(xTicks - 1, 1));
+                ctx.fillText(idx.toString(), xOf(idx), h - pad.b + 16);
+            }
+
+            // (UCL/LCL/Mean lines removed)
+
+            // Compute already-excluded set from pipeline
+            const pipelineResult = clComputePipelineResult();
+            const excludedRowSet = pipelineResult.excludedRows;
+            const previewSet = _clPreviewOutliers ? _clPreviewOutliers.indices : new Set();
+
+            // Plot dots: 3 colors
+            const rNorm = 4, rOut = 5, rExcl = 3.5;
+            for (let i = 0; i < values.length; i++) {
+                if (values[i] == null) continue;
+                const x = xOf(i), y = yOf(values[i]);
+                const isExcluded = excludedRowSet.has(i);
+                const isPreview = previewSet.has(i);
+                ctx.beginPath();
+                if (isExcluded) {
+                    // Gray — already excluded by pipeline
+                    ctx.arc(x, y, rExcl, 0, Math.PI * 2);
+                    ctx.fillStyle = '#94a3b8'; ctx.globalAlpha = 0.6;
+                } else if (isPreview) {
+                    // Red — algorithm preview (not committed)
+                    ctx.arc(x, y, rOut, 0, Math.PI * 2);
+                    ctx.fillStyle = '#ef4444'; ctx.globalAlpha = 1.0;
+                } else {
+                    // Blue — normal
+                    ctx.arc(x, y, rNorm, 0, Math.PI * 2);
+                    ctx.fillStyle = '#4f46e5'; ctx.globalAlpha = 0.8;
+                }
+                ctx.fill();
+            }
+            ctx.globalAlpha = 1.0;
+
+            // Draw brush overlay if exists
+            if (_clBrush) clDrawBrushOverlay();
+
+            // Init brush handlers (only once)
+            if (!canvas._brushInit) {
+                clInitBrush(canvas);
+                canvas._brushInit = true;
+            }
+        }
+
+        function clInitBrush(canvas) {
+            let dragging = false;
+            canvas.addEventListener('mousedown', e => {
+                if (!_clTrendState) return;
+                const rect = canvas.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                _clBrush = { startX: x, startY: y, endX: x, endY: y };
+                dragging = true;
+            });
+            canvas.addEventListener('mousemove', e => {
+                if (!dragging || !_clBrush) return;
+                const rect = canvas.getBoundingClientRect();
+                _clBrush.endX = e.clientX - rect.left;
+                _clBrush.endY = e.clientY - rect.top;
+                clRedrawWithBrush();
+            });
+            const endDrag = () => {
+                if (!dragging) return;
+                dragging = false;
+                if (_clBrush && _clTrendState) {
+                    clCountBrushSelected();
+                }
+            };
+            canvas.addEventListener('mouseup', endDrag);
+            canvas.addEventListener('mouseleave', endDrag);
+        }
+
+        function clRedrawWithBrush() {
+            if (!_clTrendState) return;
+            const s = _clTrendState;
+            clDrawTrendChart({ values: s.values, outliers: s.outliers, stats: s.stats }, null);
+        }
+
+        function clDrawBrushOverlay() {
+            if (!_clBrush) return;
+            const canvas = document.getElementById('cl-trend-canvas');
+            const dpr = window.devicePixelRatio || 1;
+            const ctx = canvas.getContext('2d');
+            ctx.save();
+            const x = Math.min(_clBrush.startX, _clBrush.endX);
+            const y = Math.min(_clBrush.startY, _clBrush.endY);
+            const bw = Math.abs(_clBrush.endX - _clBrush.startX);
+            const bh = Math.abs(_clBrush.endY - _clBrush.startY);
+            ctx.fillStyle = 'rgba(99, 102, 241, 0.08)';
+            ctx.strokeStyle = '#6366f1';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([3, 2]);
+            ctx.fillRect(x, y, bw, bh);
+            ctx.strokeRect(x, y, bw, bh);
+            ctx.setLineDash([]);
+            ctx.restore();
+        }
+
+        let _clBrushIndices = []; // indices of brush-selected points
+
+        function clCountBrushSelected() {
+            if (!_clBrush || !_clTrendState) return;
+            const s = _clTrendState;
+            const x1 = Math.min(_clBrush.startX, _clBrush.endX);
+            const x2 = Math.max(_clBrush.startX, _clBrush.endX);
+            const y1 = Math.min(_clBrush.startY, _clBrush.endY);
+            const y2 = Math.max(_clBrush.startY, _clBrush.endY);
+            
+            if (x2 - x1 < 5 && y2 - y1 < 5) {
+                _clBrush = null;
+                _clBrushIndices = [];
+                clRedrawWithBrush();
+                document.getElementById('cl-preview-title').textContent = s.colName || '';
+                return;
+            }
+
+            _clBrushIndices = [];
+            let outlierCount = 0;
+            for (let i = 0; i < s.values.length; i++) {
+                if (s.values[i] == null) continue;
+                const px = s.xOf(i), py = s.yOf(s.values[i]);
+                if (px >= x1 && px <= x2 && py >= y1 && py <= y2) {
+                    _clBrushIndices.push(i);
+                    if (s.outliers[i]) outlierCount++;
+                }
+            }
+            const total = _clBrushIndices.length;
+            const title = document.getElementById('cl-preview-title');
+            title.innerHTML = `${s.colName} — 框選 ${total} 筆 (異常 ${outlierCount}) <a href="#" onclick="clAddBrushRule(); return false;" style="color:#4f46e5;font-weight:600;margin-left:8px;">➕ 加入規則</a>`;
+        }
+
+        function clAddBrushRule() {
+            if (_clBrushIndices.length === 0) return;
+            const colName = _clTrendState ? _clTrendState.colName : '';
+            clAddRule('exclude_rows_brush',
+                { indices: _clBrushIndices.slice(), colName },
+                `框選排除 ${_clBrushIndices.length} 筆 (${colName})`
+            );
+            _clBrush = null;
+            _clBrushIndices = [];
+            clRedrawWithBrush();
+            document.getElementById('cl-preview-title').textContent = colName || '';
+        }
+
+        // ======== Algorithm Preview (Results Tab) ========
+        const _algoLabels = { iqr: 'IQR', mad_zscore: 'MAD Z', isolation_forest: 'IsoForest', lof: 'LOF' };
+
+        async function clPreviewAlgo() {
+            if (!currentFileId || !_clColumnStats) { alert('請先載入資料'); return; }
+            const method = document.getElementById('cl-algo-select').value;
+            let threshold = 3.0, contamination = 0.05;
+
+            if (method === 'iqr') {
+                const v = prompt('IQR 倍數 (越大越寬鬆)', '3.0');
+                if (v === null) return;
+                threshold = parseFloat(v);
+                if (isNaN(threshold) || threshold <= 0) { alert('請輸入正數'); return; }
+            } else if (method === 'mad_zscore') {
+                const v = prompt('Modified Z-score 門檻 (建議 3.0~5.0)', '3.5');
+                if (v === null) return;
+                threshold = parseFloat(v);
+                if (isNaN(threshold) || threshold <= 0) { alert('請輸入正數'); return; }
+            } else if (method === 'isolation_forest') {
+                const v = prompt('預期異常比例 (0~1，如 0.05 = 5%)', '0.05');
+                if (v === null) return;
+                contamination = parseFloat(v);
+                if (isNaN(contamination) || contamination <= 0 || contamination >= 1) { alert('請輸入 0~1'); return; }
+            } else if (method === 'lof') {
+                const v1 = prompt('K 鄰居數', '20');
+                if (v1 === null) return;
+                threshold = parseFloat(v1);
+                if (isNaN(threshold) || threshold < 2) { alert('K ≥ 2'); return; }
+                const v2 = prompt('預期異常比例 (0~1)', '0.05');
+                if (v2 === null) return;
+                contamination = parseFloat(v2);
+                if (isNaN(contamination) || contamination <= 0 || contamination >= 1) { alert('請輸入 0~1'); return; }
+            }
+
+            const sid = getSessionId();
+            const ds = _activeDataset;
+            const dsFilters = (ds && ds.filters || []).map(f => ({
+                column: f.col, keyword: '==' + String(f.value || ''), exclude_empty: false
+            }));
+            const numCols = _clColumnStats.columns
+                .filter(c => c.dtype === 'number' && !_clExcludedCols.has(c.col))
+                .map(c => c.col);
+            try {
+                const resp = await fetch(`/api/data-prep/scan-outliers?session_id=${sid}`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        file_id: currentFileId, filters: dsFilters,
+                        columns: numCols, method, threshold, contamination
+                    })
+                });
+                if (!resp.ok) throw new Error('Failed');
+                const result = await resp.json();
+                if (result.outlier_counts) {
+                    _clColumnStats.columns.forEach(c => {
+                        c.n_outlier = result.outlier_counts[c.col] || 0;
+                    });
+                }
+                const indices = result.outlier_indices || [];
+                const ml = _algoLabels[method] || method;
+                _clPreviewOutliers = {
+                    indices: new Set(indices),
+                    allIndices: indices,
+                    label: `${ml} 異常值 (${indices.length} 筆)`,
+                    type: 'exclude_rows_algo',
+                    params: { indices, columns: numCols, method, threshold, contamination }
+                };
+                document.getElementById('cl-preview-confirm').style.display = indices.length > 0 ? '' : 'none';
+                document.getElementById('cl-preview-clear').style.display = '';
+                const badge = document.getElementById('cl-badge-outliers');
+                badge.style.display = indices.length > 0 ? 'inline' : 'none';
+                badge.textContent = `${indices.length} 預覽`;
+                if (_clTrendState) {
+                    clDrawTrendChart({ values: _clTrendState.values, outliers: _clTrendState.outliers, stats: _clTrendState.stats });
+                }
+                renderCleaningColumns();
+            } catch (e) { console.error(e); alert('掃描失敗'); }
+        }
+
+        function clConfirmPreview() {
+            if (!_clPreviewOutliers) return;
+            const p = _clPreviewOutliers;
+            _clPipeline = _clPipeline.filter(r => r.type !== 'exclude_rows_iqr' && r.type !== 'exclude_rows_algo');
+            clAddRule(p.type, p.params, p.label);
+            clClearPreview();
+            renderCleaningColumns();
+        }
+
+        function clClearPreview() {
+            _clPreviewOutliers = null;
+            document.getElementById('cl-preview-confirm').style.display = 'none';
+            document.getElementById('cl-preview-clear').style.display = 'none';
+            const badge = document.getElementById('cl-badge-outliers');
+            badge.style.display = 'none';
+            if (_clTrendState) {
+                clDrawTrendChart({ values: _clTrendState.values, outliers: _clTrendState.outliers, stats: _clTrendState.stats });
+            }
+        }
+
+        async function clScanOutliers() {
+            if (!currentFileId || !_clColumnStats) return;
+            const sid = getSessionId();
+            const ds = _activeDataset;
+            const dsFilters = (ds && ds.filters || []).map(f => ({
+                column: f.col, keyword: '==' + String(f.value || ''), exclude_empty: false
+            }));
+            const numCols = _clColumnStats.columns
+                .filter(c => c.dtype === 'number' && !_clExcludedCols.has(c.col))
+                .map(c => c.col);
+            try {
+                const resp = await fetch(`/api/data-prep/scan-outliers?session_id=${sid}`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        file_id: currentFileId, filters: dsFilters,
+                        columns: numCols, method: 'iqr', threshold: 1.5
+                    })
+                });
+                if (!resp.ok) throw new Error('Failed');
+                const result = await resp.json();
+                // Update column stats with outlier counts
+                if (result.outlier_counts) {
+                    _clColumnStats.columns.forEach(c => {
+                        c.n_outlier = result.outlier_counts[c.col] || 0;
+                    });
+                }
+                const indices = result.outlier_indices || [];
+                const totalOutliers = indices.length;
+                const badge = document.getElementById('cl-badge-outliers');
+                badge.style.display = totalOutliers > 0 ? 'inline' : 'none';
+                badge.textContent = `${totalOutliers} 異常`;
+
+                // Remove existing IQR rules, add new one
+                _clPipeline = _clPipeline.filter(r => r.type !== 'exclude_rows_iqr');
+                if (totalOutliers > 0) {
+                    clAddRule('exclude_rows_iqr', { indices, columns: numCols, threshold: 1.5 },
+                        `IQR 異常值 (${totalOutliers} 筆)`);
+                }
+                renderCleaningColumns();
+            } catch (e) { console.error(e); alert('IQR 掃描失敗'); }
+        }
+
+        async function clApplyCleaning() {
+            if (!_clColumnStats) return;
+            if (_clPipeline.length === 0) {
+                alert('尚無清洗規則');
+                return;
+            }
+            const result = clComputePipelineResult();
+            const excludedCols = [...result.excludedCols];
+            const outlierIndices = [...result.excludedRows];
+
+            // Save to current dataset (in-place, no new file)
+            if (_activeDataset) {
+                _activeDataset.excludedCols = excludedCols.slice();
+                _activeDataset.excludedIndices = outlierIndices.slice();
+                _activeDataset.pipeline = JSON.parse(JSON.stringify(_clPipeline));
+            }
+
+            // Push to MVA state so downstream analysis uses cleaned data
+            if (typeof _mvaExcludedCols !== 'undefined') {
+                _mvaExcludedCols.length = 0;
+                excludedCols.forEach(c => _mvaExcludedCols.push(c));
+            }
+            if (typeof _mvaExcludedIndices !== 'undefined') {
+                _mvaExcludedIndices = outlierIndices.slice();
+            }
+
+            // Visual confirmation
+            const btn = document.querySelector('.cl-controls .cl-btn.primary');
+            if (btn) {
+                const orig = btn.innerHTML;
+                btn.innerHTML = '✅ 已套用';
+                btn.style.background = '#059669';
+                setTimeout(() => { btn.innerHTML = orig; btn.style.background = ''; }, 2000);
+            }
+
+            // Update summary
+            const totalCols = _clColumnStats.columns ? _clColumnStats.columns.length : 0;
+            const totalRows = _clColumnStats.n_rows || 0;
+            document.getElementById('cl-total-cols').textContent = totalCols;
+            document.getElementById('cl-excluded-cols').textContent = excludedCols.length;
+            document.getElementById('cl-total-rows').textContent = totalRows;
+            document.getElementById('cl-outlier-rows').textContent = outlierIndices.length;
+        }
+
 
         // ================================================================
         // MVA: Multivariate Analysis
@@ -2353,6 +4434,8 @@
             btn.disabled = true; btn.textContent = '⏳ 計算中...';
             try {
                 const sid = getSessionId();
+                const exclIdx = _pivotCleanMode ? [...new Set([..._mvaExcludedIndices, ...(_clOutlierIndices || [])])] : _mvaExcludedIndices;
+                const exclCols = _pivotCleanMode ? [...new Set([..._mvaExcludedCols, ...(_clExcludedCols || [])])] : _mvaExcludedCols;
                 const resp = await fetch(`/api/data-prep/t2-compute?session_id=${sid}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -2365,8 +4448,8 @@
                                 keyword: f.keyword || '',
                                 exclude_empty: f.excludeEmpty || false
                             })),
-                        exclude_indices: _mvaExcludedIndices,
-                        exclude_columns: _mvaExcludedCols
+                        exclude_indices: exclIdx,
+                        exclude_columns: exclCols
                     })
                 });
                 if (!resp.ok) {
@@ -2378,7 +4461,6 @@
                 _mvaT2Data = await resp.json();
                 _mvaSelected = [];
                 _mvaOrigMap = _mvaT2Data.original_indices || Array.from({ length: _mvaT2Data.t2_values.length }, (_, i) => i);
-                console.log('[MVA DEBUG] API returned:', _mvaT2Data.t2_values.length, 'points, excluded:', _mvaExcludedIndices.length, 'indices');
                 drawMvaChart();
                 document.getElementById('mva-action-bar').style.display = 'none';
                 document.getElementById('mva-info').textContent =
@@ -2523,13 +4605,94 @@
                 ctx.fillText(v.toFixed(1), pad.l - 6, y + 3);
             }
 
+            // X axis index ticks
+            ctx.fillStyle = CLR_AXIS; ctx.font = FONT; ctx.textAlign = 'center';
+            const xTicks = Math.min(vals.length, 10);
+            for (let i = 0; i < xTicks; i++) {
+                const idx = Math.round(i * (vals.length - 1) / Math.max(xTicks - 1, 1));
+                ctx.fillText(idx.toString(), xScale(idx), pad.t + ch + 14);
+            }
+
             // Axis labels
             ctx.textAlign = 'center';
             ctx.fillStyle = CLR_AXIS; ctx.font = FONT;
-            ctx.fillText('Index', pad.l + cw / 2, H - 5);
+            ctx.fillText('Index', pad.l + cw / 2, H - 3);
             ctx.save(); ctx.translate(12, pad.t + ch / 2); ctx.rotate(-Math.PI / 2);
             ctx.fillText('T² Value', 0, 0); ctx.restore();
         }
+
+        // === MVA Hover Tooltip ===
+        (function setupMvaTooltip() {
+            const canvas = document.getElementById('mva-canvas');
+            const wrap = document.getElementById('mva-chart-wrap');
+            let tipEl = document.createElement('div');
+            tipEl.id = 'mva-tooltip';
+            tipEl.style.cssText = 'position:absolute;pointer-events:none;display:none;background:rgba(15,23,42,.92);color:#fff;padding:6px 10px;border-radius:6px;font-size:11px;line-height:1.5;white-space:nowrap;z-index:100;box-shadow:0 2px 8px rgba(0,0,0,.25);';
+            wrap.appendChild(tipEl);
+
+            canvas.addEventListener('mousemove', e => {
+                if (_mvaBrush || !_mvaT2Data) { tipEl.style.display = 'none'; return; }
+                const rect = canvas.getBoundingClientRect();
+                const scaleX = canvas.width / rect.width;
+                const scaleY = canvas.height / rect.height;
+                const mx = (e.clientX - rect.left) * scaleX;
+                const my = (e.clientY - rect.top) * scaleY;
+
+                const vals = _mvaT2Data.t2_values;
+                const pad = _mvaPad;
+                const W = canvas.width, H = canvas.height;
+                const cw = W - pad.l - pad.r, ch = H - pad.t - pad.b;
+                const maxVal = Math.max(...vals, _mvaT2Data.ucl_99) * 1.15;
+                const xScale = i => pad.l + (i / Math.max(vals.length - 1, 1)) * cw;
+                const yScale = v => pad.t + ch - (v / maxVal) * ch;
+
+                // Find nearest point within 12px
+                let nearest = -1, minDist = 144; // 12² threshold
+                for (let i = 0; i < vals.length; i++) {
+                    const px = xScale(i), py = yScale(Math.min(vals[i], maxVal));
+                    const d = (mx - px) ** 2 + (my - py) ** 2;
+                    if (d < minDist) { minDist = d; nearest = i; }
+                }
+
+                if (nearest < 0) { tipEl.style.display = 'none'; return; }
+
+                // Build tooltip content
+                const t2Val = vals[nearest].toFixed(2);
+                const origIdx = _mvaOrigMap[nearest] ?? nearest;
+                let lines = [`<b>#${origIdx}</b>  T²=${t2Val}`];
+                const headCols = _mvaT2Data.head_cols || [];
+                const headData = _mvaT2Data.head_data || [];
+                if (headCols.length > 0 && headData[nearest]) {
+                    headCols.forEach((col, j) => {
+                        const val = headData[nearest][j] || '-';
+                        const short = val.length > 20 ? val.slice(0, 18) + '…' : val;
+                        lines.push(`<span style="color:#94a3b8">${col}:</span> ${short}`);
+                    });
+                }
+                tipEl.innerHTML = lines.join('<br>');
+                tipEl.style.display = 'block';
+
+                // Position tooltip with boundary awareness (flip if near right edge)
+                const tipW = tipEl.offsetWidth || 160;
+                const tipH = tipEl.offsetHeight || 80;
+                let tipX = (e.clientX - rect.left) + 14;
+                let tipY = (e.clientY - rect.top) - 10;
+                
+                // Flip horizontally if would go off-canvas or block view on the right
+                if (tipX + tipW > rect.width - 10) {
+                    tipX = (e.clientX - rect.left) - tipW - 14;
+                }
+                // Flip vertically if would go off-canvas top
+                if (tipY < 5) {
+                    tipY = (e.clientY - rect.top) + 20;
+                }
+
+                tipEl.style.left = tipX + 'px';
+                tipEl.style.top = tipY + 'px';
+            });
+
+            canvas.addEventListener('mouseleave', () => { tipEl.style.display = 'none'; });
+        })();
 
         // Brush selection on MVA canvas
         (function setupMvaBrush() {
@@ -2549,7 +4712,7 @@
                 wrap.appendChild(brushEl);
             });
 
-            canvas.addEventListener('mousemove', e => {
+            document.addEventListener('mousemove', e => {
                 if (!_mvaBrush || !brushEl) return;
                 const r = canvas.getBoundingClientRect();
                 const cx = e.clientX - r.left, cy = e.clientY - r.top;
@@ -2563,7 +4726,7 @@
                 brushEl.style.height = (h / scaleY) + 'px';
             });
 
-            canvas.addEventListener('mouseup', e => {
+            document.addEventListener('mouseup', e => {
                 if (!_mvaBrush || !_mvaT2Data) return;
                 const r = canvas.getBoundingClientRect();
                 const scaleX = canvas.width / r.width;
@@ -2600,6 +4763,14 @@
                     const old = wrap.querySelector('.mva-brush-rect');
                     if (old) old.remove();
                 }, 300);
+            });
+
+            // Cancel brush if cursor leaves canvas
+            canvas.addEventListener('mouseleave', () => {
+                if (_mvaBrush) {
+                    _mvaBrush = null;
+                    if (brushEl) { brushEl.remove(); brushEl = null; }
+                }
             });
         })();
 
@@ -2686,7 +4857,7 @@
                         })),
                         exclude_indices: _mvaExcludedIndices,
                         selected_indices: origSel,
-                        exclude_columns: _mvaExcludedCols,
+                        exclude_columns: _pivotCleanMode ? [...new Set([..._mvaExcludedCols, ...(_clExcludedCols || [])])] : _mvaExcludedCols,
                         top_n: 10
                     })
                 });
@@ -2924,6 +5095,26 @@
             if (!fid) return;
             currentFileId = fid;
 
+            // Reset datasets — create 'original' for this file
+            _datasets = [];
+            _activeDataset = null;
+            const fname = fileSelect.options[fileSelect.selectedIndex]?.text || fid;
+            addDataset({ id: 'original', name: fname, type: 'file', fileId: fid, rowCount: '' });
+            switchTool('pivot');
+
+            // Pre-load cleaning pipeline in background so sidebar shows cleaned counts
+            _activeDataset = _datasets.find(d => d.id === 'original');
+            _clDatasetId = 'original';
+            loadCleaningPanel().then(() => {
+                renderDatasetsSidebar();
+                // Auto-switch to clean mode
+                if (!_pivotCleanMode && _clExcludedCols && _clExcludedCols.size > 0) {
+                    _pivotCleanMode = true;
+                    syncCleanToggleUI();
+                    renderFieldList();
+                }
+            });
+
             // ── Clear all analysis state ──
             // G/B Test
             _gbGroups = {};
@@ -3125,12 +5316,63 @@
         // ================================================================
         // Field List Rendering
         // ================================================================
+        let _pivotCleanMode = false; // false=raw, true=cleaned
+
+        function syncCleanToggleUI() {
+            const ids = ['pivot-clean-toggle', 'mva-clean-toggle', 'gb-clean-toggle'];
+            ids.forEach(id => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                if (_pivotCleanMode) {
+                    el.textContent = '已清洗';
+                    el.style.background = '#bbf7d0'; el.style.color = '#15803d';
+                } else {
+                    el.textContent = '原始';
+                    el.style.background = '#fed7aa'; el.style.color = '#c2410c';
+                }
+            });
+        }
+
+        function pivotToggleCleanMode() {
+            _pivotCleanMode = !_pivotCleanMode;
+            syncCleanToggleUI();
+            renderFieldList();
+            // Reset + re-run active analysis
+            if (_activeTool === 'mva' && _mvaT2Data) {
+                _mvaSelected = [];
+                _mvaContribData = null;
+                const cp = document.getElementById('mva-contrib-panel');
+                if (cp) cp.innerHTML = '<div class="mva-contrib-title">選取數據點後按「分析」查看貢獻度</div>';
+                const sel = document.getElementById('mva-selection-bar');
+                if (sel) sel.style.display = 'none';
+                runMvaT2();
+            }
+            if (_activeTool === 'gb') {
+                _gbGroups = {};
+                _gbTestResult = null;
+                _gbBrush = null;
+                gbRenderGroupChips();
+                document.getElementById('gb-actions').style.display = 'none';
+                document.getElementById('gb-test-tabs').style.display = 'none';
+                document.getElementById('gb-result-grid').innerHTML = '';
+                gbLoadScatter();
+            }
+        }
+
+        // Init toggle UI on page load
+        document.addEventListener('DOMContentLoaded', syncCleanToggleUI);
+
         function renderFieldList() {
             const list = document.getElementById('field-list');
             const search = document.getElementById('field-search').value.toLowerCase();
 
-            const filtered = allFields.filter(f => f.name.toLowerCase().includes(search));
-            document.getElementById('field-count').textContent = allFields.length;
+            let filtered = allFields.filter(f => f.name.toLowerCase().includes(search));
+
+            // If clean mode, filter out excluded columns
+            if (_pivotCleanMode && _clExcludedCols && _clExcludedCols.size > 0) {
+                filtered = filtered.filter(f => !_clExcludedCols.has(f.name));
+            }
+            document.getElementById('field-count').textContent = filtered.length;
 
             // Determine which fields are already in use
             const usedSet = new Set([
@@ -3148,7 +5390,7 @@
                     draggable="true"
                     ondragstart="handleFieldDragStart(event, '${escapeAttr(f.name)}', '${f.dtype}')"
                     ondragend="handleFieldDragEnd(event)"
-                    onclick="showFieldCtxMenu(event, '${escapeAttr(f.name)}', '${f.dtype}')"
+                    
                     title="${f.name}">
                     <div class="field-icon ${iconClass}">${iconText}</div>
                     <div class="field-name">${f.name}</div>
@@ -3375,7 +5617,13 @@
             clearTimeout(_autoRunTimer);
             if (_abortCtrl) _abortCtrl.abort();
             const hasGrouping = pivotConfig.rows.length > 0 || pivotConfig.cols.length > 0;
-            if (!hasGrouping) return;
+            if (!hasGrouping) {
+                document.getElementById('result-body').innerHTML =
+                    '<div class="result-empty"><div class="re-icon">📋</div><div class="re-text">將欄位拖入上方區域</div><div class="re-hint">至少需要一個「列」或「欄」，加上一個「值」欄位</div></div>';
+                document.getElementById('result-info').textContent = '';
+                lastPivotData = null;
+                return;
+            }
             _autoRunTimer = setTimeout(() => _doPivotFetch([]), 200);
         }
 
@@ -3401,15 +5649,21 @@
 
             try {
                 const sid = getSessionId();
+                const ds = _activeDataset;
+                const dsFilters = (ds && ds.filters || []).map(f => ({
+                    column: f.col, keyword: '==' + String(f.value || ''), exclude_empty: false
+                }));
                 const payload = {
                     file_id: currentFileId,
                     rows: pivotConfig.rows,
                     columns: pivotConfig.cols,
                     values: pivotConfig.values.map(v => ({ column: v.name, aggfunc: v.agg })),
                     filters: pivotConfig.filters,
-                    targets: targets
+                    targets: targets,
+                    exclude_indices: _pivotCleanMode ? (_clOutlierIndices || []) : [],
+                    exclude_cols: _pivotCleanMode ? [...(_clExcludedCols || [])] : [],
+                    dataset_filters: dsFilters
                 };
-
                 const resp = await fetch(`/api/data-prep/pivot?session_id=${sid}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -3599,6 +5853,7 @@
             document.getElementById('result-info').textContent = `${filteredData.length} 筆結果`;
 
             let html = '<table><thead><tr>';
+            html += '<th style="width:32px;"></th>'; // expand button column
             visCols.forEach(h => {
                 const arrow = _sortCol === h ? (_sortDir === 1 ? ' ▲' : ' ▼') : ' ⇅';
                 html += `<th onclick="sortByColumn('${escapeAttr(h)}')" style="cursor:pointer;user-select:none;">${h}<span style="font-size:9px;opacity:0.5;margin-left:3px;">${arrow}</span></th>`;
@@ -3607,6 +5862,18 @@
             filteredData.forEach((row, _fi) => {
                 const rowIdx = lastPivotData.indexOf(row);
                 html += '<tr>';
+                // Match existing dataset by filter values (not positional index which may shift)
+                const rowCols = pivotConfig.rows.concat(pivotConfig.cols);
+                const dsName = rowCols.map(c => row[c] ?? '').join('/');
+                const existingDs = _datasets.find(d =>
+                    d.type === 'pivot' && d.filters &&
+                    d.filters.length === rowCols.length &&
+                    d.filters.every(f => String(row[f.col] ?? '') === String(f.value ?? ''))
+                );
+                html += `<td style="text-align:center;width:32px;">${existingDs
+                    ? `<span style="cursor:pointer;font-size:13px;color:#22c55e;" onclick="switchDataset('${existingDs.id}','cleaning')" title="切換到此資料集">✓</span>`
+                    : `<span style="cursor:pointer;font-size:13px;color:#94a3b8;" onclick="createDatasetFromPivot(${rowIdx})" title="展開為資料集">+</span>`
+                }</td>`;
                 visCols.forEach(h => {
                     if (h.startsWith('Top1 vs ')) {
                         const target = h.replace('Top1 vs ', '');
@@ -3652,8 +5919,61 @@
                 });
                 html += '</tr>';
             });
-            html += '</tbody></table>';
+            html += '</tbody>';
+            // Totals row
+            const groupCols = new Set([...pivotConfig.rows, ...pivotConfig.cols]);
+            html += '<tfoot><tr style="font-weight:600;background:#f1f5f9;border-top:2px solid #cbd5e1;">';
+            html += '<td></td>'; // expand col
+            visCols.forEach((h, i) => {
+                if (i === 0) {
+                    html += `<td>合計</td>`;
+                } else if (!groupCols.has(h) && !h.startsWith('Top1 vs ') && !h.startsWith('XGB Top1 vs ') && h !== '共同相關 Top1' && h !== 'T² 異常' && h !== 'Source Table') {
+                    const sum = filteredData.reduce((s, r) => {
+                        const v = r[h];
+                        return s + (typeof v === 'number' && isFinite(v) ? v : 0);
+                    }, 0);
+                    html += `<td>${Number.isInteger(sum) ? sum : sum.toFixed(2)}</td>`;
+                } else {
+                    html += '<td></td>';
+                }
+            });
+            html += '</tr></tfoot></table>';
             body.innerHTML = html;
+        }
+
+        // ================================================================
+        // Create dataset from pivot row
+        // ================================================================
+        function createDatasetFromPivot(rowIdx) {
+            const row = lastPivotData[rowIdx];
+            if (!row) return;
+            const rowCols = pivotConfig.rows.concat(pivotConfig.cols);
+            const filters = rowCols.map(c => ({ col: c, value: row[c] }));
+            // Check by filter values (not positional id which shifts)
+            const existingDs = _datasets.find(d =>
+                d.type === 'pivot' && d.filters &&
+                d.filters.length === filters.length &&
+                d.filters.every((f, i) => f.col === filters[i].col && String(f.value ?? '') === String(filters[i].value ?? ''))
+            );
+            if (existingDs) {
+                switchDataset(existingDs.id, 'cleaning');
+                return;
+            }
+            const dsName = rowCols.map(c => row[c] ?? '').join('/');
+            const nRows = row['ID'] || row['Source Table'] || '';
+            // Use content-based unique ID to avoid positional conflicts
+            const dsId = 'pivot_' + filters.map(f => String(f.value ?? '').replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '_')).join('__');
+            addDataset({
+                id: dsId,
+                name: dsName || `子集 ${rowIdx + 1}`,
+                type: 'pivot',
+                fileId: currentFileId,
+                rowCount: nRows,
+                filters,
+                pivotRowIdx: rowIdx
+            });
+            switchDataset(dsId, 'cleaning');
+            renderSortedTable(); // refresh buttons
         }
 
         // ================================================================
@@ -3933,6 +6253,67 @@
         }
 
         // ================================================================
+        // Export Cleaned Data
+        // ================================================================
+        async function exportCleanedData(dsId) {
+            const ds = _datasets.find(d => d.id === dsId);
+            if (!ds) return;
+            const fileId = ds.fileId || currentFileId;
+            if (!fileId) { alert('尚未選擇檔案'); return; }
+
+            // Generate default name
+            const fname = fileSelect.options[fileSelect.selectedIndex]?.text || fileId;
+            const baseName = fname.replace(/\.csv$/i, '');
+            const ts = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
+            const defaultName = `${baseName}_cleaned_${ts}`;
+
+            const userInput = prompt('請輸入匯出檔案名稱（不含 .csv）:', defaultName);
+            if (userInput === null) return; // cancelled
+            const finalName = (userInput.trim() || defaultName);
+
+            const excludeCols = ds.excludedCols || [...(_clExcludedCols || [])];
+            const excludeIndices = ds.excludedIndices || (_clOutlierIndices || []);
+
+            // Collect dataset filters
+            const dsFilters = [];
+            if (ds.filters && ds.filters.length > 0) {
+                ds.filters.forEach(f => {
+                    if (f.value != null && String(f.value).trim()) {
+                        dsFilters.push({ column: f.col, keyword: '==' + String(f.value), exclude_empty: false });
+                    }
+                });
+            }
+
+            const body = {
+                file_id: fileId,
+                exclude_cols: excludeCols,
+                exclude_indices: excludeIndices,
+                dataset_filters: dsFilters,
+                custom_name: finalName,
+            };
+
+            try {
+                const sid = getSessionId();
+                const resp = await fetch(`/api/data-prep/export-cleaned?session_id=${sid}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                });
+                if (!resp.ok) {
+                    const err = await resp.json();
+                    alert('匯出失敗: ' + (err.detail || resp.statusText));
+                    return;
+                }
+                const result = await resp.json();
+                alert(`✅ 匯出成功！\n檔案: ${result.filename}\n原始: ${result.original_shape[0]} 筆 × ${result.original_shape[1]} 欄\n清洗後: ${result.cleaned_shape[0]} 筆 × ${result.cleaned_shape[1]} 欄`);
+                // Refresh file list
+                await loadFileList();
+            } catch (e) {
+                alert('匯出失敗: ' + e.message);
+            }
+        }
+
+        // ================================================================
         // G/B Test
         // ================================================================
         let _gbScatterData = null;
@@ -3963,10 +6344,24 @@
         async function gbLoadScatter() {
             if (!currentFileId) return;
             const sid = getSessionId();
+            // Build filters from active dataset
+            const dsFilters = (_activeDataset && _activeDataset.filters || []).map(f => ({
+                column: f.col, keyword: '==' + String(f.value || ''), exclude_empty: false
+            }));
+            
+            const exclIdx = typeof _clOutlierIndices !== 'undefined' ? _clOutlierIndices : [];
+            const clExclCols = typeof _clExcludedCols !== 'undefined' ? _clExcludedCols : [];
+            const combinedExclCols = [...new Set([..._gbExcludedCols, ...clExclCols])];
+
             try {
                 const resp = await fetch(`/api/data-prep/pca-scatter?session_id=${sid}`, {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ file_id: currentFileId, filters: [], exclude_indices: [], exclude_cols: _gbExcludedCols })
+                    body: JSON.stringify({
+                        file_id: currentFileId, 
+                        filters: dsFilters,
+                        exclude_indices: exclIdx,
+                        exclude_cols: combinedExclCols
+                    })
                 });
                 if (!resp.ok) return;
                 _gbScatterData = await resp.json();
@@ -4023,10 +6418,10 @@
             const gnames = Object.keys(_gbGroups);
 
             // Draw ungrouped points
-            ctx.fillStyle = '#cbd5e1';
+            ctx.fillStyle = '#64748b';
             scores.forEach((_, i) => {
                 if (groupedMap[i] === undefined) {
-                    ctx.beginPath(); ctx.arc(sx(i), sy(i), 2, 0, Math.PI * 2); ctx.fill();
+                    ctx.beginPath(); ctx.arc(sx(i), sy(i), 3, 0, Math.PI * 2); ctx.fill();
                 }
             });
 
@@ -4050,6 +6445,7 @@
         }
 
         // Scatter brush selection
+        let _gbBrushSnapshot = null; // cached ImageData for fast brush overlay
         function gbInitBrush() {
             const canvas = document.getElementById('gb-scatter');
             if (!canvas) return;
@@ -4057,24 +6453,44 @@
             canvas.addEventListener('mousedown', e => {
                 if (!_gbScatterData) return;
                 const rect = canvas.getBoundingClientRect();
-                startX = e.clientX - rect.left; startY = e.clientY - rect.top;
+                const scaleX = canvas.width / rect.width;
+                const scaleY = canvas.height / rect.height;
+                startX = (e.clientX - rect.left) * scaleX;
+                startY = (e.clientY - rect.top) * scaleY;
                 dragging = true; _gbBrush = null;
+                // Snapshot current scatter (without brush) for fast overlay
+                const ctx = canvas.getContext('2d');
+                _gbBrushSnapshot = ctx.getImageData(0, 0, canvas.width, canvas.height);
             });
             canvas.addEventListener('mousemove', e => {
                 if (!dragging) return;
                 const rect = canvas.getBoundingClientRect();
-                const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+                const scaleX = canvas.width / rect.width;
+                const scaleY = canvas.height / rect.height;
+                const mx = (e.clientX - rect.left) * scaleX;
+                const my = (e.clientY - rect.top) * scaleY;
                 _gbBrush = {
                     x: Math.min(startX, mx), y: Math.min(startY, my),
                     w: Math.abs(mx - startX), h: Math.abs(my - startY)
                 };
-                gbDrawScatter();
+                // Fast overlay: restore snapshot then draw brush rect
+                const ctx = canvas.getContext('2d');
+                if (_gbBrushSnapshot) ctx.putImageData(_gbBrushSnapshot, 0, 0);
+                ctx.strokeStyle = '#6366f1'; ctx.lineWidth = 1.5;
+                ctx.setLineDash([4, 3]);
+                ctx.strokeRect(_gbBrush.x, _gbBrush.y, _gbBrush.w, _gbBrush.h);
+                ctx.setLineDash([]);
+                ctx.fillStyle = 'rgba(99,102,241,0.08)';
+                ctx.fillRect(_gbBrush.x, _gbBrush.y, _gbBrush.w, _gbBrush.h);
             });
-            canvas.addEventListener('mouseup', e => {
-                if (!dragging || !_gbBrush || _gbBrush.w < 5 || _gbBrush.h < 5) {
-                    dragging = false; _gbBrush = null; return;
+            // Listen on document so mouseup outside canvas still completes
+            document.addEventListener('mouseup', e => {
+                if (!dragging) return;
+                if (!_gbBrush || _gbBrush.w < 5 || _gbBrush.h < 5) {
+                    dragging = false; _gbBrush = null; _gbBrushSnapshot = null;
+                    gbDrawScatter(); return;
                 }
-                dragging = false;
+                dragging = false; _gbBrushSnapshot = null;
                 const pad = _gbPad, w = canvas.width, h = canvas.height;
                 const cw = w - pad.l - pad.r, ch = h - pad.t - pad.b;
                 const scores = _gbScatterData.scores;
@@ -4095,6 +6511,13 @@
                 if (selected.length > 0) {
                     gbAddGroup(selected);
                 } else {
+                    gbDrawScatter();
+                }
+            });
+            // Cancel brush if cursor leaves canvas
+            canvas.addEventListener('mouseleave', () => {
+                if (dragging) {
+                    dragging = false; _gbBrush = null; _gbBrushSnapshot = null;
                     gbDrawScatter();
                 }
             });
@@ -4147,7 +6570,15 @@
 
         async function gbLoadTargetCols() {
             if (!currentFileId) return;
-            _gbTargetOptions = (allFields || []).map(f => f.name);
+            let cols = allFields || [];
+            if (typeof _clExcludedCols !== 'undefined' && (_clExcludedCols.size > 0 || _clExcludedCols.length > 0)) {
+                cols = cols.filter(f => {
+                    if (_clExcludedCols instanceof Set) return !_clExcludedCols.has(f.name);
+                    if (Array.isArray(_clExcludedCols)) return !_clExcludedCols.includes(f.name);
+                    return true;
+                });
+            }
+            _gbTargetOptions = cols.map(f => f.name);
             gbTargetSearch();
         }
 
@@ -4185,9 +6616,11 @@
             const trendCanvas = document.getElementById('gb-target-trend');
             if (trendCanvas) trendCanvas.getContext('2d').clearRect(0, 0, trendCanvas.width, trendCanvas.height);
             // Clear groups
-            _gbGroups = [];
+            _gbGroups = {};
             document.getElementById('gb-group-chips').innerHTML = '';
             document.getElementById('gb-actions').style.display = 'none';
+            // Repopulate dropdown with all columns
+            gbTargetSearch();
         }
 
         // Close dropdown when clicking outside
@@ -4200,14 +6633,20 @@
 
         let _gbTargetValues = null;
         let _gbTargetBrush = null;
-        const _gbTargetPad = { t: 15, b: 20, l: 45, r: 10 };
+        const _gbTargetPad = { t: 15, b: 32, l: 45, r: 10 };
 
         async function gbTargetChanged() {
             const col = document.getElementById('gb-target-select').value;
             if (!col || !currentFileId) return;
             const sid = getSessionId();
+            const dsFilters = (_activeDataset && _activeDataset.filters || []).map(f => ({
+                column: f.col, keyword: '==' + String(f.value || ''), exclude_empty: false
+            }));
+            const exclIdx = typeof _clOutlierIndices !== 'undefined' ? _clOutlierIndices : [];
+            const exclCols = typeof _clExcludedCols !== 'undefined' ? _clExcludedCols : [];
             try {
-                const resp = await fetch(`/api/data-prep/gb-column-values?session_id=${sid}&file_id=${currentFileId}&column=${encodeURIComponent(col)}`);
+                const url = `/api/data-prep/gb-column-values?session_id=${sid}&file_id=${currentFileId}&column=${encodeURIComponent(col)}&filters=${encodeURIComponent(JSON.stringify(dsFilters))}&exclude_indices=${encodeURIComponent(JSON.stringify(exclIdx))}&exclude_cols=${encodeURIComponent(JSON.stringify(exclCols))}`;
+                const resp = await fetch(url);
                 if (!resp.ok) return;
                 _gbTargetValues = await resp.json();
                 gbDrawTargetTrend();
@@ -4256,7 +6695,14 @@
                 const v = vMax - (totalRange / 4) * i;
                 ctx.fillText(v.toFixed(dec), pad.l - 4, pad.t + (ch / 4) * i + 3);
             }
-            // X-axis
+            // X-axis index ticks
+            ctx.fillStyle = '#94a3b8'; ctx.font = '9px sans-serif'; ctx.textAlign = 'center';
+            const xTicks = Math.min(n, 8);
+            for (let ti = 0; ti < xTicks; ti++) {
+                const idx = Math.round(ti * (n - 1) / Math.max(xTicks - 1, 1));
+                ctx.fillText(idx.toString(), sx(idx), pad.t + ch + 12);
+            }
+            // X-axis label
             ctx.textAlign = 'center';
             ctx.fillText(data.column, pad.l + cw / 2, h - 2);
 
@@ -4268,7 +6714,7 @@
             const gnames = Object.keys(_gbGroups);
 
             // Draw line
-            ctx.strokeStyle = '#cbd5e1'; ctx.lineWidth = 1;
+            ctx.strokeStyle = '#64748b'; ctx.lineWidth = 1.5;
             ctx.beginPath();
             let started = false;
             vals.forEach((v, i) => {
@@ -4345,13 +6791,21 @@
             const grid = document.getElementById('gb-result-grid');
             grid.innerHTML = '<div style="padding:20px;color:#94a3b8;">⏳ 計算中...</div>';
             document.getElementById('gb-test-tabs').style.display = 'flex';
+            const dsFilters = (_activeDataset && _activeDataset.filters || []).map(f => ({
+                column: f.col, keyword: '==' + String(f.value || ''), exclude_empty: false
+            }));
+            const exclIdx = typeof _clOutlierIndices !== 'undefined' ? _clOutlierIndices : [];
+            const clExclCols = typeof _clExcludedCols !== 'undefined' ? _clExcludedCols : [];
+            const combinedExclCols = [...new Set([..._gbExcludedCols, ...clExclCols])];
+
             const body = {
                 file_id: currentFileId,
-                filters: [], exclude_indices: [],
+                filters: dsFilters,
+                exclude_indices: exclIdx,
                 groups: _gbGroups,
                 test_method: _gbTestMethod,
                 top_n: 10,
-                exclude_cols: _gbExcludedCols
+                exclude_cols: combinedExclCols
             };
             if (_gbTestMethod === 'fisherz') {
                 const fzMode = document.getElementById('gb-fz-mode').value;
@@ -4369,7 +6823,8 @@
                 });
                 if (!resp.ok) {
                     const err = await resp.json().catch(() => ({}));
-                    grid.innerHTML = `<div style="color:#ef4444;">❌ 檢定失敗：${err.detail || resp.statusText}</div>`;
+                    const msg = typeof err.detail === 'string' ? err.detail : (err.detail ? JSON.stringify(err.detail) : resp.statusText);
+                    grid.innerHTML = `<div style="color:#ef4444;">❌ 檢定失敗：${msg}</div>`;
                     return;
                 }
                 _gbTestResult = await resp.json();
@@ -4717,6 +7172,156 @@
         }
 
         // ================================================================
+        // GB Tooltips (PCA scatter + Target trend)
+        // ================================================================
+        function gbInitPcaTooltip() {
+            const canvas = document.getElementById('gb-scatter');
+            const wrap = document.getElementById('gb-pca-area');
+            if (!canvas || !wrap) return;
+            const tip = document.createElement('div');
+            tip.style.cssText = 'position:absolute;pointer-events:none;display:none;background:rgba(15,23,42,.92);color:#fff;padding:6px 10px;border-radius:6px;font-size:11px;line-height:1.5;white-space:nowrap;z-index:100;box-shadow:0 2px 8px rgba(0,0,0,.25);';
+            wrap.appendChild(tip);
+
+            canvas.addEventListener('mousemove', e => {
+                if (_gbBrush || !_gbScatterData) { tip.style.display = 'none'; return; }
+                const data = _gbScatterData;
+                const rect = canvas.getBoundingClientRect();
+                const scaleX = canvas.width / rect.width;
+                const scaleY = canvas.height / rect.height;
+                const mx = (e.clientX - rect.left) * scaleX;
+                const my = (e.clientY - rect.top) * scaleY;
+
+                const pad = _gbPad;
+                const w = canvas.width, h = canvas.height;
+                const cw = w - pad.l - pad.r, ch = h - pad.t - pad.b;
+                const scores = data.scores;
+                const xs = scores.map(s => s[0]), ys = scores.map(s => s[1]);
+                const xMin = Math.min(...xs), xMax = Math.max(...xs);
+                const yMin = Math.min(...ys), yMax = Math.max(...ys);
+                const xRange = xMax - xMin || 1, yRange = yMax - yMin || 1;
+
+                let nearest = -1, minDist = 144;
+                for (let i = 0; i < scores.length; i++) {
+                    const px = pad.l + ((xs[i] - xMin) / xRange) * cw;
+                    const py = pad.t + ((yMax - ys[i]) / yRange) * ch;
+                    const d = (mx - px) ** 2 + (my - py) ** 2;
+                    if (d < minDist) { minDist = d; nearest = i; }
+                }
+                if (nearest < 0) { tip.style.display = 'none'; return; }
+
+                let lines = [`<b>#${nearest}</b>  PC1=${scores[nearest][0]}, PC2=${scores[nearest][1]}`];
+                const headCols = data.head_cols || [];
+                const headData = data.head_data || [];
+                if (headCols.length > 0 && headData[nearest]) {
+                    headCols.forEach((col, j) => {
+                        const val = headData[nearest][j] || '-';
+                        const short = val.length > 20 ? val.slice(0, 18) + '…' : val;
+                        lines.push(`<span style="color:#94a3b8">${col}:</span> ${short}`);
+                    });
+                }
+                tip.innerHTML = lines.join('<br>');
+                tip.style.display = 'block';
+                
+                // Position logic with right-edge boundary check
+                let tipLeft = (e.clientX - rect.left) + 14;
+                if (tipLeft + tip.offsetWidth > rect.width) {
+                    tipLeft = (e.clientX - rect.left) - tip.offsetWidth - 14; 
+                }
+                tip.style.left = tipLeft + 'px';
+                tip.style.top = ((e.clientY - rect.top) - 10) + 'px';
+            });
+            canvas.addEventListener('mouseleave', () => { tip.style.display = 'none'; });
+        }
+
+        function gbInitTargetTooltip() {
+            const canvas = document.getElementById('gb-target-trend');
+            const wrap = document.getElementById('gb-target-area');
+            if (!canvas || !wrap) return;
+            const tip = document.createElement('div');
+            tip.style.cssText = 'position:absolute;pointer-events:none;display:none;background:rgba(15,23,42,.92);color:#fff;padding:6px 10px;border-radius:6px;font-size:11px;line-height:1.5;white-space:nowrap;z-index:100;box-shadow:0 2px 8px rgba(0,0,0,.25);';
+            wrap.appendChild(tip);
+
+            canvas.addEventListener('mousemove', e => {
+                if (_gbTargetBrush || !_gbTargetValues) { tip.style.display = 'none'; return; }
+                const data = _gbTargetValues;
+                const vals = data.values;
+                const rect = canvas.getBoundingClientRect();
+                const scaleX = canvas.width / rect.width;
+                const scaleY = canvas.height / rect.height;
+                const mx = (e.clientX - rect.left) * scaleX;
+                const my = (e.clientY - rect.top) * scaleY;
+
+                const pad = _gbTargetPad;
+                const w = canvas.width, h = canvas.height;
+                const cw = w - pad.l - pad.r, ch = h - pad.t - pad.b;
+                const numVals = vals.filter(v => v !== null);
+                const vMin = Math.min(...numVals), vMax = Math.max(...numVals);
+                const vRange = vMax - vMin || 1;
+
+                let nearest = -1, minDist = 144;
+                for (let i = 0; i < vals.length; i++) {
+                    if (vals[i] === null) continue;
+                    const px = pad.l + (i / Math.max(vals.length - 1, 1)) * cw;
+                    const py = pad.t + ch - ((vals[i] - vMin) / vRange) * ch;
+                    const d = (mx - px) ** 2 + (my - py) ** 2;
+                    if (d < minDist) { minDist = d; nearest = i; }
+                }
+                if (nearest < 0) { tip.style.display = 'none'; return; }
+
+                const colName = data.column || 'Value';
+                let lines = [`<b>#${nearest}</b>  ${colName} = ${vals[nearest] ?? '-'}`];
+                const headCols = data.head_cols || [];
+                const headData = data.head_data || [];
+                if (headCols.length > 0 && headData[nearest]) {
+                    headCols.forEach((col, j) => {
+                        const val = headData[nearest][j] || '-';
+                        const short = val.length > 20 ? val.slice(0, 18) + '…' : val;
+                        lines.push(`<span style="color:#94a3b8">${col}:</span> ${short}`);
+                    });
+                }
+                tip.innerHTML = lines.join('<br>');
+                tip.style.display = 'block';
+                
+                // Position logic with right-edge boundary check
+                let tipLeft = (e.clientX - rect.left) + 14;
+                if (tipLeft + tip.offsetWidth > rect.width) {
+                    tipLeft = (e.clientX - rect.left) - tip.offsetWidth - 14; 
+                }
+                tip.style.left = tipLeft + 'px';
+                tip.style.top = ((e.clientY - rect.top) - 10) + 'px';
+            });
+            canvas.addEventListener('mouseleave', () => { tip.style.display = 'none'; });
+        }
+        // ================================================================
+        // Main Effect - Column Loading & Placeholder
+        // ================================================================
+        let _meColsLoaded = false;
+
+        function meLoadColumns(tool) {
+            if (_meColsLoaded && tool) return;
+            const numFields = allFields.filter(f => f.dtype === 'number' || f.dtype === 'float64' || f.dtype === 'int64' || f.dtype === 'float' || f.dtype === 'int');
+            const cols = numFields.length > 0 ? numFields : allFields;
+
+            const meTarget = document.getElementById('me-target');
+            const meFactor = document.getElementById('me-factor');
+            if (meTarget && meTarget.options.length <= 1) {
+                cols.forEach(f => {
+                    meTarget.add(new Option(f.name, f.name));
+                    meFactor.add(new Option(f.name, f.name));
+                });
+            }
+            _meColsLoaded = true;
+        }
+
+        function meRun() {
+            const target = document.getElementById('me-target').value;
+            const factor = document.getElementById('me-factor').value;
+            if (!target || !factor) { alert('請選擇 Target 與 Factor'); return; }
+            if (target === factor) { alert('Target 和 Factor 不能相同'); return; }
+            document.getElementById('me-chart-area').innerHTML = '<div style="text-align:center;color:#94a3b8;"><div style="font-size:20px;">🚧</div><div>主效應圖功能開發中...</div></div>';
+        }
+
+        // ================================================================
         // Init
         // ================================================================
         document.addEventListener('DOMContentLoaded', () => {
@@ -4724,8 +7329,13 @@
             renderAllChips();
             gbInitBrush();
             gbInitTargetBrush();
+            gbInitPcaTooltip();
+            gbInitTargetTooltip();
         });
     </script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+    <script src="/static/js/rsm_manager.js"></script>
+    <script src="/static/js/maineffect_manager.js"></script>
 </body>
 
 </html>

@@ -6,7 +6,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from pydantic import BaseModel
-from typing import List, Dict
+from typing import List, Dict, Optional
 import asyncio
 import logging
 import io
@@ -63,6 +63,12 @@ class PivotValueSpec(BaseModel):
     aggfunc: str = "mean"
 
 
+class DatasetFilter(BaseModel):
+    column: str
+    keyword: str = ""
+    exclude_empty: bool = False
+
+
 class PivotRequest(BaseModel):
     file_id: str
     rows: List[str] = []
@@ -70,6 +76,9 @@ class PivotRequest(BaseModel):
     values: List[PivotValueSpec] = []
     filters: List[str] = []
     targets: List[str] = []  # 多目標參數
+    exclude_indices: List[int] = []
+    exclude_cols: List[str] = []
+    dataset_filters: List[DatasetFilter] = []
 
 
 @router.post("/pivot")
@@ -88,6 +97,28 @@ async def run_pivot_table(
 
         df = pd.read_csv(csv_path, encoding="utf-8-sig")
         df.columns = [str(c).strip() for c in df.columns]
+
+        # Apply dataset-level filters (split dataset conditions)
+        for f in request.dataset_filters:
+            kw = (f.keyword or "").strip()
+            if kw and f.column in df.columns:
+                if kw.startswith("=="):
+                    df = df[df[f.column].astype(str).str.strip() == kw[2:]]
+                else:
+                    df = df[df[f.column].astype(str).str.contains(kw, case=False, na=False)]
+        if request.dataset_filters:
+            df = df.reset_index(drop=True)
+
+        # Apply cleaning exclusions AFTER filters (indices are in filtered space)
+        if request.exclude_indices:
+            valid = [i for i in request.exclude_indices if 0 <= i < len(df)]
+            if valid:
+                df = df.drop(index=valid).reset_index(drop=True)
+
+        if request.exclude_cols:
+            drop_cols = [c for c in request.exclude_cols if c in df.columns]
+            if drop_cols:
+                df = df.drop(columns=drop_cols)
 
         # Validate
         all_cols = set(df.columns)
@@ -276,8 +307,8 @@ async def run_pivot_table(
                         try:
                             from xgboost import XGBRegressor
 
-                            y = group_df[target_col].values
-                            X = group_df[num_cols].fillna(0).values
+                            y = group_df[target_col].values.astype(float)
+                            X = group_df[num_cols].replace([np.inf, -np.inf], np.nan).fillna(0).values
                             # Drop NaN/Inf in target
                             valid_mask = np.isfinite(y)
                             if valid_mask.sum() < 10:
@@ -415,6 +446,10 @@ async def run_pivot_table(
                         n_anom = sum(1 for v in t2_vals if v > ucl99)
 
                         row_data["_t2_label"] = f"{n_anom}/{n_obs}"
+                        # First 3 columns for tooltip
+                        g_all_cols = [c for c in group_df.columns if c != "__orig_idx__"]
+                        g_head_cols = g_all_cols[:3]
+                        g_head_data = group_df[g_head_cols].astype(str).values.tolist() if g_head_cols else []
                         row_data["_t2_data"] = {
                             "t2_values": t2_vals,
                             "ucl_99": ucl99,
@@ -423,6 +458,8 @@ async def run_pivot_table(
                             "pca_used": pca_used,
                             "n_anomalies": n_anom,
                             "n_obs": n_obs,
+                            "head_cols": g_head_cols,
+                            "head_data": g_head_data,
                         }
                     except Exception as exc:
                         logger.warning(f"T2 failed: {exc}")
@@ -750,8 +787,15 @@ async def generate_xgb_chart(
 
         from xgboost import XGBRegressor
 
-        y = group_df[request.target].values
-        X = group_df[num_cols].fillna(0).values
+        y = group_df[request.target].values.astype(float)
+        X = group_df[num_cols].replace([np.inf, -np.inf], np.nan).fillna(0).values
+
+        # Drop NaN/Inf in target
+        valid_mask = np.isfinite(y)
+        if valid_mask.sum() < 5:
+            raise HTTPException(400, detail="有效樣本數不足 (target 含 NaN/Inf)")
+        y = y[valid_mask]
+        X = X[valid_mask]
 
         model = XGBRegressor(
             n_estimators=50,
@@ -989,6 +1033,417 @@ async def generate_corr_matrix(
 # ========== 工具函數 ==========
 
 
+# ========== Data Cleaning APIs ==========
+
+
+
+class ClFilter(BaseModel):
+    column: str
+    keyword: str = ""
+    exclude_empty: bool = False
+
+
+class ColumnStatsRequest(BaseModel):
+    file_id: str
+    filters: List[ClFilter] = []
+    exclude_indices: List[int] = []
+
+
+class ScanOutliersRequest(BaseModel):
+    file_id: str
+    filters: List[ClFilter] = []
+    columns: List[str] = []
+    method: str = "iqr"  # iqr | mad_zscore | isolation_forest | lof
+    threshold: float = 1.5
+    contamination: float = 0.05  # for isolation_forest / lof
+
+
+@router.post("/column-stats")
+async def column_stats(
+    req: ColumnStatsRequest,
+    session_id: str = Query("default"),
+    analysis_service=Depends(get_intelligent_analysis_service),
+):
+    """Return per-column statistics for the cleaning panel."""
+    import pandas as pd
+    import numpy as np
+
+    logger.info(f"[DataPrep] Column stats requested for file: {req.file_id}")
+    uploads_dir = analysis_service.base_dir / session_id / "uploads"
+    csv_path = _find_csv(uploads_dir, req.file_id, analysis_service)
+    
+    # Use low_memory=False to avoid DtypeWarning and potentially speed up with large columns
+    df = pd.read_csv(csv_path, encoding="utf-8-sig", low_memory=False)
+    
+    def to_finite(val):
+        """Ensure float is JSON serializable (NaN/Inf -> None)"""
+        try:
+            if val is None: return None
+            f_val = float(val)
+            if not np.isfinite(f_val): return None
+            return f_val
+        except (ValueError, TypeError):
+            return None
+
+    # Apply cleaning exclusions FIRST (indices in full-CSV space)
+    if req.exclude_indices:
+        valid = [i for i in req.exclude_indices if 0 <= i < len(df)]
+        if valid:
+            df = df.drop(index=valid).reset_index(drop=True)
+
+    # Apply filters
+    for f in req.filters:
+        if f.exclude_empty and f.column in df.columns:
+            df = df[df[f.column].notna() & (df[f.column].astype(str).str.strip() != "")]
+        kw = (f.keyword or "").strip()
+        if kw and f.column in df.columns:
+            col_series = df[f.column]
+            import re as _re
+            m = _re.match(r"^([><!=]+)\s*([\d.]+)$", kw)
+            if m and pd.api.types.is_numeric_dtype(col_series):
+                op, val = m.group(1), float(m.group(2))
+                col_num = pd.to_numeric(col_series, errors="coerce")
+                if op == ">": df = df[col_num > val]
+                elif op == ">=": df = df[col_num >= val]
+                elif op == "<": df = df[col_num < val]
+                elif op == "<=": df = df[col_num <= val]
+                elif op in ("=", "=="): df = df[col_num == val]
+                elif op == "!=": df = df[col_num != val]
+            else:
+                if kw.startswith("=="):
+                    df = df[df[f.column].astype(str).str.strip() == kw[2:]]
+                else:
+                    df = df[df[f.column].astype(str).str.contains(kw, case=False, na=False)]
+    df = df.reset_index(drop=True)
+
+    n_rows = len(df)
+    columns = []
+    for col in df.columns:
+        series = df[col]
+        n_missing = int(series.isna().sum())
+        pct_missing = round(n_missing / n_rows * 100, 1) if n_rows > 0 else 0
+        is_numeric = pd.api.types.is_numeric_dtype(series)
+        entry = {
+            "col": col,
+            "dtype": "number" if is_numeric else "text",
+            "n_total": n_rows,
+            "n_missing": n_missing,
+            "pct_missing": pct_missing,
+            "n_outlier": 0,
+        }
+        if is_numeric:
+            num = pd.to_numeric(series, errors="coerce").dropna()
+            if len(num) > 0:
+                q1, q3 = float(np.percentile(num, 25)), float(np.percentile(num, 75))
+                iqr = q3 - q1
+                n_outlier = int(((num < q1 - 1.5 * iqr) | (num > q3 + 1.5 * iqr)).sum())
+                mad_val = float(np.median(np.abs(num - np.median(num))))
+                entry.update({
+                    "q1": to_finite(round(q1, 4)),
+                    "q3": to_finite(round(q3, 4)),
+                    "min": to_finite(round(float(num.min()), 4)),
+                    "max": to_finite(round(float(num.max()), 4)),
+                    "mean": to_finite(round(float(num.mean()), 4)),
+                    "median": to_finite(round(float(num.median()), 4)),
+                    "std": to_finite(round(float(num.std()), 4)),
+                    "mad": to_finite(round(mad_val, 6)),
+                    "n_unique": int(num.nunique()),
+                    "n_outlier": n_outlier,
+                })
+        columns.append(entry)
+
+    return {"n_rows": n_rows, "columns": columns}
+
+
+class RowMissingRequest(BaseModel):
+    file_id: str
+    filters: List[ClFilter] = []
+    threshold: float = 50  # percentage
+    exclude_columns: List[str] = []
+
+
+@router.post("/row-missing")
+async def row_missing(
+    req: RowMissingRequest,
+    session_id: str = Query("default"),
+    analysis_service=Depends(get_intelligent_analysis_service),
+):
+    """Return row indices where missing percentage exceeds threshold."""
+    import pandas as pd
+
+    uploads_dir = analysis_service.base_dir / session_id / "uploads"
+    csv_path = _find_csv(uploads_dir, req.file_id, analysis_service)
+    df = pd.read_csv(csv_path, encoding="utf-8-sig")
+
+    for f in req.filters:
+        if f.exclude_empty and f.column in df.columns:
+            df = df[df[f.column].notna() & (df[f.column].astype(str).str.strip() != "")]
+        kw = (f.keyword or "").strip()
+        if kw and f.column in df.columns:
+            if kw.startswith("=="):
+                df = df[df[f.column].astype(str).str.strip() == kw[2:]]
+            else:
+                df = df[df[f.column].astype(str).str.contains(kw, case=False, na=False)]
+    df = df.reset_index(drop=True)
+
+    check_cols = [c for c in df.columns if c not in req.exclude_columns and c != "__orig_idx__"]
+
+    if len(check_cols) == 0:
+        return {"indices": [], "n_total": len(df), "n_excluded": 0}
+
+    # Match column-stats logic: NaN or empty string
+    missing_counts = pd.Series(0, index=df.index)
+    for col in check_cols:
+        s = df[col]
+        col_missing = s.isna()
+        if s.dtype == "object":
+            col_missing = col_missing | (s.astype(str).str.strip() == "")
+        missing_counts += col_missing.astype(int)
+
+    missing_pct = (missing_counts / len(check_cols)) * 100
+    indices = missing_pct[missing_pct > req.threshold].index.tolist()
+
+    return {"indices": indices, "n_total": len(df), "n_excluded": len(indices)}
+
+
+@router.post("/scan-outliers")
+async def scan_outliers(
+    req: ScanOutliersRequest,
+    session_id: str = Query("default"),
+    analysis_service=Depends(get_intelligent_analysis_service),
+):
+    """Scan for outliers: iqr, mad_zscore, isolation_forest, lof."""
+    import pandas as pd
+    import numpy as np
+
+    uploads_dir = analysis_service.base_dir / session_id / "uploads"
+    csv_path = _find_csv(uploads_dir, req.file_id, analysis_service)
+    df = pd.read_csv(csv_path, encoding="utf-8-sig")
+
+    # Apply filters
+    for f in req.filters:
+        if f.exclude_empty and f.column in df.columns:
+            df = df[df[f.column].notna() & (df[f.column].astype(str).str.strip() != "")]
+        kw = (f.keyword or "").strip()
+        if kw and f.column in df.columns:
+            col_series = df[f.column]
+            import re as _re
+            m = _re.match(r"^([><!=]+)\s*([\d.]+)$", kw)
+            if m and pd.api.types.is_numeric_dtype(col_series):
+                op, val = m.group(1), float(m.group(2))
+                col_num = pd.to_numeric(col_series, errors="coerce")
+                if op == ">":
+                    df = df[col_num > val]
+                elif op == ">=":
+                    df = df[col_num >= val]
+                elif op == "<":
+                    df = df[col_num < val]
+                elif op == "<=":
+                    df = df[col_num <= val]
+                elif op in ("=", "=="):
+                    df = df[col_num == val]
+                elif op == "!=":
+                    df = df[col_num != val]
+            else:
+                if kw.startswith("=="):
+                    df = df[df[f.column].astype(str).str.strip() == kw[2:]]
+                else:
+                    df = df[df[f.column].astype(str).str.contains(kw, case=False, na=False)]
+    df = df.reset_index(drop=True)
+
+    method = req.method or "iqr"
+    threshold = req.threshold
+    contamination = min(max(req.contamination, 0.001), 0.5)
+    valid_cols = [c for c in req.columns if c in df.columns]
+    outlier_counts = {}
+    all_outlier_rows = set()
+
+    if method == "iqr":
+        for col in valid_cols:
+            series = pd.to_numeric(df[col], errors="coerce")
+            valid = series.dropna()
+            if len(valid) < 4:
+                outlier_counts[col] = 0
+                continue
+            q1, q3 = float(np.percentile(valid, 25)), float(np.percentile(valid, 75))
+            iqr = q3 - q1
+            if iqr == 0:
+                outlier_counts[col] = 0
+                continue
+            lo, hi = q1 - threshold * iqr, q3 + threshold * iqr
+            mask = (series < lo) | (series > hi)
+            idx = series[mask].index.tolist()
+            outlier_counts[col] = len(idx)
+            all_outlier_rows.update(idx)
+
+    elif method == "mad_zscore":
+        for col in valid_cols:
+            series = pd.to_numeric(df[col], errors="coerce")
+            valid = series.dropna()
+            if len(valid) < 4:
+                outlier_counts[col] = 0
+                continue
+            med = float(np.median(valid))
+            mad = float(np.median(np.abs(valid - med)))
+            if mad == 0:
+                outlier_counts[col] = 0
+                continue
+            z = 0.6745 * np.abs(series - med) / mad
+            mask = z > threshold
+            idx = series[mask].index.tolist()
+            outlier_counts[col] = len(idx)
+            all_outlier_rows.update(idx)
+
+    elif method == "isolation_forest":
+        from sklearn.ensemble import IsolationForest
+        sub = df[valid_cols].apply(pd.to_numeric, errors="coerce")
+        sub = sub.fillna(sub.median())
+        if len(sub) < 4 or len(valid_cols) == 0:
+            return {"outlier_counts": {}, "outlier_indices": [], "n_total": len(df), "n_clean": len(df)}
+        clf = IsolationForest(contamination=contamination, random_state=42, n_jobs=-1)
+        preds = clf.fit_predict(sub)
+        outlier_mask = preds == -1
+        all_outlier_rows = set(np.where(outlier_mask)[0].tolist())
+        for col in valid_cols:
+            outlier_counts[col] = int(outlier_mask.sum())
+
+    elif method == "lof":
+        from sklearn.neighbors import LocalOutlierFactor
+        sub = df[valid_cols].apply(pd.to_numeric, errors="coerce")
+        sub = sub.fillna(sub.median())
+        if len(sub) < 4 or len(valid_cols) == 0:
+            return {"outlier_counts": {}, "outlier_indices": [], "n_total": len(df), "n_clean": len(df)}
+        n_neighbors = min(int(threshold) if threshold > 1 else 20, len(sub) - 1)
+        clf = LocalOutlierFactor(n_neighbors=n_neighbors, contamination=contamination)
+        preds = clf.fit_predict(sub)
+        outlier_mask = preds == -1
+        all_outlier_rows = set(np.where(outlier_mask)[0].tolist())
+        for col in valid_cols:
+            outlier_counts[col] = int(outlier_mask.sum())
+
+    else:
+        return {"error": f"Unknown method: {method}"}
+
+    return {
+        "outlier_counts": outlier_counts,
+        "outlier_indices": sorted(all_outlier_rows),
+        "n_total": len(df),
+        "n_clean": len(df) - len(all_outlier_rows),
+    }
+
+
+class ColumnDataRequest(BaseModel):
+    file_id: str
+    column: str
+    filters: List[ClFilter] = []
+
+
+@router.post("/column-data")
+async def column_data(
+    req: ColumnDataRequest,
+    session_id: str = Query("default"),
+    analysis_service=Depends(get_intelligent_analysis_service),
+):
+    """Return raw values for a single column with outlier flags."""
+    import pandas as pd
+    import numpy as np
+
+    uploads_dir = analysis_service.base_dir / session_id / "uploads"
+    csv_path = _find_csv(uploads_dir, req.file_id, analysis_service)
+    df = pd.read_csv(csv_path, encoding="utf-8-sig")
+
+    # Apply filters
+    for f in req.filters:
+        if f.exclude_empty and f.column in df.columns:
+            df = df[df[f.column].notna() & (df[f.column].astype(str).str.strip() != "")]
+        kw = (f.keyword or "").strip()
+        if kw and f.column in df.columns:
+            col_series = df[f.column]
+            import re as _re
+            m = _re.match(r"^([><!=]+)\s*([\d.]+)$", kw)
+            if m and pd.api.types.is_numeric_dtype(col_series):
+                op, val = m.group(1), float(m.group(2))
+                col_num = pd.to_numeric(col_series, errors="coerce")
+                if op == ">":
+                    df = df[col_num > val]
+                elif op == ">=":
+                    df = df[col_num >= val]
+                elif op == "<":
+                    df = df[col_num < val]
+                elif op == "<=":
+                    df = df[col_num <= val]
+                elif op in ("=", "=="):
+                    df = df[col_num == val]
+                elif op == "!=":
+                    df = df[col_num != val]
+            else:
+                if kw.startswith("=="):
+                    df = df[df[f.column].astype(str).str.strip() == kw[2:]]
+                else:
+                    df = df[df[f.column].astype(str).str.contains(kw, case=False, na=False)]
+    df = df.reset_index(drop=True)
+
+    if req.column not in df.columns:
+        return {"values": [], "outliers": [], "stats": {}}
+
+    # --- Text column: return value counts ---
+    if not pd.api.types.is_numeric_dtype(df[req.column]):
+        vc = df[req.column].fillna("(空值)").astype(str).value_counts()
+        top = vc.head(30)
+        return {
+            "type": "text",
+            "value_counts": [{"name": str(k), "count": int(v)} for k, v in top.items()],
+            "n_unique": int(vc.shape[0]),
+            "n_total": int(len(df)),
+        }
+
+    series = pd.to_numeric(df[req.column], errors="coerce")
+    values = []
+    outliers = []
+    valid = series.dropna()
+
+    q1 = q3 = mean_val = median_val = None
+    def to_finite(x):
+        if x is None: return None
+        try:
+            val = float(x)
+            if np.isnan(val) or np.isinf(val): return None
+            return val
+        except: return None
+
+    if len(valid) > 0:
+        q1 = to_finite(np.percentile(valid, 25))
+        q3 = to_finite(np.percentile(valid, 75))
+        mean_val = to_finite(valid.mean())
+        median_val = to_finite(valid.median())
+        iqr = (q3 - q1) if (q3 is not None and q1 is not None) else 0
+        lo = q1 - 1.5 * iqr if q1 is not None else -np.inf
+        hi = q3 + 1.5 * iqr if q3 is not None else np.inf
+        for v in series:
+            if pd.isna(v):
+                values.append(None)
+                outliers.append(False)
+            else:
+                fv = to_finite(v)
+                values.append(round(fv, 6) if fv is not None else None)
+                outliers.append(bool(fv is not None and (fv < lo or fv > hi)))
+    else:
+        values = [None] * len(series)
+        outliers = [False] * len(series)
+
+    return {
+        "type": "number",
+        "values": values,
+        "outliers": outliers,
+        "stats": {
+            "q1": round(q1, 4) if q1 is not None else None,
+            "q3": round(q3, 4) if q3 is not None else None,
+            "mean": round(mean_val, 4) if mean_val is not None else None,
+            "median": round(median_val, 4) if median_val is not None else None,
+        },
+    }
+
+
 # ========== T² 直接計算 (MVA 面板用) ==========
 
 
@@ -1051,13 +1506,15 @@ async def compute_t2(
                 elif op == "!=":
                     df = df[col_num != val]
             else:
-                df = df[df[f.column].astype(str).str.contains(kw, case=False, na=False)]
+                if kw.startswith("=="):
+                    df = df[df[f.column].astype(str).str.strip() == kw[2:]]
+                else:
+                    df = df[df[f.column].astype(str).str.contains(kw, case=False, na=False)]
 
-    # After filters, assign stable row positions (these are "original indices" for exclusion tracking)
     df = df.reset_index(drop=True)
-    df["__orig_idx__"] = df.index.tolist()  # stable position after filters
+    df["__orig_idx__"] = df.index.tolist()  # save stable position after filters, before exclusions
 
-    # Exclude specific row indices (from previous brush-select removals)
+    # Apply cleaning exclusions AFTER filters (indices are in filtered space)
     if req.exclude_indices:
         valid_indices = [i for i in req.exclude_indices if 0 <= i < len(df)]
         if valid_indices:
@@ -1118,6 +1575,11 @@ async def compute_t2(
     ucl95 = float(sp_stats.chi2.ppf(0.95, n_comp))
     n_anom = sum(1 for v in t2_vals if v > ucl99)
 
+    # First 3 columns for tooltip identification
+    all_cols = [c for c in df.columns if c != "__orig_idx__"]
+    head_cols = all_cols[:3]
+    head_data = df[head_cols].astype(str).values.tolist() if head_cols else []
+
     return {
         "t2_values": t2_vals,
         "ucl_99": ucl99,
@@ -1128,6 +1590,8 @@ async def compute_t2(
         "n_obs": n_obs,
         "columns_used": sub.columns.tolist(),
         "original_indices": remaining_orig_indices,
+        "head_cols": head_cols,
+        "head_data": head_data,
     }
 
 
@@ -1195,33 +1659,29 @@ async def compute_t2_contribution(
                 elif op == "!=":
                     df = df[col_num != val]
             else:
-                df = df[df[f.column].astype(str).str.contains(kw, case=False, na=False)]
+                if kw.startswith("=="):
+                    df = df[df[f.column].astype(str).str.strip() == kw[2:]]
+                else:
+                    df = df[df[f.column].astype(str).str.contains(kw, case=False, na=False)]
 
     df = df.reset_index(drop=True)
+    df["__orig_idx__"] = df.index.tolist()  # save stable position before exclusions
 
-    # Exclude indices — build mapping from original → new position
+    # Apply cleaning exclusions AFTER filters (indices are in filtered space)
     if req.exclude_indices:
         valid = [i for i in req.exclude_indices if 0 <= i < len(df)]
         if valid:
-            keep_mask = ~df.index.isin(valid)
-            # orig_to_new: maps pre-exclusion index → post-exclusion index
-            orig_to_new = {}
-            new_idx = 0
-            for old_idx in range(len(df)):
-                if keep_mask[old_idx]:
-                    orig_to_new[old_idx] = new_idx
-                    new_idx += 1
-            df = df.loc[keep_mask].reset_index(drop=True)
-        else:
-            orig_to_new = {i: i for i in range(len(df))}
-    else:
-        orig_to_new = {i: i for i in range(len(df))}
+            df = df.drop(index=valid).reset_index(drop=True)
+
+    orig_to_new = {orig: new for new, orig in enumerate(df["__orig_idx__"])}
 
     if len(df) < 10:
         raise HTTPException(status_code=400, detail="樣本不足 10 筆")
 
     # Numeric columns
     num_cols = df.select_dtypes(include="number").columns.tolist()
+    if "__orig_idx__" in num_cols:
+        num_cols.remove("__orig_idx__")
     sub = df[num_cols].copy()
     thresh = int(len(sub) * 0.5)
     sub = sub.dropna(axis=1, thresh=thresh)
@@ -1336,10 +1796,16 @@ async def pca_scatter(
                 elif op == "!=":
                     df = df[col_num != val]
             else:
-                df = df[df[f.column].astype(str).str.contains(kw, case=False, na=False)]
+                # Support exact match with == prefix for strings
+                if kw.startswith("=="):
+                    exact_val = kw[2:]
+                    df = df[df[f.column].astype(str).str.strip() == exact_val]
+                else:
+                    df = df[df[f.column].astype(str).str.contains(kw, case=False, na=False)]
 
     df = df.reset_index(drop=True)
 
+    # Apply cleaning exclusions AFTER filters (indices are in filtered space)
     if req.exclude_indices:
         valid = [i for i in req.exclude_indices if 0 <= i < len(df)]
         if valid:
@@ -1366,11 +1832,18 @@ async def pca_scatter(
     pca = PCA(n_components=2)
     scores = pca.fit_transform(scaled)
 
+    # Head columns for tooltip (first 3 columns)
+    all_cols = [c for c in df.columns if c != "__orig_idx__"]
+    head_cols = all_cols[:3]
+    head_data = df[head_cols].astype(str).values.tolist() if head_cols else []
+
     return {
         "scores": [[round(float(s[0]), 4), round(float(s[1]), 4)] for s in scores],
         "explained_var": [round(float(v), 4) for v in pca.explained_variance_ratio_],
         "n_obs": len(scores),
         "col_names": col_names,
+        "head_cols": head_cols,
+        "head_data": head_data,
     }
 
 
@@ -1427,7 +1900,10 @@ async def gb_test(
                 elif op == "!=":
                     df = df[col_num != val]
             else:
-                df = df[df[f.column].astype(str).str.contains(kw, case=False, na=False)]
+                if kw.startswith("=="):
+                    df = df[df[f.column].astype(str).str.strip() == kw[2:]]
+                else:
+                    df = df[df[f.column].astype(str).str.contains(kw, case=False, na=False)]
 
     df = df.reset_index(drop=True)
     if req.exclude_indices:
@@ -1810,19 +2286,554 @@ async def gb_column_values(
     file_id: str = Query(...),
     column: str = Query(...),
     session_id: str = Query("default"),
+    filters: str = Query("[]"),
+    exclude_indices: str = Query("[]"),
     analysis_service: AnalysisService = Depends(get_intelligent_analysis_service),
 ):
     """Return raw values of a column for trend chart."""
     import pandas as pd
     import numpy as np
+    import json as _json
+    import re as _re
 
     uploads_dir = analysis_service.base_dir / session_id / "uploads"
     csv_path = _find_csv(uploads_dir, file_id, analysis_service)
     df = pd.read_csv(csv_path, encoding="utf-8-sig")
 
+    # Apply filters (from dataset grouping)
+    try:
+        filter_list = _json.loads(filters) if filters else []
+    except Exception:
+        filter_list = []
+    for f in filter_list:
+        col_name = f.get("column", "")
+        kw = (f.get("keyword") or "").strip()
+        if kw and col_name in df.columns:
+            col_series = df[col_name]
+            m = _re.match(r"^([><!=]+)\s*([\d.]+)$", kw)
+            if m and pd.api.types.is_numeric_dtype(col_series):
+                op, val = m.group(1), float(m.group(2))
+                col_num = pd.to_numeric(col_series, errors="coerce")
+                if op == ">": df = df[col_num > val]
+                elif op == ">=": df = df[col_num >= val]
+                elif op == "<": df = df[col_num < val]
+                elif op == "<=": df = df[col_num <= val]
+                elif op in ("=", "=="): df = df[col_num == val]
+                elif op == "!=": df = df[col_num != val]
+            else:
+                if kw.startswith("=="):
+                    df = df[df[col_name].astype(str).str.strip() == kw[2:]]
+                else:
+                    df = df[df[col_name].astype(str).str.contains(kw, case=False, na=False)]
+    df = df.reset_index(drop=True)
+
+    # Apply cleaning exclusions AFTER filters (indices are in filtered space)
+    try:
+        excl_list = _json.loads(exclude_indices) if exclude_indices else []
+    except Exception:
+        excl_list = []
+    if excl_list:
+        valid = [i for i in excl_list if 0 <= i < len(df)]
+        if valid:
+            df = df.drop(index=valid).reset_index(drop=True)
+
     if column not in df.columns:
         raise HTTPException(status_code=400, detail=f"欄位 {column} 不存在")
 
-    series = pd.to_numeric(df[column], errors="coerce")
-    values = [round(float(v), 4) if not np.isnan(v) else None for v in series]
-    return {"column": column, "values": values, "n": len(values)}
+    series = pd.to_numeric(df[column], errors="coerce").dropna()
+    values = [round(float(v), 4) for v in series]
+
+    # Head columns for tooltip (first 3 columns)
+    all_cols = [c for c in df.columns if c != "__orig_idx__"]
+    head_cols = all_cols[:3]
+    head_data = df[head_cols].astype(str).values.tolist() if head_cols else []
+
+    return {"column": column, "values": values, "n": len(values),
+            "head_cols": head_cols, "head_data": head_data}
+
+
+# ========== 匯出清洗後資料 ==========
+
+
+class ExportCleanedRequest(BaseModel):
+    file_id: str
+    exclude_cols: List[str] = []
+    exclude_indices: List[int] = []
+    dataset_filters: List[DatasetFilter] = []
+    custom_name: str = ""
+
+
+@router.post("/export-cleaned")
+async def export_cleaned_data(
+    request: ExportCleanedRequest,
+    session_id: str = Query("default"),
+    analysis_service: AnalysisService = Depends(get_intelligent_analysis_service),
+):
+    """將清洗後的資料存為新的 CSV 檔案"""
+    import pandas as pd
+    from datetime import datetime
+
+    def _do_export():
+        uploads_dir = analysis_service.base_dir / session_id / "uploads"
+        csv_path = _find_csv(uploads_dir, request.file_id, analysis_service)
+
+        df = pd.read_csv(csv_path, encoding="utf-8-sig")
+        df.columns = [str(c).strip() for c in df.columns]
+        orig_shape = df.shape
+
+        # Apply dataset filters
+        for f in request.dataset_filters:
+            kw = (f.keyword or "").strip()
+            if kw and f.column in df.columns:
+                if kw.startswith("=="):
+                    df = df[df[f.column].astype(str).str.strip() == kw[2:]]
+                else:
+                    df = df[df[f.column].astype(str).str.contains(kw, case=False, na=False)]
+        if request.dataset_filters:
+            df = df.reset_index(drop=True)
+
+        # Exclude rows
+        if request.exclude_indices:
+            valid = [i for i in request.exclude_indices if 0 <= i < len(df)]
+            if valid:
+                df = df.drop(index=valid).reset_index(drop=True)
+
+        # Exclude columns
+        if request.exclude_cols:
+            drop_cols = [c for c in request.exclude_cols if c in df.columns]
+            if drop_cols:
+                df = df.drop(columns=drop_cols)
+
+        # Generate new filename
+        if request.custom_name and request.custom_name.strip():
+            safe_name = request.custom_name.strip().replace("/", "_").replace("\\", "_")
+            new_name = f"{safe_name}.csv"
+        else:
+            orig_name = csv_path.stem
+            timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+            new_name = f"{orig_name}_cleaned_{timestamp}.csv"
+        new_path = uploads_dir / new_name
+
+        df.to_csv(new_path, index=False, encoding="utf-8-sig")
+
+        new_file_id = analysis_service.get_file_id(new_name)
+
+        return {
+            "success": True,
+            "filename": new_name,
+            "file_id": new_file_id,
+            "original_shape": list(orig_shape),
+            "cleaned_shape": list(df.shape),
+        }
+
+    try:
+        return await asyncio.to_thread(_do_export)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Export cleaned data error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class RSMFilter(BaseModel):
+    column: str
+    keyword: Optional[str] = None
+    exclude_empty: bool = False
+
+
+# ========== RSM 響應曲面法分析 ==========
+class RSMRequest(BaseModel):
+    file_id: str
+    target: str
+    factors: List[str]
+    filters: List[RSMFilter] = []
+    exclude_indices: List[int] = []
+    exclude_cols: List[str] = []
+
+
+class RSMScatterRequest(BaseModel):
+    file_id: str
+    target: str
+    term_name: str
+    factors: List[str]  # The underlying factors for the term
+    term_type: str      # 'main', 'interaction', 'quadratic'
+    filters: List[RSMFilter] = []
+    exclude_indices: List[int] = []
+    exclude_cols: List[str] = []
+
+
+@router.post("/rsm-analysis")
+async def rsm_analysis(
+    req: RSMRequest,
+    session_id: str = Query("default"),
+    analysis_service=Depends(get_intelligent_analysis_service),
+):
+    """RSM: Lasso-based 2nd-order regression with automatic feature selection."""
+    import pandas as pd
+    import numpy as np
+    from scipy import stats as sp_stats
+    from sklearn.linear_model import ElasticNetCV  # noqa: F401 (kept for potential future use)
+    from sklearn.preprocessing import StandardScaler  # noqa: F401
+
+    uploads_dir = analysis_service.base_dir / session_id / "uploads"
+    csv_path = _find_csv(uploads_dir, req.file_id, analysis_service)
+    df = pd.read_csv(csv_path, encoding="utf-8-sig")
+
+    # Apply filters
+    for f in req.filters:
+        if f.exclude_empty and f.column in df.columns:
+            df = df[df[f.column].notna() & (df[f.column].astype(str).str.strip() != "")]
+        kw = (f.keyword or "").strip()
+        if kw and f.column in df.columns:
+            col_series = df[f.column]
+            import re as _re
+            m = _re.match(r"^([><!=]+)\s*([\d.]+)$", kw)
+            if m and pd.api.types.is_numeric_dtype(col_series):
+                op, val = m.group(1), float(m.group(2))
+                col_num = pd.to_numeric(col_series, errors="coerce")
+                if op == ">": df = df[col_num > val]
+                elif op == ">=": df = df[col_num >= val]
+                elif op == "<": df = df[col_num < val]
+                elif op == "<=": df = df[col_num <= val]
+                elif op in ("=", "=="): df = df[col_num == val]
+                elif op == "!=": df = df[col_num != val]
+            else:
+                if kw.startswith("=="):
+                    df = df[df[f.column].astype(str).str.strip() == kw[2:]]
+                else:
+                    df = df[df[f.column].astype(str).str.contains(kw, case=False, na=False)]
+    df = df.reset_index(drop=True)
+
+    # Exclude indices
+    if req.exclude_indices:
+        valid = [i for i in req.exclude_indices if 0 <= i < len(df)]
+        if valid:
+            df = df.drop(index=valid).reset_index(drop=True)
+
+    # Validate columns
+    if req.target not in df.columns:
+        raise HTTPException(400, detail=f"Target '{req.target}' not found")
+    missing = [c for c in req.factors if c not in df.columns]
+    if missing:
+        raise HTTPException(400, detail=f"Factors not found: {missing}")
+    if len(req.factors) < 1:
+        raise HTTPException(400, detail="At least 1 factor required")
+
+    # Extract numeric data
+    y_series = pd.to_numeric(df[req.target], errors="coerce")
+    x_df = df[req.factors].apply(pd.to_numeric, errors="coerce")
+    
+    # 首先：只保留 Target 有值的列，因為如果 Target 缺值，該列對建模毫無意義
+    # 如果不提前過濾，會導致因子的缺失率被錯誤地放大，甚至誤判因子無效
+    orig_len = len(df)
+    mask = y_series.notna()
+    y_series = y_series[mask]
+    x_df = x_df[mask]
+    
+    n = len(y_series)
+    if n < 5:
+        target_nan_count = orig_len - n
+        raise HTTPException(400, detail=f"數據不足: {n} 筆 (需要至少 5 筆)。\n原始資料有 {orig_len} 筆，但 Target('{req.target}') 存在 {target_nan_count} 筆空值(NaN)被剔除。\n請返回資料清洗頁面檢查 Target 是否有足夠的有效數值，或檢查您的「過濾/異常排除」條件是否排除了所有有解答的行。")
+    
+    # 1. 強化數據清洗：處理大量因子時的 NaN 問題 (僅計算 Target 有效列的因子缺失率)
+    valid_factors = []
+    dropped_factors = []
+    for col in req.factors:
+        missing_pct = x_df[col].isna().mean()
+        if missing_pct > 0.5:
+            dropped_factors.append(f"{col} (缺失率 {missing_pct:.1%})")
+        else:
+            valid_factors.append(col)
+    
+    if not valid_factors:
+        target_nan_count = orig_len - n
+        raise HTTPException(400, detail=f"建模失敗：可分析的因子全被剔除。\n原因：在排除 Target 的異常與空值 ({target_nan_count} 筆) 後，剩餘的 {n} 筆資料中，您選擇的所有因子的數值缺值率皆超過 50%。\n被排除因子: {dropped_factors}\n(※提示：分析模組會過濾您的資料清洗規則，並且欄位內若含有無法轉為數值的字串也會被視為空值 NaN，請檢查。)")
+    
+    # 只保留有效因子並補值 (中位數)
+    x_df = x_df[valid_factors]
+    x_df = x_df.fillna(x_df.median())
+    
+    # 對齊 Y 和 X
+    y = y_series.values
+    x_raw = x_df.values
+
+    def _safe_float(v, default=0.0):
+        """Convert to float, replacing NaN/Inf with default."""
+        try:
+            f = float(v)
+            if np.isnan(f) or np.isinf(f):
+                return default
+            return f
+        except (TypeError, ValueError):
+            return default
+
+    # ===== Polynomial Feature Expansion + Correlation Analysis =====
+    factors = valid_factors
+    k = len(factors)
+    term_names = []
+    term_types = []
+    cols_list = []
+
+    # 1) Main effects
+    for i in range(k):
+        term_names.append(factors[i])
+        term_types.append("main")
+        cols_list.append(x_raw[:, i])
+
+    # 2) Interaction effects (2-way) — smart generation based on factor count
+    if k <= 30:
+        for i in range(k):
+            for j in range(i + 1, k):
+                term_names.append(f"{factors[i]} × {factors[j]}")
+                term_types.append("interaction")
+                cols_list.append(x_raw[:, i] * x_raw[:, j])
+    else:
+        # Only generate interactions for top-correlated factors with Y (max top 30)
+        factor_corrs = []
+        for i in range(k):
+            try:
+                r, _ = sp_stats.pearsonr(x_raw[:, i], y)
+                factor_corrs.append((i, abs(float(r)) if not np.isnan(r) else 0.0))
+            except Exception:
+                factor_corrs.append((i, 0.0))
+        factor_corrs.sort(key=lambda x: x[1], reverse=True)
+        top_indices = [idx for idx, _ in factor_corrs[:30]]
+        for ii, i in enumerate(top_indices):
+            for jj in range(ii + 1, len(top_indices)):
+                j = top_indices[jj]
+                term_names.append(f"{factors[i]} × {factors[j]}")
+                term_types.append("interaction")
+                cols_list.append(x_raw[:, i] * x_raw[:, j])
+
+    # 3) Quadratic effects (A²)
+    for i in range(k):
+        term_names.append(f"{factors[i]}²")
+        term_types.append("quadratic")
+        cols_list.append(x_raw[:, i] ** 2)
+
+    # 4) Cubic and 3-way effects (A³, A²B, ABC)
+    if k <= 15:
+        # Safe to generate all 3-way interactions natively if purely small k
+        # A³
+        for i in range(k):
+            term_names.append(f"{factors[i]}³")
+            term_types.append("cubic")
+            cols_list.append(x_raw[:, i] ** 3)
+        # A²B & AB²
+        for i in range(k):
+            for j in range(i + 1, k):
+                term_names.append(f"{factors[i]}² × {factors[j]}")
+                term_types.append("cubic")
+                cols_list.append((x_raw[:, i] ** 2) * x_raw[:, j])
+                
+                term_names.append(f"{factors[i]} × {factors[j]}²")
+                term_types.append("cubic")
+                cols_list.append(x_raw[:, i] * (x_raw[:, j] ** 2))
+        # ABC
+        for i in range(k):
+            for j in range(i + 1, k):
+                for m in range(j + 1, k):
+                    term_names.append(f"{factors[i]} × {factors[j]} × {factors[m]}")
+                    term_types.append("cubic")
+                    cols_list.append(x_raw[:, i] * x_raw[:, j] * x_raw[:, m])
+    else:
+        # Only calculate A³ for top 15 and 3-way interactions for top 10 to avoid combinatoric explosion
+        factor_corrs = []
+        for i in range(k):
+            try:
+                r, _ = sp_stats.pearsonr(x_raw[:, i], y)
+                factor_corrs.append((i, abs(float(r)) if not np.isnan(r) else 0.0))
+            except Exception:
+                factor_corrs.append((i, 0.0))
+        factor_corrs.sort(key=lambda x: x[1], reverse=True)
+        top15_idx = [idx for idx, _ in factor_corrs[:15]]
+        top10_idx = [idx for idx, _ in factor_corrs[:10]]
+        
+        # A³
+        for i in top15_idx:
+            term_names.append(f"{factors[i]}³")
+            term_types.append("cubic")
+            cols_list.append(x_raw[:, i] ** 3)
+        
+        # A²B, AB², ABC using top 10
+        for ii, i in enumerate(top10_idx):
+            for jj in range(ii + 1, len(top10_idx)):
+                j = top10_idx[jj]
+                term_names.append(f"{factors[i]}² × {factors[j]}")
+                term_types.append("cubic")
+                cols_list.append((x_raw[:, i] ** 2) * x_raw[:, j])
+                
+                term_names.append(f"{factors[i]} × {factors[j]}²")
+                term_types.append("cubic")
+                cols_list.append(x_raw[:, i] * (x_raw[:, j] ** 2))
+                
+                for mm in range(jj + 1, len(top10_idx)):
+                    m = top10_idx[mm]
+                    term_names.append(f"{factors[i]} × {factors[j]} × {factors[m]}")
+                    term_types.append("cubic")
+                    cols_list.append(x_raw[:, i] * x_raw[:, j] * x_raw[:, m])
+
+    n_total_terms = len(term_names)
+
+    # Filter out near-constant columns
+    all_terms = []
+    sig_threshold = 0.05
+
+    for i in range(n_total_terms):
+        col = cols_list[i]
+        # Skip near-constant
+        if np.var(col) < 1e-10:
+            continue
+        try:
+            r_corr, p_corr = sp_stats.pearsonr(col, y)
+            r_corr = _safe_float(r_corr)
+            p_corr = _safe_float(p_corr, default=1.0)
+        except Exception:
+            r_corr = 0.0
+            p_corr = 1.0
+
+        all_terms.append({
+            "name": term_names[i],
+            "type": term_types[i],
+            "coefficient": round(r_corr, 6),  # Use correlation as the "coefficient"
+            "correlation": round(r_corr, 4),
+            "p_value": round(p_corr, 4),
+            "surviving": p_corr < sig_threshold,
+        })
+
+    # Sort all by |correlation| descending
+    all_terms.sort(key=lambda t: abs(t["correlation"]), reverse=True)
+
+    surviving_terms = [t for t in all_terms if t["surviving"]]
+    eliminated_terms = [t for t in all_terms if not t["surviving"]]
+
+    # R² = max individual r² (best single-term explanatory power)
+    best_r = max((abs(t["correlation"]) for t in all_terms), default=0.0)
+    r_squared = best_r ** 2
+
+    # Factor-level summary (individual correlations)
+    factor_summary = []
+    for i, fname in enumerate(factors):
+        try:
+            r, p = sp_stats.pearsonr(x_raw[:, i], y)
+            r = _safe_float(r)
+            p = _safe_float(p, default=1.0)
+        except Exception:
+            r, p = 0.0, 1.0
+        factor_summary.append({
+            "name": fname,
+            "correlation": round(r, 4),
+            "p_value": round(p, 4),
+        })
+    factor_summary.sort(key=lambda x: abs(x["correlation"]), reverse=True)
+
+    return {
+        "n_obs": int(n),
+        "n_factors": k,
+        "n_total_terms": n_total_terms,
+        "n_surviving": len(surviving_terms),
+        "alpha": 0.0,
+        "r_squared": round(_safe_float(r_squared), 4),
+        "method": "Poly Expansion + Correlation",
+        "surviving_terms": surviving_terms,
+        "eliminated_terms": eliminated_terms[:20],
+        "factor_summary": factor_summary,
+    }
+
+
+
+@router.post("/rsm-scatter-data")
+async def get_rsm_scatter_data(
+    req: RSMScatterRequest,
+    session_id: str = Query("default"),
+    analysis_service: AnalysisService = Depends(get_intelligent_analysis_service),
+):
+    """取得特定項與 Target 的散佈圖數據"""
+    import pandas as pd
+    import numpy as np
+
+    uploads_dir = analysis_service.base_dir / session_id / "uploads"
+    csv_path = _find_csv(uploads_dir, req.file_id, analysis_service)
+    df = pd.read_csv(csv_path, encoding="utf-8-sig")
+    df.columns = [str(c).strip() for c in df.columns]
+
+    # Apply filters
+    for f in req.filters:
+        if f.exclude_empty and f.column in df.columns:
+            df = df[df[f.column].notna() & (df[f.column].astype(str).str.strip() != "")]
+        kw = (f.keyword or "").strip()
+        if kw and f.column in df.columns:
+            col_series = df[f.column]
+            import re
+            m = re.match(r"^([><!=]+)\s*([\d.]+)$", kw)
+            if m and pd.api.types.is_numeric_dtype(col_series):
+                op, val = m.group(1), float(m.group(2))
+                col_num = pd.to_numeric(col_series, errors="coerce")
+                if op == ">": df = df[col_num > val]
+                elif op == ">=": df = df[col_num >= val]
+                elif op == "<": df = df[col_num < val]
+                elif op == "<=": df = df[col_num <= val]
+                elif op in ("=", "=="): df = df[col_num == val]
+                elif op == "!=": df = df[col_num != val]
+            else:
+                if kw.startswith("=="):
+                    df = df[df[f.column].astype(str).str.strip() == kw[2:]]
+                else:
+                    df = df[df[f.column].astype(str).str.contains(kw, case=False, na=False)]
+    
+    df = df.reset_index(drop=True)
+    
+    if req.exclude_indices:
+        valid = [i for i in req.exclude_indices if 0 <= i < len(df)]
+        if valid: df = df.drop(index=valid)
+    
+    df = df.reset_index(drop=True)
+
+    if req.exclude_cols:
+        drop_cols = [c for c in req.exclude_cols if c in df.columns]
+        if drop_cols:
+            df = df.drop(columns=drop_cols)
+
+    # Extract data
+    y_series = pd.to_numeric(df[req.target], errors="coerce")
+    x_raw = df[req.factors].apply(pd.to_numeric, errors="coerce")
+    
+    # Fill NaN with median (same as analysis)
+    x_raw = x_raw.fillna(x_raw.median())
+    
+    mask = y_series.notna()
+    y = y_series[mask].values
+    x_vals = x_raw[mask].values
+
+    # Calculate term value
+    if req.term_type == "main":
+        x = x_vals[:, 0]
+    elif req.term_type == "interaction" and len(req.factors) >= 2:
+        x = x_vals[:, 0] * x_vals[:, 1]
+    elif req.term_type == "quadratic":
+        x = x_vals[:, 0] ** 2
+    elif req.term_type == "cubic":
+        if "³" in req.term_name:
+            x = x_vals[:, 0] ** 3
+        elif "²" in req.term_name and len(req.factors) == 2:
+            # A²B or AB²
+            if req.term_name.startswith(req.factors[0] + "²"):
+                x = (x_vals[:, 0] ** 2) * x_vals[:, 1]
+            else:
+                x = x_vals[:, 0] * (x_vals[:, 1] ** 2)
+        elif len(req.factors) == 3:
+            # ABC
+            x = x_vals[:, 0] * x_vals[:, 1] * x_vals[:, 2]
+        else:
+            x = x_vals[:, 0] # fallback
+    else:
+        x = x_vals[:, 0]
+
+    return {
+        "term_name": req.term_name,
+        "x": x.tolist(),
+        "y": y.tolist(),
+        "n": len(y)
+    }
+
+

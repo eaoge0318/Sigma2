@@ -28,23 +28,103 @@
         ::-webkit-scrollbar-track { background: #f1f5f9; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
         ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        /* Upload processing spinner */
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes pulse-dots {
+            0%, 100% { opacity: 0.3; }
+            50% { opacity: 1; }
+        }
+        .upload-spinner {
+            width: 22px; height: 22px;
+            border: 3px solid #e2e8f0;
+            border-top-color: #818cf8;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            display: inline-block;
+            vertical-align: middle;
+            margin-right: 8px;
+            flex-shrink: 0;
+        }
+        .upload-spinner-wrap {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            font-size: 13px;
+            color: #6366f1;
+            font-weight: 600;
+        }
+        .upload-spinner-wrap .dot {
+            animation: pulse-dots 1.2s ease-in-out infinite;
+        }
+        .upload-spinner-wrap .dot:nth-child(2) { animation-delay: 0.2s; }
+        .upload-spinner-wrap .dot:nth-child(3) { animation-delay: 0.4s; }
+
+        /* Minimized upload badge (bottom-right floating) */
+        #upload-mini-badge {
+            display: none;
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 9999;
+            background: #1e293b;
+            color: #e2e8f0;
+            border-radius: 12px;
+            padding: 10px 16px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+            display: none;
+            align-items: center;
+            gap: 10px;
+            max-width: 320px;
+        }
+        #upload-mini-badge:hover { background: #334155; }
+        #upload-mini-badge .mini-spinner {
+            width: 16px; height: 16px;
+            border: 2px solid #475569;
+            border-top-color: #818cf8;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            flex-shrink: 0;
+        }
     </style>
 </head>
 
 <body>
+    <!-- Minimized upload badge -->
+    <div id="upload-mini-badge" onclick="restoreUpload()" style="display:none;">
+        <div class="mini-spinner"></div>
+        <span id="upload-mini-text">上傳處理中...</span>
+        <span style="opacity:0.5;font-size:11px;">點擊展開</span>
+    </div>
+
     <div class="file-manager-container">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0px;">
             <h3 style="margin: 0; color: #1e293b; font-size: 18px;">📑 已上傳檔案列表</h3>
-            <button class="btn-primary" onclick="openUploadModal()">
-                <span>📤</span> 上傳新檔案
-            </button>
+            <div style="display:flex; gap:8px; align-items:center;">
+                <button onclick="loadFileList()" title="刷新檔案列表"
+                    style="padding:7px 12px; background:#f1f5f9; border:1px solid #e2e8f0; border-radius:8px; cursor:pointer; font-size:16px; color:#64748b; line-height:1;"
+                    onmouseenter="this.style.background='#e2e8f0'" onmouseleave="this.style.background='#f1f5f9'">🔄</button>
+                <button class="btn-primary" onclick="openUploadModal()">
+                    <span>📤</span> 上傳新檔案
+                </button>
+            </div>
         </div>
 
         <!-- Upload Modal -->
         <div id="uploadModal" class="modal">
             <div class="modal-content">
-                <button class="close-modal" onclick="closeUploadModal()">&times;</button>
-                <h3 style="margin-top: 0; margin-bottom: 20px; color: #1e293b;">上傳檔案</h3>
+                <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:20px;">
+                    <h3 style="margin:0; color:#1e293b;">上傳檔案</h3>
+                    <div style="display:flex; gap:6px; align-items:center;">
+                        <button id="upload-minimize-btn" onclick="minimizeUpload()" title="縮小至右下角"
+                            style="display:none; padding:2px 10px; font-size:18px; line-height:1; background:#f1f5f9; border:none; border-radius:6px; cursor:pointer; color:#64748b;" >−</button>
+                        <button class="close-modal" onclick="closeUploadModal()" style="position:static; font-size:20px;">×</button>
+                    </div>
+                </div>
                 <div class="upload-area" id="upload-dropzone"
                     onclick="document.getElementById('file-input-main').click()"
                     ondragover="event.preventDefault(); event.stopPropagation(); this.style.borderColor='#3b82f6'; this.style.background='#eff6ff';"
@@ -59,7 +139,7 @@
                 </div>
                 <div id="upload-status" style="margin-bottom: 10px; font-weight: bold; text-align: center;"></div>
                 <div style="text-align: right;">
-                    <button onclick="closeUploadModal()"
+                    <button id="upload-done-btn" onclick="closeUploadModal()"
                         style="padding: 8px 16px; background: #e2e8f0; border: none; border-radius: 6px; cursor: pointer; color: #475569; font-weight: 600;">完成</button>
                 </div>
             </div>
@@ -124,33 +204,78 @@
         let fileListCurrentPage = 1;
         const FILE_LIST_PAGE_SIZE = 10;
 
-        function handleMainFileUpload(input) {
-            for (let i = 0; i < input.files.length; i++) {
-                uploadFile(input.files[i]);
+        async function handleMainFileUpload(input) {
+            const files = Array.from(input.files);
+            if (files.length > 0) {
+                await uploadMultipleFiles(files);
             }
+            input.value = ''; // Reset input
         }
 
-        function handleDroppedFiles(files) {
+        async function handleDroppedFiles(files) {
             const allowed = ['.csv', '.xml', '.xlsx', '.xls'];
+            const validFiles = [];
             for (let i = 0; i < files.length; i++) {
                 const file = files[i];
                 const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
                 if (!allowed.includes(ext)) {
-                    const statusDiv = $('upload-status');
-                    if (statusDiv) {
-                        statusDiv.innerText = `不支援的格式: ${ext}，僅支援 CSV, XML, Excel`;
-                        statusDiv.style.color = '#ef4444';
-                    }
+                    alert(`不支援的格式: ${ext}，僅支援 CSV, XML, Excel`);
                     continue;
                 }
-                uploadFile(file);
+                validFiles.push(file);
+            }
+            if (validFiles.length > 0) {
+                await uploadMultipleFiles(validFiles);
             }
         }
 
-        async function uploadFile(file) {
+        async function uploadMultipleFiles(files) {
+            const doneBtn = $('upload-done-btn');
+            const dropzone = $('upload-dropzone');
+            const fileInput = $('file-input-main');
+            // Find the "上傳新檔案" button in the header
+            const uploadHeaderBtn = document.querySelector('.btn-primary[onclick="openUploadModal()"]');
+
+            // Disable everything during upload
+            if (doneBtn) { doneBtn.disabled = true; doneBtn.style.opacity = '0.4'; doneBtn.style.cursor = 'not-allowed'; }
+            if (dropzone) { dropzone.style.pointerEvents = 'none'; dropzone.style.opacity = '0.5'; }
+            if (fileInput) fileInput.disabled = true;
+            if (uploadHeaderBtn) { uploadHeaderBtn.disabled = true; uploadHeaderBtn.style.opacity = '0.4'; uploadHeaderBtn.style.cursor = 'not-allowed'; }
+            
+            let successCount = 0;
+            for (let i = 0; i < files.length; i++) {
+                const isSuccess = await uploadFile(files[i], i + 1, files.length);
+                if (isSuccess) successCount++;
+            }
+            
             const statusDiv = $('upload-status');
-            if (!statusDiv) return;
-            statusDiv.innerText = `⏳ 正在上傳 ${file.name}...`;
+            if (statusDiv) {
+                statusDiv.innerHTML = `✅ ${successCount}/${files.length} 個檔案上傳完畢！`;
+                statusDiv.style.color = '#22c55e';
+            }
+            
+            // Hide mini badge and minimize button once done
+            const badge = $('upload-mini-badge');
+            if (badge) badge.style.display = 'none';
+            const minBtn = $('upload-minimize-btn');
+            if (minBtn) minBtn.style.display = 'none';
+
+            // Re-enable everything
+            if (doneBtn) { doneBtn.disabled = false; doneBtn.style.opacity = '1'; doneBtn.style.cursor = 'pointer'; }
+            if (dropzone) { dropzone.style.pointerEvents = ''; dropzone.style.opacity = '1'; }
+            if (fileInput) fileInput.disabled = false;
+            if (uploadHeaderBtn) { uploadHeaderBtn.disabled = false; uploadHeaderBtn.style.opacity = '1'; uploadHeaderBtn.style.cursor = 'pointer'; }
+
+            await loadFileList();
+        }
+
+        async function uploadFile(file, currentIndex = 1, totalFiles = 1) {
+            const statusDiv = $('upload-status');
+            if (!statusDiv) return false;
+            
+            const sizeMB = (file.size / 1024 / 1024).toFixed(1);
+            const counterText = totalFiles > 1 ? `[${currentIndex}/${totalFiles}] ` : '';
+            statusDiv.innerHTML = `⏳ 正在上傳 ${counterText}${file.name} (${sizeMB} MB)...<br><div style="background:#e2e8f0;border-radius:4px;height:6px;margin-top:6px;overflow:hidden;"><div id="upload-progress-bar" style="background:#818cf8;height:100%;width:0%;transition:width 0.2s;border-radius:4px;"></div></div><span id="upload-pct" style="font-size:11px;color:#94a3b8;">0%</span>`;
             statusDiv.style.color = '#3b82f6';
 
             const formData = new FormData();
@@ -158,19 +283,181 @@
             formData.append('session_id', SESSION_ID);
 
             try {
-                const res = await fetch('/api/upload_file', { method: 'POST', body: formData });
-                const data = await res.json();
-                if (res.ok) {
-                    statusDiv.innerText = `✅ ${data.filename} 上傳成功`;
-                    statusDiv.style.color = '#22c55e';
-                    await loadFileList();
+                const data = await new Promise((resolve, reject) => {
+                    const xhr = new XMLHttpRequest();
+                    xhr.open('POST', '/api/upload_file');
+                    xhr.upload.onprogress = (e) => {
+                        if (e.lengthComputable) {
+                            const pct = Math.round(e.loaded / e.total * 100);
+                            const bar = document.getElementById('upload-progress-bar');
+                            const label = document.getElementById('upload-pct');
+                            if (bar) bar.style.width = pct + '%';
+                            if (label) label.textContent = pct + '%';
+                            if (pct >= 100) {
+                                // Show animated spinner + minimize button for server-side processing
+                                statusDiv.style.color = '#6366f1';
+                                statusDiv.innerHTML = `
+                                    <div class="upload-spinner-wrap">
+                                        <div class="upload-spinner"></div>
+                                        <span>${counterText}${file.name} 伺服器轉換中</span>
+                                        <span class="dot">●</span><span class="dot">●</span><span class="dot">●</span>
+                                    </div>
+                                    <div style="font-size:11px;margin-top:6px;color:#94a3b8;">
+                                        大型 Excel 需要幾十秒，可點「−」縮小繼續為小進行操作 ⏱️
+                                    </div>`;
+                                // Show minimize button and update badge text
+                                const minBtn = $('upload-minimize-btn');
+                                if (minBtn) minBtn.style.display = 'inline-flex';
+                                const badge = $('upload-mini-text');
+                                if (badge) badge.textContent = `${counterText}${file.name} 轉換中...`;
+                            }
+                        }
+                    };
+                    xhr.onload = () => {
+                        try { resolve({ ok: xhr.status >= 200 && xhr.status < 300, data: JSON.parse(xhr.responseText) }); }
+                        catch (e) { reject(new Error('回應解析失敗')); }
+                    };
+                    xhr.onerror = () => reject(new Error('網路錯誤'));
+                    xhr.send(formData);
+                });
+                
+                if (data.ok) {
+                    if (data.data.needs_sheet_selection && data.data.sheets) {
+                        statusDiv.innerText = `📑 Excel 包含 ${data.data.sheets.length} 個工作表，請選擇`;
+                        statusDiv.style.color = '#f59e0b';
+                        return await showSheetSelector(data.data.filename, data.data.sheets);
+                    }
+                    return true;
                 } else {
-                    statusDiv.innerText = `❌ 上傳失敗: ${data.detail}`;
-                    statusDiv.style.color = '#ef4444';
+                    console.error(`上傳失敗: ${data.data.detail || '未知錯誤'}`);
+                    return false;
                 }
             } catch (err) {
-                statusDiv.innerText = `❌ 上傳錯誤: ${err.message}`;
-                statusDiv.style.color = '#ef4444';
+                console.error(`上傳錯誤: ${err.message}`);
+                return false;
+            }
+        }
+
+        function showSheetSelector(filename, sheets) {
+            return new Promise((resolve) => {
+                // Close upload modal so dialog is visible
+                closeUploadModal();
+                let existing = document.getElementById('sheet-selector-modal');
+                if (existing) existing.remove();
+                const overlay = document.createElement('div');
+                overlay.id = 'sheet-selector-modal';
+                overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.45);z-index:10001;display:flex;align-items:center;justify-content:center;';
+                let html = `<div style="background:#fff;border-radius:14px;padding:28px;min-width:420px;max-width:540px;box-shadow:0 24px 64px rgba(0,0,0,0.25);">
+                    <h3 style="margin:0 0 6px;font-size:17px;color:#1e293b;">📑 選擇要匯入的工作表</h3>
+                    <p style="margin:0 0 4px;font-size:12px;color:#94a3b8;">${filename} — ${sheets.length} 個工作表（可多選）</p>
+                    <div style="display:flex;gap:8px;margin-bottom:12px;">
+                        <a href="#" id="sSelectAll" style="font-size:11px;color:#818cf8;text-decoration:none;">全選</a>
+                        <a href="#" id="sSelectNone" style="font-size:11px;color:#818cf8;text-decoration:none;">全不選</a>
+                    </div>
+                    <div style="max-height:340px;overflow-y:auto;padding-right:4px;">`;
+                sheets.forEach((s, i) => {
+                    html += `<label class="sheet-opt" data-sheet="${s.name.replace(/"/g,'&quot;')}" style="padding:10px 14px;border:1.5px solid #e2e8f0;border-radius:8px;margin-bottom:6px;cursor:pointer;transition:all 0.15s;display:flex;align-items:center;gap:10px;"
+                        onmouseenter="this.style.background='#f8fafc'" onmouseleave="if(!this.querySelector('input').checked)this.style.background='#fff'">
+                        <input type="checkbox" value="${s.name.replace(/"/g,'&quot;')}" style="width:16px;height:16px;accent-color:#818cf8;flex-shrink:0;">
+                        <div style="flex:1;min-width:0;">
+                            <div style="font-weight:600;color:#334155;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${s.name}</div>
+                            <div style="font-size:11px;color:#94a3b8;margin-top:1px;">${s.rows.toLocaleString()} 筆 × ${s.cols} 欄</div>
+                        </div>
+                        <span style="font-size:11px;color:#cbd5e1;flex-shrink:0;">${i+1}</span>
+                    </label>`;
+                });
+                html += `</div>
+                    <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end;align-items:center;">
+                        <span id="sCount" style="font-size:12px;color:#94a3b8;margin-right:auto;">已選 0 個</span>
+                        <button id="sCancel" style="padding:8px 16px;border:1px solid #e2e8f0;border-radius:8px;background:#fff;color:#64748b;font-size:13px;cursor:pointer;">取消</button>
+                        <button id="sConfirm" disabled style="padding:8px 20px;border:none;border-radius:8px;background:#818cf8;color:#fff;font-size:13px;font-weight:600;cursor:pointer;opacity:0.5;">匯入選定工作表</button>
+                    </div></div>`;
+                overlay.innerHTML = html;
+                document.body.appendChild(overlay);
+
+                const cfm = overlay.querySelector('#sConfirm');
+                const countEl = overlay.querySelector('#sCount');
+                const checkboxes = overlay.querySelectorAll('input[type="checkbox"]');
+
+                function updateCount() {
+                    const n = overlay.querySelectorAll('input[type="checkbox"]:checked').length;
+                    countEl.textContent = `已選 ${n} 個`;
+                    cfm.disabled = n === 0;
+                    cfm.style.opacity = n > 0 ? '1' : '0.5';
+                    // Highlight selected
+                    overlay.querySelectorAll('.sheet-opt').forEach(o => {
+                        const cb = o.querySelector('input');
+                        o.style.borderColor = cb.checked ? '#818cf8' : '#e2e8f0';
+                        o.style.background = cb.checked ? '#f5f3ff' : '#fff';
+                    });
+                }
+                checkboxes.forEach(cb => cb.addEventListener('change', updateCount));
+                // Select all / none
+                overlay.querySelector('#sSelectAll').addEventListener('click', e => { e.preventDefault(); checkboxes.forEach(cb => cb.checked = true); updateCount(); });
+                overlay.querySelector('#sSelectNone').addEventListener('click', e => { e.preventDefault(); checkboxes.forEach(cb => cb.checked = false); updateCount(); });
+                // Default: select first
+                if (checkboxes.length > 0) { checkboxes[0].checked = true; updateCount(); }
+
+                overlay.querySelector('#sCancel').addEventListener('click', () => {
+                    overlay.remove();
+                    resolve(false);
+                });
+                
+                cfm.addEventListener('click', async () => {
+                    const selected = Array.from(overlay.querySelectorAll('input[type="checkbox"]:checked')).map(cb => cb.value);
+                    if (selected.length === 0) return;
+                    cfm.textContent = '⏳ 匯入中...'; cfm.disabled = true;
+
+                    let successCount = 0, failMsg = '';
+                    for (let si = 0; si < selected.length; si++) {
+                        const sheetName = selected[si];
+                        const isLast = si === selected.length - 1;
+                        const form = new FormData();
+                        form.append('filename', filename);
+                        form.append('sheet_name', sheetName);
+                        form.append('session_id', SESSION_ID);
+                        if (isLast) form.append('delete_excel', 'true');
+                        try {
+                            const resp = await fetch('/api/convert_sheet', { method: 'POST', body: form });
+                            if (resp.ok) successCount++;
+                            else { const r = await resp.json(); failMsg += `${sheetName}: ${r.detail}\n`; }
+                        } catch (err) { failMsg += `${sheetName}: ${err.message}\n`; }
+                    }
+                    overlay.remove();
+                    
+                    if (successCount > 0) {
+                        const statusDiv = document.createElement('div');
+                        statusDiv.style.cssText = 'position:fixed;top:20px;right:20px;background:#22c55e;color:#fff;padding:12px 20px;border-radius:10px;font-size:14px;font-weight:600;z-index:10002;box-shadow:0 4px 12px rgba(0,0,0,0.15);';
+                        statusDiv.textContent = `✅ 已匯入 ${successCount} 個工作表`;
+                        document.body.appendChild(statusDiv);
+                        setTimeout(() => statusDiv.remove(), 3000);
+                        resolve(true); // Return immediately and let loadFileList be called by the parent queue loop
+                    } else {
+                        if (failMsg) alert('部分工作表匯入失敗:\n' + failMsg);
+                        resolve(false);
+                    }
+                });
+            });
+        }
+
+        async function renameFile(filename) {
+            const baseName = filename.replace(/\.[^.]+$/, '');
+            const ext = filename.slice(baseName.length);
+            const newBase = prompt(`請輸入新的檔案名稱（不含 ${ext}）:`, baseName);
+            if (newBase === null) return;
+            const trimmed = newBase.trim();
+            if (!trimmed) { alert('名稱不能為空'); return; }
+            const newName = trimmed + ext;
+            try {
+                const res = await fetch(`/api/files/rename/${encodeURIComponent(filename)}?new_name=${encodeURIComponent(newName)}&session_id=${SESSION_ID}`, { method: 'POST' });
+                const data = await res.json();
+                if (res.ok) {
+                    loadFileList();
+                } else {
+                    alert(`重新命名失敗: ${data.detail}`);
+                }
+            } catch (err) {
+                alert(`錯誤: ${err.message}`);
             }
         }
 
@@ -234,7 +521,7 @@
                 displayedFiles.forEach(f => {
                     const tr = document.createElement('tr');
                     tr.innerHTML = `
-                        <td style="font-weight: bold;">${f.filename}</td>
+                        <td style="font-weight: bold;">${f.filename} <span onclick="renameFile('${f.filename}')" style="cursor:pointer;opacity:0.4;font-size:12px;margin-left:4px;" onmouseenter="this.style.opacity='1'" onmouseleave="this.style.opacity='0.4'" title="重新命名">✏️</span></td>
                         <td style="color: #64748b;">${(f.size / 1024).toFixed(2)} KB</td>
                         <td style="color: #64748b;">${f.uploaded_at}</td>
                         <td>
@@ -279,6 +566,23 @@
 
         function closeUploadModal() {
             $('uploadModal').classList.remove('show');
+            // Hide mini badge too when explicitly closing
+            const badge = $('upload-mini-badge');
+            if (badge) badge.style.display = 'none';
+            const minBtn = $('upload-minimize-btn');
+            if (minBtn) minBtn.style.display = 'none';
+        }
+
+        function minimizeUpload() {
+            $('uploadModal').classList.remove('show');
+            const badge = $('upload-mini-badge');
+            if (badge) badge.style.display = 'flex';
+        }
+
+        function restoreUpload() {
+            $('uploadModal').classList.add('show');
+            const badge = $('upload-mini-badge');
+            if (badge) badge.style.display = 'none';
         }
 
         // ============================================

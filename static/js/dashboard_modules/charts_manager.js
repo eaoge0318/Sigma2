@@ -326,9 +326,28 @@ export async function drawGoalChart(colName) {
             headerRow = data.headers;
             rows = data.rows || [];
         } else if (data.content) {
+            // Robust CSV parser to handle quotes and embedded commas
+            const parseCSVLine = (line) => {
+                const result = [];
+                let current = '';
+                let inQuotes = false;
+                for (let i = 0; i < line.length; i++) {
+                    const char = line[i];
+                    if (char === '"') {
+                        inQuotes = !inQuotes;
+                    } else if (char === ',' && !inQuotes) {
+                        result.push(current.trim().replace(/^"|"$/g, ''));
+                        current = '';
+                    } else {
+                        current += char;
+                    }
+                }
+                result.push(current.trim().replace(/^"|"$/g, ''));
+                return result;
+            };
             const rawLines = data.content.trim().split('\n');
-            headerRow = rawLines[0].split(',').map(h => h.trim());
-            rows = rawLines.slice(1).map(l => l.split(',').map(v => v.trim()));
+            headerRow = parseCSVLine(rawLines[0]);
+            rows = rawLines.slice(1).map(l => parseCSVLine(l));
         }
 
         const colIdx = headerRow.indexOf(colName);

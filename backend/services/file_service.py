@@ -50,7 +50,12 @@ class FileService:
         file_id: Optional[str] = None,
     ):
         """上傳檔案 (支援綁定特定 file_id 的對應表)"""
+        import logging
+        logger = logging.getLogger(__name__)
         try:
+            filename = file.filename
+            logger.info(f"[Upload] Started: {filename} for session {session_id}")
+            
             # 1. 如果是綁定特定檔案的對應表
             if is_mapping and file_id:
                 analysis_path = self.base_dir / session_id / "analysis" / file_id
@@ -91,12 +96,22 @@ class FileService:
             else:
                 filename = base_filename
 
-            content = await file.read()
+            logger.info(f"[Upload] Starting streaming upload to disk: {filename}")
+            
+            raw_path = os.path.join(upload_dir, filename)
+            
+            # Stream directly to disk to avoid massive RAM spikes for 100MB+ files
+            with open(raw_path, "wb") as f_out:
+                while chunk := await file.read(1024 * 1024 * 5):  # 5MB chunks
+                    f_out.write(chunk)
+                    
+            file_size = os.path.getsize(raw_path)
+            logger.info(f"[Upload] File streamed and saved to disk: {file_size} bytes")
 
             # === Excel 自動轉 CSV ===
             ext = os.path.splitext(filename)[1].lower()
             if ext in (".xlsx", ".xls"):
-                import io
+                import asyncio as _asyncio
 
                 try:
                     import pandas as pd
@@ -105,44 +120,76 @@ class FileService:
                         500, detail="伺服器缺少 pandas 套件, 無法處理 Excel 檔案"
                     )
                 try:
-                    # 嘗試載入 openpyxl (xlsx) 或 xlrd (xls)
-                    engine = "openpyxl" if ext == ".xlsx" else None
-                    xls = pd.ExcelFile(io.BytesIO(content), engine=engine)
-                    sheet_names = xls.sheet_names
-
-                    # 若有多個 sheet, 選擇行數最多的
-                    if len(sheet_names) == 1:
-                        df = pd.read_excel(xls, sheet_name=sheet_names[0])
+                    # Step 2: Get sheet names ultra-fast using zipfile (xlsx is a zip)
+                    if ext == ".xlsx":
+                        import zipfile
+                        from xml.etree import ElementTree as ET
+                        sheets_info = []
+                        with zipfile.ZipFile(raw_path, "r") as zf:
+                            with zf.open("xl/workbook.xml") as wb_xml:
+                                tree = ET.parse(wb_xml)
+                                ns = {"s": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+                                sheet_names = [
+                                    el.attrib["name"]
+                                    for el in tree.findall(".//s:sheet", ns)
+                                ]
+                            for i, sn in enumerate(sheet_names, 1):
+                                ws_path = f"xl/worksheets/sheet{i}.xml"
+                                try:
+                                    info = zf.getinfo(ws_path)
+                                    est_rows = max(0, info.file_size // 100)
+                                    sheets_info.append({"name": sn, "rows": est_rows, "cols": -1})
+                                except KeyError:
+                                    sheets_info.append({"name": sn, "rows": -1, "cols": -1})
                     else:
-                        best_sheet = None
-                        best_rows = -1
-                        for sn in sheet_names:
-                            tmp = pd.read_excel(xls, sheet_name=sn)
-                            if len(tmp) > best_rows:
-                                best_rows = len(tmp)
-                                best_sheet = sn
-                        df = pd.read_excel(xls, sheet_name=best_sheet)
+                        # .xls fallback — lightweight check
+                        def _get_xls_sheets(p):
+                            import pandas as _pd
+                            xls = _pd.ExcelFile(p)
+                            names = xls.sheet_names
+                            xls.close()
+                            return names
+                        sheet_names = await _asyncio.to_thread(_get_xls_sheets, raw_path)
+                        sheets_info = [{"name": sn, "rows": -1, "cols": -1} for sn in sheet_names]
 
-                    # 轉 CSV (UTF-8 BOM 以相容 Excel 開啟)
-                    csv_buffer = io.StringIO()
-                    df.to_csv(csv_buffer, index=False, encoding="utf-8")
-                    content = csv_buffer.getvalue().encode("utf-8-sig")
+                    # Step 3: Multi-sheet → return info for frontend selection (fast path)
+                    if len(sheet_names) > 1:
+                        return {
+                            "needs_sheet_selection": True,
+                            "filename": filename,
+                            "sheets": sheets_info,
+                        }
 
-                    # 替換副檔名
-                    filename = os.path.splitext(filename)[0] + ".csv"
+                    # Step 4: Single sheet → convert to CSV in a thread to avoid blocking event loop
+                    csv_filename = os.path.splitext(filename)[0] + ".csv"
+                    csv_path = os.path.join(upload_dir, csv_filename)
+                    
+                    def _convert_excel_to_csv(src, dst):
+                        import pandas as _pd
+                        df = _pd.read_excel(src, sheet_name=0, engine="calamine")
+                        df.to_csv(dst, index=False, encoding="utf-8-sig")
+                        os.remove(src)  # Remove raw Excel after conversion
+
+                    logger.info(f"[Upload] Converting single-sheet Excel to CSV in thread...")
+                    await _asyncio.to_thread(_convert_excel_to_csv, raw_path, csv_path)
+                    logger.info(f"[Upload] Conversion complete: {csv_path}")
+
+                    file_size = os.path.getsize(csv_path)
+                    filename = csv_filename
+                    file_path = csv_path
 
                 except Exception as e:
                     raise HTTPException(500, detail=f"Excel 轉換失敗: {str(e)}")
+            else:
+                # If not an Excel file, it's already saved down as raw_path
+                file_path = raw_path
 
-            file_path = os.path.join(upload_dir, filename)
-
-            with open(file_path, "wb") as f:
-                f.write(content)
+            logger.info(f"[Upload] Processing finished: {file_path}")
 
             return {
                 "filename": filename,
                 "path": file_path,
-                "size": len(content),
+                "size": file_size,
                 "is_bound": False,
             }
         except Exception as e:
@@ -159,6 +206,9 @@ class FileService:
         if os.path.exists(upload_dir):
             for filename in os.listdir(upload_dir):
                 if "(參數對應表)_" in filename:
+                    continue
+                # Skip raw Excel files (temporary, pending sheet conversion)
+                if filename.lower().endswith((".xlsx", ".xls")):
                     continue
 
                 file_path = os.path.join(upload_dir, filename)
@@ -217,7 +267,7 @@ class FileService:
             raise HTTPException(500, detail=f"Delete failed: {str(e)}")
 
     def _view_file_sync(
-        self, filename: str, page: int, page_size: int, session_id: str
+        self, filename: str, page: int, page_size: int, session_id: str, sample_count: int = 0
     ) -> Dict[str, Any]:
         """同步版本的 view_file，在 thread 中執行以避免阻塞 event loop"""
         if not filename or ".." in filename:
@@ -232,6 +282,31 @@ class FileService:
         with open(file_path, "r", encoding="utf-8", errors="replace") as f:
             for _ in f:
                 total_lines += 1
+
+        # Sampling mode: evenly pick sample_count rows
+        if sample_count > 0 and total_lines > 1:
+            data_lines = total_lines - 1  # exclude header
+            step = max(1, data_lines // sample_count)
+            content_lines = []
+            with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+                header = f.readline()
+                content_lines.append(header)
+                line_idx = 0
+                picked = 0
+                for line in f:
+                    if line_idx % step == 0 and picked < sample_count:
+                        content_lines.append(line)
+                        picked += 1
+                    line_idx += 1
+            return {
+                "filename": filename,
+                "content": "".join(content_lines),
+                "page": 1,
+                "page_size": sample_count,
+                "total_lines": total_lines,
+                "sampled": True,
+                "sample_count": len(content_lines) - 1,
+            }
 
         start_line = (page - 1) * page_size
         content_lines = []
@@ -260,13 +335,14 @@ class FileService:
         page: int = 1,
         page_size: int = 50,
         session_id: str = "default",
+        sample_count: int = 0,
     ) -> Dict[str, Any]:
         """預覽檔案內容 (非阻塞: 在獨立 thread 中執行 I/O)"""
         import asyncio
 
         try:
             return await asyncio.to_thread(
-                self._view_file_sync, filename, page, page_size, session_id
+                self._view_file_sync, filename, page, page_size, session_id, sample_count
             )
         except HTTPException:
             raise

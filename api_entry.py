@@ -267,6 +267,20 @@ async def upload_file_legacy(
     return await file_service.upload_file(file, session_id)
 
 
+@app.post("/api/convert_sheet")
+async def convert_sheet_legacy(
+    filename: str = Form(...),
+    sheet_name: str = Form(...),
+    session_id: str = Form("default"),
+    delete_excel: bool = Form(False),
+):
+    """向後相容：Excel sheet 選擇轉換"""
+    from backend.dependencies import get_file_service
+    from backend.routers.file_router import convert_sheet
+
+    return await convert_sheet(filename, sheet_name, session_id, delete_excel, get_file_service())
+
+
 # --- AI 助手向後相容路由 ---
 @app.get("/api/ai_report")
 async def ai_report_legacy(session_id: str = "default"):
@@ -322,12 +336,12 @@ async def delete_file_legacy(filename: str, session_id: str = "default"):
 
 @app.get("/api/view_file/{filename}")
 async def view_file_legacy(
-    filename: str, page: int = 1, page_size: int = 50, session_id: str = "default"
+    filename: str, page: int = 1, page_size: int = 50, sample_count: int = 0, session_id: str = "default"
 ):
     """向後相容"""
     from backend.dependencies import get_file_service
 
-    return await get_file_service().view_file(filename, page, page_size, session_id)
+    return await get_file_service().view_file(filename, page, page_size, session_id, sample_count)
 
 
 @app.post("/api/save_filtered_file")
