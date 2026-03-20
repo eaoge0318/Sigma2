@@ -2202,8 +2202,8 @@
                 <label class="tool-toggle-item"><input type="checkbox" data-tool="cleaning" checked onchange="onToolToggle()"> 🧹 資料清洗</label>
                 <label class="tool-toggle-item"><input type="checkbox" data-tool="mva" checked onchange="onToolToggle()"> 🎯 多變量分析</label>
                 <label class="tool-toggle-item"><input type="checkbox" data-tool="gb" checked onchange="onToolToggle()"> ⚖️ G/B 檢定</label>
-                <label class="tool-toggle-item"><input type="checkbox" data-tool="maineffect" onchange="onToolToggle()"> 📊 主效應圖</label>
-                <label class="tool-toggle-item"><input type="checkbox" data-tool="rsm" onchange="onToolToggle()"> 🌐 多項式特徵</label>
+                <label class="tool-toggle-item"><input type="checkbox" data-tool="maineffect" checked onchange="onToolToggle()"> 📊 主效應圖</label>
+                <label class="tool-toggle-item"><input type="checkbox" data-tool="rsm" checked onchange="onToolToggle()"> 🌐 多項式特徵</label>
             </div>
         </div>
     </div>
@@ -2547,35 +2547,208 @@
         </div>
 
         <!-- Main Effect Plot Panel -->
-        <div id="panel-maineffect" class="tool-panel" style="display:none;">
-            <div style="flex:1;display:flex;flex-direction:column;padding:16px;gap:12px;">
-                <div style="display:flex;align-items:center;gap:8px;">
-                    <span style="font-size:18px;font-weight:700;color:#1e293b;">📊 主效應圖</span>
-                    <span id="me-clean-toggle" class="cl-mode-toggle-btn"
-                        style="font-size:11px;padding:2px 8px;border-radius:10px;cursor:pointer;border:1px solid #cbd5e1;color:#94a3b8;"
-                        onclick="toggleCleanMode(this)">
-                        原始
-                    </span>
-                </div>
-                <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;">
-                    <div style="flex:1;min-width:180px;">
-                        <label style="font-size:12px;color:#64748b;font-weight:600;">Target (Y)</label>
-                        <select id="me-target" style="width:100%;padding:6px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;margin-top:4px;">
-                            <option value="">— 選擇 Target —</option>
-                        </select>
+        <div id="panel-maineffect" class="tool-panel" style="display:none;background:#f1f5f9;padding:16px;flex:1;flex-direction:column;">
+            <style>
+                .me-param-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; padding:4px 0; }
+                .me-param-item label { display:block; font-size:11px; color:#64748b; font-weight:600; margin-bottom:4px; }
+                .me-param-item input { width:100%; padding:7px 10px; border:1px solid #cbd5e1; border-radius:6px; font-size:13px; box-sizing:border-box; }
+            </style>
+            <div style="flex:1;min-width:0;width:100%;height:100%;display:flex;overflow:hidden;background:#fff;border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,0.05);border:1px solid #e2e8f0;">
+                <!-- Left Step Sidebar -->
+                <div style="width:160px;min-width:160px;display:flex;flex-direction:column;background:#f8fafc;border-right:1px solid #e2e8f0;">
+                    <div id="me-tab-1" onclick="meGotoStep(1)" class="rsm-step-tab rsm-step-active">
+                        <div class="rsm-step-num">STEP 01</div>
+                        <div class="rsm-step-label">選擇 Target<span class="rsm-step-done-text"></span></div>
                     </div>
-                    <div style="flex:1;min-width:180px;">
-                        <label style="font-size:12px;color:#64748b;font-weight:600;">Factor (X)</label>
-                        <select id="me-factor" style="width:100%;padding:6px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;margin-top:4px;">
-                            <option value="">— 選擇 Factor —</option>
-                        </select>
+                    <div id="me-tab-2" onclick="meGotoStep(2)" class="rsm-step-tab">
+                        <div class="rsm-step-num">STEP 02</div>
+                        <div class="rsm-step-label">選擇特徵<span class="rsm-step-done-text"></span></div>
                     </div>
-                    <button onclick="meRun()" style="padding:6px 16px;background:#2563eb;color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;">▶ 繪製</button>
+                    <div id="me-tab-3" onclick="meGotoStep(3)" class="rsm-step-tab">
+                        <div class="rsm-step-num">STEP 03</div>
+                        <div class="rsm-step-label">分析結果<span class="rsm-step-done-text"></span></div>
+                    </div>
+                    <div style="flex:1;"></div>
+                    <div style="padding:20px 16px;">
+                        <button id="me-sidebar-run-btn" onclick="meRun()" disabled
+                            style="width:100%;padding:10px;background:#e2e8f0;color:#64748b;border:none;border-radius:8px;font-weight:700;cursor:not-allowed;">分析</button>
+                    </div>
                 </div>
-                <div id="me-chart-area" style="flex:1;display:flex;align-items:center;justify-content:center;border:1px solid #e2e8f0;border-radius:10px;background:#fff;min-height:300px;">
-                    <div style="text-align:center;color:#94a3b8;">
-                        <div style="font-size:36px;margin-bottom:8px;">📊</div>
-                        <div>選擇 Target 與 Factor 後按「繪製」</div>
+                <!-- Right Content Area -->
+                <div style="flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden;background:#fff;position:relative;">
+                    <!-- Step 1: Target Multi-Select (side-by-side layout) -->
+                    <div id="me-step1" style="flex:1;display:flex;flex-direction:row;padding:16px;gap:14px;overflow:hidden;background:#fafafa;">
+
+                        <!-- Left: dropdown + trend chart -->
+                        <div style="flex:1.4;display:flex;flex-direction:column;gap:10px;min-width:0;overflow:hidden;">
+                            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px;display:flex;flex-direction:column;flex:1;min-height:0;">
+                                <div style="font-size:12px;font-weight:600;color:#64748b;margin-bottom:8px;">🎯 新增目標欄位 (Goal Columns)</div>
+                                <div style="display:flex;gap:8px;">
+                                    <select id="me-target-select" onchange="meTargetChange()" style="flex:1;padding:8px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;color:#1e293b;outline:none;cursor:pointer;">
+                                        <option value="">— 選擇目標變數 —</option>
+                                    </select>
+                                    <button onclick="meAddTarget()" style="padding:8px 14px;background:#2563eb;color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;">+ 加入</button>
+                                </div>
+                                <div id="me-trend-area" style="flex:1;min-height:160px;margin-top:10px;overflow:hidden;position:relative;background:#f8fafc;border-radius:6px;border:1px dashed #e2e8f0;display:flex;align-items:center;justify-content:center;">
+                                    <div style="color:#94a3b8;font-size:12px;text-align:center;">選擇目標後顯示數據趨勢</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Right: selected targets list (full height, scrollable) -->
+                        <div style="flex:1;display:flex;flex-direction:column;min-width:0;overflow:hidden;">
+                            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px;flex:1;display:flex;flex-direction:column;min-height:0;">
+                                <div style="font-size:12px;font-weight:600;color:#64748b;margin-bottom:10px;flex-shrink:0;">
+                                    📋 已選目標 <span style="font-size:11px;font-weight:400;">(可調整各 Target 的分析權重)</span>
+                                </div>
+                                <div id="me-target-chips" style="flex:1;display:flex;flex-direction:column;gap:8px;overflow-y:auto;min-height:0;">
+                                    <div style="color:#94a3b8;font-size:12px;padding:8px 0;">尚未選擇任何 Target</div>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+
+                    <!-- Step 2: Feature Selection (3 sub-tabs) -->
+                    <div id="me-step2" style="display:none;flex:1;flex-direction:column;padding:20px;gap:14px;overflow:hidden;">
+                        <!-- Sub-tab buttons (seamless border-group) -->
+                        <div style="display:flex;flex-shrink:0;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">
+                            <button id="me-subtab-algo" onclick="meSwitchSubTab('algo')"
+                                style="flex:1;padding:10px 8px;background:#2563eb;color:#fff;border:none;border-right:1px solid #e2e8f0;font-size:12px;font-weight:600;cursor:pointer;transition:background 0.15s;">
+                                ① 演算法選擇
+                            </button>
+                            <button id="me-subtab-control" onclick="meSwitchSubTab('control')"
+                                style="flex:1;padding:10px 8px;background:#fff;color:#64748b;border:none;border-right:1px solid #e2e8f0;font-size:12px;font-weight:600;cursor:pointer;transition:background 0.15s;">
+                                ② 控制參數 <span id="me-control-count"
+                                    style="display:inline-block;min-width:20px;padding:1px 5px;background:#e2e8f0;color:#475569;border-radius:10px;font-size:10px;text-align:center;margin-left:2px;">0</span>
+                            </button>
+                            <button id="me-subtab-bg" onclick="meSwitchSubTab('bg')"
+                                style="flex:1;padding:10px 8px;background:#fff;color:#64748b;border:none;font-size:12px;font-weight:600;cursor:pointer;transition:background 0.15s;">
+                                ③ 背景參數 <span id="me-bg-count"
+                                    style="display:inline-block;min-width:20px;padding:1px 5px;background:#e2e8f0;color:#475569;border-radius:10px;font-size:10px;text-align:center;margin-left:2px;">0</span>
+                            </button>
+                        </div>
+
+                        <!-- Pane ①: Algorithm -->
+                        <div id="me-subtab-pane-algo" style="flex:1;display:flex;flex-direction:column;gap:14px;overflow-y:auto;">
+                            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:16px;">
+                                <div style="font-size:12px;font-weight:700;color:#64748b;margin-bottom:10px;">預測引擎選擇</div>
+                                <select onchange="meAlgorithmChange(this.value)"
+                                    style="width:100%;padding:8px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;">
+                                    <option value="xgboost">XGBoost Regressor（推薦）</option>
+                                    <option value="pls">PLS Regression（偏最小二乘）</option>
+                                </select>
+                                <div style="margin-top:10px;padding:10px;background:#eff6ff;border-radius:6px;font-size:12px;color:#3b82f6;line-height:1.5;">
+                                    XGBoost 適合非線性製程資料，能自動處理特徵交互效應，ALE 分析準確度高。
+                                </div>
+                            </div>
+                            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:16px;">
+                                <div style="font-size:12px;font-weight:700;color:#64748b;margin-bottom:10px;">模型超參數</div>
+                                <div id="me-algo-params">
+                                    <div class="me-param-grid">
+                                        <div class="me-param-item"><label>樹的數量 (N_ESTIMATORS)</label><input type="number" value="100" min="10" max="1000" id="me-hp-n_estimators"></div>
+                                        <div class="me-param-item"><label>最大深度 (MAX DEPTH)</label><input type="number" value="4" min="1" max="10" id="me-hp-max_depth"></div>
+                                        <div class="me-param-item"><label>學習率 (LR)</label><input type="number" value="0.1" min="0.001" max="1" step="0.001" id="me-hp-learning_rate"></div>
+                                        <div class="me-param-item"><label>子採樣比 (SUBSAMPLE)</label><input type="number" value="0.8" min="0.1" max="1" step="0.1" id="me-hp-subsample"></div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:16px;">
+                                <div style="font-size:12px;font-weight:700;color:#64748b;margin-bottom:10px;">效應計算方式</div>
+                                <div style="display:flex;gap:6px;">
+                                    <button id="me-method-ale" onclick="meSetMethod('ale')"
+                                        style="flex:1;padding:8px;background:#2563eb;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">
+                                        ALE（推薦）
+                                    </button>
+                                    <button id="me-method-pdp" onclick="meSetMethod('pdp')"
+                                        style="flex:1;padding:8px;background:#f1f5f9;color:#64748b;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">
+                                        PDP
+                                    </button>
+                                </div>
+                                <div style="margin-top:8px;font-size:11px;color:#94a3b8;">ALE 適合特徵相關的製程資料；PDP 計算較直觀但假設特徵獨立。</div>
+                            </div>
+                        </div>
+
+                        <!-- Pane ②: Control factors dual-list -->
+                        <div id="me-subtab-pane-control" style="flex:1;display:none;flex-direction:column;gap:10px;overflow:hidden;">
+                            <div style="font-size:12px;color:#64748b;flex-shrink:0;">選擇你想<b>觀察主效應圖</b>的因子（右側已選清單）</div>
+                            <div style="display:grid;grid-template-columns:1fr 44px 1fr 1.2fr;gap:8px;flex:1;min-height:0;">
+                                <div class="list-col">
+                                    <div class="list-header" style="display:flex;justify-content:space-between;align-items:center;padding:8px 14px;">
+                                        <span>可用參數</span>
+                                        <div style="display:flex;gap:4px;">
+                                            <button id="me-smart-clear-btn-ctrl" onclick="meClearSmartScores()" title="清除分數" style="display:none;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);color:rgba(255,255,255,0.7);border-radius:6px;padding:2px 6px;font-size:11px;cursor:pointer;">✕ 清除</button>
+                                            <button onclick="meOpenSmartModal()" title="智慧篩選" style="background:rgba(255,255,255,0.2);border:1px solid rgba(255,255,255,0.4);color:#fff;border-radius:6px;padding:2px 8px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;">⚡ 智慧篩選</button>
+                                        </div>
+                                    </div>
+                                    <div class="list-search"><input type="text" placeholder="搜尋..." oninput="meFilterAvailControl(this.value)"></div>
+                                    <div id="me-avail-control" class="list-content custom-scroll" ondblclick="meMoveToControl()"></div>
+                                </div>
+                                <div class="list-btns">
+                                    <div class="move-btn" onclick="meMoveToControl()">→</div>
+                                    <div class="move-btn" onclick="meRemoveFromControl()">←</div>
+                                </div>
+                                <div class="list-col">
+                                    <div class="list-header" style="background:#2563eb;display:flex;justify-content:space-between;">
+                                        <span>控制參數</span><span id="me-sel-control-badge" style="background:rgba(255,255,255,0.2);padding:2px 8px;border-radius:10px;font-size:11px;">0</span>
+                                    </div>
+                                    <div class="list-search"><input type="text" placeholder="搜尋..." oninput="meFilterSelControl(this.value)"></div>
+                                    <div id="me-sel-control" class="list-content custom-scroll"></div>
+                                </div>
+                                <!-- Preview panel -->
+                                <div class="list-col" style="overflow:hidden;border:1px solid #e2e8f0;border-radius:8px;">
+                                    <div id="me-ctrl-preview" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;">
+                                        <span style="font-size:11px;color:#94a3b8;">點擊參數查看分佈</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Pane ③: Background factors dual-list -->
+                        <div id="me-subtab-pane-bg" style="flex:1;display:none;flex-direction:column;gap:10px;overflow:hidden;">
+                            <div style="font-size:12px;color:#64748b;flex-shrink:0;">選擇輔助模型訓練的背景因子（不出現在圖表中，但提升模型準確度）</div>
+                            <div style="display:grid;grid-template-columns:1fr 44px 1fr 1.2fr;gap:8px;flex:1;min-height:0;">
+                                <div class="list-col">
+                                    <div class="list-header" style="display:flex;justify-content:space-between;align-items:center;padding:8px 14px;">
+                                        <span>可用參數</span>
+                                        <div style="display:flex;gap:4px;">
+                                            <button id="me-smart-clear-btn" onclick="meClearSmartScores()" title="清除分數" style="display:none;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);color:rgba(255,255,255,0.7);border-radius:6px;padding:2px 6px;font-size:11px;cursor:pointer;">✕ 清除</button>
+                                            <button onclick="meOpenSmartModal()" title="智慧篩選" style="background:rgba(255,255,255,0.2);border:1px solid rgba(255,255,255,0.4);color:#fff;border-radius:6px;padding:2px 8px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;">⚡ 智慧篩選</button>
+                                        </div>
+                                    </div>
+                                    <div class="list-search"><input type="text" placeholder="搜尋..." oninput="meFilterAvailBg(this.value)"></div>
+                                    <div id="me-avail-bg" class="list-content custom-scroll"></div>
+                                </div>
+                                <div class="list-btns">
+                                    <div class="move-btn" onclick="meMoveToBg()">→</div>
+                                    <div class="move-btn" onclick="meRemoveFromBg()">←</div>
+                                </div>
+                                <div class="list-col">
+                                    <div class="list-header" style="background:#10b981;display:flex;justify-content:space-between;">
+                                        <span>背景參數</span><span id="me-sel-bg-badge" style="background:rgba(255,255,255,0.2);padding:2px 8px;border-radius:10px;font-size:11px;">0</span>
+                                    </div>
+                                    <div class="list-search"><input type="text" placeholder="搜尋..." oninput="meFilterSelBg(this.value)"></div>
+                                    <div id="me-sel-bg" class="list-content custom-scroll"></div>
+                                </div>
+                                <!-- Preview panel -->
+                                <div class="list-col" style="overflow:hidden;border:1px solid #e2e8f0;border-radius:8px;">
+                                    <div id="me-bg-preview" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;">
+                                        <span style="font-size:11px;color:#94a3b8;">點擊參數查看分佈</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+
+                    <!-- Step 3: Results -->
+                    <div id="me-step3" style="display:none;flex:1;flex-direction:column;padding:20px;overflow:hidden;min-width:0;">
+                        <div id="me-step3-content" style="flex:1;overflow:hidden;min-height:0;min-width:0;position:relative;">
+                            <div style="display:flex;align-items:center;justify-content:center;height:100%;flex-direction:column;gap:8px;color:#94a3b8;">
+                                <div style="font-size:28px;">📊</div>
+                                <div style="font-size:13px;">請返回 Step 02 並執行分析</div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -2786,7 +2959,7 @@
         };
 
         // Tool visibility state
-        let _toolVisible = { pivot: true, cleaning: true, mva: true, gb: true, maineffect: false, rsm: false };
+        let _toolVisible = { pivot: true, cleaning: true, mva: true, gb: true, maineffect: true, rsm: true };
 
         function toggleToolSettings() {
             const popup = document.getElementById('tool-settings-popup');
@@ -2908,12 +3081,67 @@
             if (gbInfo) gbInfo.textContent = '';
         }
 
+        // Inject spin keyframe once
+        (function() {
+            if (!document.getElementById('_cl-spin-kf')) {
+                const s = document.createElement('style');
+                s.id = '_cl-spin-kf';
+                s.textContent = '@keyframes _clSpin { to { transform:rotate(360deg); } }';
+                document.head.appendChild(s);
+            }
+        })();
+
+        // Show a "loading" overlay on the current tool panel while cleaning loads
+        function _showModuleWaitingOverlay() {
+            const panelMap = {
+                maineffect: 'panel-maineffect',
+                rsm: 'panel-rsm',
+                mva: 'panel-mva',
+                gb: 'panel-gb',
+            };
+            const panelId = panelMap[_activeTool];
+            if (!panelId) return;
+            const panel = document.getElementById(panelId);
+            if (!panel || document.getElementById('_cl-wait-overlay')) return;
+            const ov = document.createElement('div');
+            ov.id = '_cl-wait-overlay';
+            ov.style.cssText = 'position:absolute;inset:0;z-index:999;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(248,250,252,0.92);backdrop-filter:blur(3px);gap:14px;pointer-events:none;';
+            ov.innerHTML = `
+                <div style="width:40px;height:40px;border:3px solid #e2e8f0;border-top-color:#3b82f6;border-radius:50%;animation:_clSpin 0.8s linear infinite;"></div>
+                <div style="font-size:13px;font-weight:600;color:#475569;">資料初始化中，請稍候...</div>
+                <div style="font-size:11px;color:#94a3b8;">正在計算欄位統計與清洗規則</div>`;
+            const prev = panel.style.position;
+            if (!prev || prev === 'static') panel.style.position = 'relative';
+            panel.appendChild(ov);
+            // Auto-remove when loading finishes
+            if (_clLoadingPromise) {
+                _clLoadingPromise.then(() => ov.remove(), () => ov.remove());
+            }
+        }
+
+        // Call meInit / rsmInit, but wait for cleaning to finish first if still loading
+        function _initToolWhenReady() {
+            const doInit = () => {
+                if (_activeTool === 'maineffect' && currentFileId && typeof meInit === 'function') meInit();
+                if (_activeTool === 'rsm' && currentFileId && typeof rsmInit === 'function') rsmInit();
+            };
+            if (_clLoadingPromise) {
+                _showModuleWaitingOverlay();
+                _clLoadingPromise.then(doInit, doInit);
+            } else {
+                doInit();
+            }
+        }
+
         function switchTool(toolName) {
             _activeTool = toolName;
             if (toolName === 'pivot') {
                 // Set active dataset to original file
                 const orig = _datasets.find(d => d.id === 'original');
-                if (orig) _activeDataset = orig;
+                if (orig) {
+                    _activeDataset = orig;
+                    if (orig.fileId) currentFileId = orig.fileId;
+                }
                 _expandedDatasets.add('original');
             }
             document.getElementById('panel-pivot').style.display = toolName === 'pivot' ? 'contents' : 'none';
@@ -2922,8 +3150,7 @@
             document.getElementById('panel-gb').style.display = toolName === 'gb' ? 'flex' : 'none';
             document.getElementById('panel-maineffect').style.display = toolName === 'maineffect' ? 'flex' : 'none';
             document.getElementById('panel-rsm').style.display = toolName === 'rsm' ? 'flex' : 'none';
-            if (toolName === 'maineffect' && currentFileId) meLoadColumns(toolName);
-            if (toolName === 'rsm' && currentFileId && typeof rsmInit === 'function') rsmInit();
+            _initToolWhenReady();
             // If cleaning rules changed, clear visible panels now
             if (window._cleaningDirty) {
                 window._cleaningDirty = false;
@@ -2952,9 +3179,6 @@
             document.getElementById('panel-maineffect').style.display = _activeTool === 'maineffect' ? 'flex' : 'none';
             document.getElementById('panel-rsm').style.display = _activeTool === 'rsm' ? 'flex' : 'none';
             if (ds.fileId) currentFileId = ds.fileId;
-            if (_activeTool === 'maineffect' && currentFileId) meLoadColumns(_activeTool);
-            if (_activeTool === 'rsm' && currentFileId && typeof rsmInit === 'function') rsmInit();
-
             // If cleaning rules changed, clear visible panels now
             if (window._cleaningDirty) {
                 window._cleaningDirty = false;
@@ -2968,13 +3192,25 @@
 
             if (clNeeded) {
                 _clDatasetId = dsId;
-                loadCleaningPanel().then(() => {
+                // Show ⏳ in sidebar cleaning entry
+                const sidebarInfo = document.getElementById('cl-sidebar-info-' + dsId);
+                if (sidebarInfo) sidebarInfo.innerHTML = '<span style="color:#f59e0b;animation:_clSpin 1s linear infinite;display:inline-block;">⟳</span> 初始化中';
+                _clLoadingPromise = loadCleaningPanel();
+                _clLoadingPromise.then(() => {
+                    _clLoadingPromise = null;
                     renderDatasetsSidebar();
                     syncCleanToggleUI();
+                    _initToolWhenReady();
+                }).catch(err => {
+                    _clLoadingPromise = null;
+                    console.error("Failed to load cleaning panel:", err);
+                    _initToolWhenReady();
                 });
-                if (_activeTool !== 'cleaning') {
-                    // silent background load — don't show panel
-                }
+                // Show waiting overlay on the current tool panel while loading
+                if (_activeTool !== 'cleaning') _showModuleWaitingOverlay();
+            } else {
+                // Even if clNeeded=false, a previous loadCleaningPanel might still be in flight
+                _initToolWhenReady();
             }
 
             if (mvaNeeded) {
@@ -3017,6 +3253,7 @@
         // ================================================================
         // Data Cleaning
         // ================================================================
+        let _clLoadingPromise = null;   // tracks in-flight loadCleaningPanel call
         let _clColumnStats = null;
         let _clDatasetId = null;
         let _clExcludedCols = new Set();
@@ -3104,6 +3341,8 @@
             // Update summary
             document.getElementById('cl-excluded-cols').textContent = _clExcludedCols.size;
             document.getElementById('cl-outlier-rows').textContent = _clOutlierIndices.length;
+            // Clear downstream analysis results (stale after rule change)
+            if (typeof meReset === 'function') meReset();
 
             // Auto-apply: save to dataset + push to MVA state
             const excludedCols = [..._clExcludedCols];
@@ -5222,6 +5461,9 @@
                 renderFieldList();
                 populateTargetParam();
                 resetPivot();
+
+                // If user already switched to a module before allFields was ready, init it now
+                if (typeof _initToolWhenReady === 'function') _initToolWhenReady();
             } catch (e) {
                 console.error('loadColumns error:', e);
             }
@@ -5631,8 +5873,10 @@
         async function runAnalysis() {
             if (selectedTargets.length === 0) return;
             const btn = document.getElementById('btn-analyze');
+            const body = document.getElementById('result-body');
             btn.disabled = true;
             btn.textContent = '⏳ 分析中...';
+            if (body) body.innerHTML = '<div class="result-empty"><div class="re-icon" style="font-size:28px;">⏳</div><div class="re-text">計算組間相關係數中...</div><div class="re-hint">資料量大時需要數秒，請稍候</div></div>';
             try {
                 await _doPivotFetch(selectedTargets);
             } finally {
@@ -6233,7 +6477,15 @@
             } catch (e) { }
             let sid = localStorage.getItem('sigma2_session_id');
             if (!sid) {
-                sid = crypto.randomUUID();
+                // Fallback for crypto.randomUUID in non-secure contexts
+                if (window.crypto && window.crypto.randomUUID) {
+                    sid = crypto.randomUUID();
+                } else {
+                    sid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                        var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+                        return v.toString(16);
+                    });
+                }
                 localStorage.setItem('sigma2_session_id', sid);
             }
             return sid;
@@ -7293,35 +7545,6 @@
             canvas.addEventListener('mouseleave', () => { tip.style.display = 'none'; });
         }
         // ================================================================
-        // Main Effect - Column Loading & Placeholder
-        // ================================================================
-        let _meColsLoaded = false;
-
-        function meLoadColumns(tool) {
-            if (_meColsLoaded && tool) return;
-            const numFields = allFields.filter(f => f.dtype === 'number' || f.dtype === 'float64' || f.dtype === 'int64' || f.dtype === 'float' || f.dtype === 'int');
-            const cols = numFields.length > 0 ? numFields : allFields;
-
-            const meTarget = document.getElementById('me-target');
-            const meFactor = document.getElementById('me-factor');
-            if (meTarget && meTarget.options.length <= 1) {
-                cols.forEach(f => {
-                    meTarget.add(new Option(f.name, f.name));
-                    meFactor.add(new Option(f.name, f.name));
-                });
-            }
-            _meColsLoaded = true;
-        }
-
-        function meRun() {
-            const target = document.getElementById('me-target').value;
-            const factor = document.getElementById('me-factor').value;
-            if (!target || !factor) { alert('請選擇 Target 與 Factor'); return; }
-            if (target === factor) { alert('Target 和 Factor 不能相同'); return; }
-            document.getElementById('me-chart-area').innerHTML = '<div style="text-align:center;color:#94a3b8;"><div style="font-size:20px;">🚧</div><div>主效應圖功能開發中...</div></div>';
-        }
-
-        // ================================================================
         // Init
         // ================================================================
         document.addEventListener('DOMContentLoaded', () => {
@@ -7334,8 +7557,66 @@
         });
     </script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
-    <script src="/static/js/rsm_manager.js"></script>
-    <script src="/static/js/maineffect_manager.js"></script>
+    <script src="/static/js/rsm_manager.js?v=3"></script>
+    <script src="/static/js/me_manager.js?v=50"></script>
+
+    <!-- Smart Select Modal -->
+    <div id="me-smart-modal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.45);align-items:center;justify-content:center;">
+        <div style="background:#fff;border-radius:16px;box-shadow:0 25px 50px -12px rgba(0,0,0,0.3);width:460px;max-width:95vw;overflow:hidden;">
+            <!-- Header -->
+            <div style="background:linear-gradient(135deg,#6d28d9,#7c3aed);padding:20px 24px;display:flex;justify-content:space-between;align-items:center;">
+                <div>
+                    <div style="color:#fff;font-size:16px;font-weight:700;">⚡ 智慧篩選</div>
+                    <div style="color:rgba(255,255,255,0.75);font-size:12px;margin-top:2px;">AI 自動計算各因子對目標的重要性</div>
+                </div>
+                <button onclick="meCloseSmartModal()" style="background:rgba(255,255,255,0.15);border:none;color:#fff;width:28px;height:28px;border-radius:8px;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;">&times;</button>
+            </div>
+            <!-- Body -->
+            <div style="padding:22px 24px;">
+                <!-- Algorithm selection -->
+                <div style="margin-bottom:18px;">
+                    <div style="font-size:13px;font-weight:600;color:#334155;margin-bottom:10px;">選擇分析演算法</div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                        <label id="me-smart-algo-corr-label" style="border:2px solid #7c3aed;border-radius:10px;padding:12px;cursor:pointer;background:#faf5ff;">
+                            <input type="radio" name="me-smart-algo" value="correlation" checked style="display:none;">
+                            <div style="font-size:12px;font-weight:700;color:#6d28d9;">相關係數 (Abs)</div>
+                            <div style="font-size:11px;color:#94a3b8;margin-top:3px;">線性關係，運算極快</div>
+                        </label>
+                        <label id="me-smart-algo-xgb-label" style="border:2px solid #e2e8f0;border-radius:10px;padding:12px;cursor:pointer;background:#fff;">
+                            <input type="radio" name="me-smart-algo" value="xgboost" style="display:none;">
+                            <div style="font-size:12px;font-weight:700;color:#475569;">XGBoost (SHAP)</div>
+                            <div style="font-size:11px;color:#94a3b8;margin-top:3px;">非線性關係，精準但較慢</div>
+                        </label>
+                    </div>
+                </div>
+                <!-- Status -->
+                <div id="me-smart-status" style="min-height:20px;font-size:12px;font-weight:500;margin-bottom:14px;"></div>
+                <!-- Buttons -->
+                <div style="display:flex;gap:10px;">
+                    <button onclick="meCloseSmartModal()" style="flex:1;padding:10px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;color:#64748b;font-weight:600;cursor:pointer;font-size:13px;">取消</button>
+                    <button id="me-smart-run-btn" onclick="meRunSmartAnalysis()" style="flex:2;padding:10px;background:linear-gradient(135deg,#6d28d9,#7c3aed);border:none;border-radius:8px;color:#fff;font-weight:700;cursor:pointer;font-size:13px;">開始智慧分析</button>
+                </div>
+                <div style="margin-top:10px;font-size:11px;color:#94a3b8;text-align:center;">分析完成後，分數會顯示在可用參數列表中，自行選取後移到背景參數</div>
+            </div>
+        </div>
+    </div>
+    <script>
+        // Smart modal algo card highlight
+        document.querySelectorAll('input[name="me-smart-algo"]').forEach(radio => {
+            radio.addEventListener('change', () => {
+                document.getElementById('me-smart-algo-corr-label').style.borderColor = '#e2e8f0';
+                document.getElementById('me-smart-algo-corr-label').style.background = '#fff';
+                document.getElementById('me-smart-algo-xgb-label').style.borderColor  = '#e2e8f0';
+                document.getElementById('me-smart-algo-xgb-label').style.background  = '#fff';
+                const sel = document.querySelector('input[name="me-smart-algo"]:checked');
+                if (sel) {
+                    const lbl = sel.closest('label');
+                    lbl.style.borderColor = '#7c3aed';
+                    lbl.style.background  = '#faf5ff';
+                }
+            });
+        });
+    </script>
 </body>
 
 </html>

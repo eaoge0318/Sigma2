@@ -390,83 +390,83 @@ async def run_pivot_table(
                     _compute_common_corr(pivot, valid_targets)
 
                 # ===== T² Hotelling =====
+                t2_rows = []
                 from scipy import stats as sp_stats
                 from sklearn.decomposition import PCA
                 from sklearn.preprocessing import StandardScaler
 
-                t2_rows = []
                 for group_key, group_df in grouped:
-                    if not isinstance(group_key, tuple):
-                        group_key = (group_key,)
-                    row_data = dict(zip(index_cols, group_key))
+                        if not isinstance(group_key, tuple):
+                            group_key = (group_key,)
+                        row_data = dict(zip(index_cols, group_key))
 
-                    if len(group_df) < 10 or len(num_cols_all) < 2:
-                        row_data["_t2_label"] = "n<10"
-                        row_data["_t2_data"] = None
-                        t2_rows.append(row_data)
-                        continue
-
-                    try:
-                        sub = group_df[num_cols_all].copy()
-                        # Drop cols with >50% NaN, fill rest with median
-                        thresh = int(len(sub) * 0.5)
-                        sub = sub.dropna(axis=1, thresh=thresh)
-                        sub = sub.fillna(sub.median())
-                        # Drop zero-variance cols
-                        sub = sub.loc[:, sub.std() > 0]
-                        n_obs, p_dim = sub.shape
-                        if p_dim < 2:
-                            row_data["_t2_label"] = "-"
+                        if len(group_df) < 10 or len(num_cols_all) < 2:
+                            row_data["_t2_label"] = "n<10"
                             row_data["_t2_data"] = None
                             t2_rows.append(row_data)
                             continue
 
-                        scaler = StandardScaler()
-                        scaled = scaler.fit_transform(sub.values)
+                        try:
+                            sub = group_df[num_cols_all].copy()
+                            # Drop cols with >50% NaN, fill rest with median
+                            thresh = int(len(sub) * 0.5)
+                            sub = sub.dropna(axis=1, thresh=thresh)
+                            sub = sub.fillna(sub.median())
+                            # Drop zero-variance cols
+                            sub = sub.loc[:, sub.std() > 0]
+                            n_obs, p_dim = sub.shape
+                            if p_dim < 2:
+                                row_data["_t2_label"] = "-"
+                                row_data["_t2_data"] = None
+                                t2_rows.append(row_data)
+                                continue
 
-                        pca_used = False
-                        n_comp = p_dim
-                        if p_dim / n_obs > 0.5:
-                            pca = PCA()
-                            pca.fit(scaled)
-                            cum = np.cumsum(pca.explained_variance_ratio_)
-                            n_comp = int(np.searchsorted(cum, 0.95) + 1)
-                            n_comp = max(2, min(n_comp, n_obs - 2))
-                            pca2 = PCA(n_components=n_comp)
-                            scaled = pca2.fit_transform(scaled)
-                            pca_used = True
+                            scaler = StandardScaler()
+                            scaled = scaler.fit_transform(sub.values)
 
-                        mean = scaled.mean(axis=0)
-                        cov_inv = np.linalg.pinv(np.cov(scaled, rowvar=False))
-                        diff = scaled - mean
-                        t2_vals = [float(d @ cov_inv @ d.T) for d in diff]
+                            pca_used = False
+                            n_comp = p_dim
+                            if p_dim / n_obs > 0.5:
+                                pca = PCA()
+                                pca.fit(scaled)
+                                cum = np.cumsum(pca.explained_variance_ratio_)
+                                n_comp = int(np.searchsorted(cum, 0.95) + 1)
+                                n_comp = max(2, min(n_comp, n_obs - 2))
+                                pca2 = PCA(n_components=n_comp)
+                                scaled = pca2.fit_transform(scaled)
+                                pca_used = True
 
-                        ucl99 = float(sp_stats.chi2.ppf(0.99, n_comp))
-                        ucl95 = float(sp_stats.chi2.ppf(0.95, n_comp))
-                        n_anom = sum(1 for v in t2_vals if v > ucl99)
+                            mean = scaled.mean(axis=0)
+                            cov_inv = np.linalg.pinv(np.cov(scaled, rowvar=False))
+                            diff = scaled - mean
+                            t2_vals = [float(d @ cov_inv @ d.T) for d in diff]
 
-                        row_data["_t2_label"] = f"{n_anom}/{n_obs}"
-                        # First 3 columns for tooltip
-                        g_all_cols = [c for c in group_df.columns if c != "__orig_idx__"]
-                        g_head_cols = g_all_cols[:3]
-                        g_head_data = group_df[g_head_cols].astype(str).values.tolist() if g_head_cols else []
-                        row_data["_t2_data"] = {
-                            "t2_values": t2_vals,
-                            "ucl_99": ucl99,
-                            "ucl_95": ucl95,
-                            "n_components": n_comp,
-                            "pca_used": pca_used,
-                            "n_anomalies": n_anom,
-                            "n_obs": n_obs,
-                            "head_cols": g_head_cols,
-                            "head_data": g_head_data,
-                        }
-                    except Exception as exc:
-                        logger.warning(f"T2 failed: {exc}")
-                        row_data["_t2_label"] = "err"
-                        row_data["_t2_data"] = None
+                            ucl99 = float(sp_stats.chi2.ppf(0.99, n_comp))
+                            ucl95 = float(sp_stats.chi2.ppf(0.95, n_comp))
+                            n_anom = sum(1 for v in t2_vals if v > ucl99)
 
-                    t2_rows.append(row_data)
+                            row_data["_t2_label"] = f"{n_anom}/{n_obs}"
+                            # First 3 columns for tooltip
+                            g_all_cols = [c for c in group_df.columns if c != "__orig_idx__"]
+                            g_head_cols = g_all_cols[:3]
+                            g_head_data = group_df[g_head_cols].astype(str).values.tolist() if g_head_cols else []
+                            row_data["_t2_data"] = {
+                                "t2_values": t2_vals,
+                                "ucl_99": ucl99,
+                                "ucl_95": ucl95,
+                                "n_components": n_comp,
+                                "pca_used": pca_used,
+                                "n_anomalies": n_anom,
+                                "n_obs": n_obs,
+                                "head_cols": g_head_cols,
+                                "head_data": g_head_data,
+                            }
+                        except Exception as exc:
+                            logger.warning(f"T2 failed: {exc}")
+                            row_data["_t2_label"] = "err"
+                            row_data["_t2_data"] = None
+
+                        t2_rows.append(row_data)
 
                 if t2_rows:
                     t2_df = pd.DataFrame(t2_rows)
@@ -2698,14 +2698,23 @@ async def rsm_analysis(
             "coefficient": round(r_corr, 6),  # Use correlation as the "coefficient"
             "correlation": round(r_corr, 4),
             "p_value": round(p_corr, 4),
-            "surviving": p_corr < sig_threshold,
         })
 
     # Sort all by |correlation| descending
     all_terms.sort(key=lambda t: abs(t["correlation"]), reverse=True)
 
-    surviving_terms = [t for t in all_terms if t["surviving"]]
-    eliminated_terms = [t for t in all_terms if not t["surviving"]]
+    # For industrial exploration, strict p-value often eliminates everything.
+    # We relax the threshold and guarantee at least top N features are returned.
+    surviving_terms = []
+    eliminated_terms = []
+    for idx, t in enumerate(all_terms):
+        # keep if p < 0.1 OR it's in the top 50 (and has some correlation)
+        if t["p_value"] < 0.10 or (idx < 50 and abs(t["correlation"]) > 0.001):
+            t["surviving"] = True
+            surviving_terms.append(t)
+        else:
+            t["surviving"] = False
+            eliminated_terms.append(t)
 
     # R² = max individual r² (best single-term explanatory power)
     best_r = max((abs(t["correlation"]) for t in all_terms), default=0.0)
@@ -2833,7 +2842,1052 @@ async def get_rsm_scatter_data(
         "term_name": req.term_name,
         "x": x.tolist(),
         "y": y.tolist(),
-        "n": len(y)
+        "n": int(len(y)),
     }
 
 
+# ================================================================
+# Main Effect Plot API (ALE / PDP, XGBoost / PLS)
+# ================================================================
+
+class METargetItem(BaseModel):
+    col: str
+    weight: float = 1.0
+    usl: Optional[float] = None   # user-set upper spec limit from Step 1
+    lsl: Optional[float] = None   # user-set lower spec limit from Step 1
+    target_mean: Optional[float] = None  # user-set target value
+
+
+class MainEffectRequest(BaseModel):
+    file_id: str
+    targets: List[METargetItem]
+    control_factors: List[str]
+    background_factors: List[str] = []
+    algorithm: str = "xgboost"   # "xgboost" | "pls"
+    hyperparams: dict = {}
+    analysis_method: str = "ale"  # "ale" | "pdp"
+    filters: List[RSMFilter] = []
+    exclude_indices: List[int] = []
+    exclude_cols: List[str] = []
+    grid_resolution: int = 50
+    max_scatter: int = 2000
+
+
+def _apply_filters_and_clean(df, filters, exclude_indices, exclude_cols):
+    """Apply dataset filters and cleaning exclusions."""
+    import re as _re
+    import pandas as pd
+
+    for f in filters:
+        if f.exclude_empty and f.column in df.columns:
+            df = df[df[f.column].notna() & (df[f.column].astype(str).str.strip() != "")]
+        kw = (f.keyword or "").strip()
+        if kw and f.column in df.columns:
+            col_s = df[f.column]
+            m = _re.match(r"^([><=!]+)\s*([\d.]+)$", kw)
+            if m and pd.api.types.is_numeric_dtype(col_s):
+                op, val = m.group(1), float(m.group(2))
+                num = pd.to_numeric(col_s, errors="coerce")
+                ops = {">": num > val, ">=": num >= val, "<": num < val,
+                       "<=": num <= val, "=": num == val, "==": num == val, "!=": num != val}
+                mask = ops.get(op)
+                if mask is not None:
+                    df = df[mask]
+            else:
+                if kw.startswith("=="):
+                    df = df[df[f.column].astype(str).str.strip() == kw[2:]]
+                else:
+                    df = df[df[f.column].astype(str).str.contains(kw, case=False, na=False)]
+    df = df.reset_index(drop=True)
+
+    if exclude_indices:
+        valid = [i for i in exclude_indices if 0 <= i < len(df)]
+        if valid:
+            df = df.drop(index=valid).reset_index(drop=True)
+
+    if exclude_cols:
+        drop_cols = [c for c in exclude_cols if c in df.columns]
+        if drop_cols:
+            df = df.drop(columns=drop_cols)
+
+    return df
+
+
+def _compute_ale(model, X_df, feature: str, grid_resolution: int = 50) -> dict:
+    """Hand-coded ALE for a single numeric feature."""
+    import numpy as np
+
+    col_vals = X_df[feature].dropna().values
+    if len(col_vals) < 4:
+        return {"grid": [], "ale": []}
+
+    quantiles = np.percentile(col_vals, np.linspace(0, 100, grid_resolution + 1))
+    quantiles = np.unique(quantiles)
+
+    ale_vals, grid_centers, n_per_bin = [], [], []
+    min_bin_size = 3  # 1-2 筆視為奇異值跳過；3+ 筆為有意義資料
+
+    for i in range(len(quantiles) - 1):
+        lo, hi = quantiles[i], quantiles[i + 1]
+        mask = (X_df[feature] >= lo) & (X_df[feature] <= hi)
+        subset = X_df[mask].copy()
+        n = len(subset)
+        if n < min_bin_size:
+            continue
+
+        X_lo = subset.copy(); X_lo[feature] = lo
+        X_hi = subset.copy(); X_hi[feature] = hi
+
+        try:
+            p_lo = np.asarray(model.predict(X_lo)).ravel()
+            p_hi = np.asarray(model.predict(X_hi)).ravel()
+        except Exception:
+            continue
+
+        diffs = p_hi - p_lo
+        # Winsorized mean: 去掉上下 10% 奇異值後再算平均
+        if len(diffs) >= 10:
+            lo_pct, hi_pct = np.percentile(diffs, 10), np.percentile(diffs, 90)
+            trimmed = diffs[(diffs >= lo_pct) & (diffs <= hi_pct)]
+            effect = float(np.mean(trimmed)) if len(trimmed) > 0 else float(np.mean(diffs))
+        else:
+            effect = float(np.mean(diffs))
+
+        ale_vals.append(effect)
+        grid_centers.append(float((lo + hi) / 2))
+        n_per_bin.append(int(n))
+
+    if not ale_vals:
+        return {"grid": [], "ale": [], "n_per_bin": []}
+
+    ale_cumsum = list(np.cumsum(ale_vals))
+    mean_ale = float(np.mean(ale_cumsum))
+    ale_centered = [round(v - mean_ale, 6) for v in ale_cumsum]
+
+    return {"grid": grid_centers, "ale": ale_centered, "n_per_bin": n_per_bin}
+
+
+def _compute_pdp(model, X_df, feature: str, grid_resolution: int = 50) -> dict:
+    """Simple PDP for a single feature."""
+    import numpy as np
+
+    col_vals = X_df[feature].dropna().values
+    grid = np.linspace(col_vals.min(), col_vals.max(), grid_resolution)
+    pdp_vals = []
+    for val in grid:
+        X_tmp = X_df.copy()
+        X_tmp[feature] = val
+        try:
+            pdp_vals.append(float(np.mean(np.asarray(model.predict(X_tmp)).ravel())))
+        except Exception:
+            pdp_vals.append(None)
+
+    return {"grid": list(grid), "ale": pdp_vals}
+
+
+@router.post("/main-effect")
+async def main_effect_analysis(
+    req: MainEffectRequest,
+    session_id: str = Query("default"),
+    analysis_service=Depends(get_intelligent_analysis_service),
+):
+    """Main Effect Plot with ALE or PDP using XGBoost / PLS. Uses cleaned data."""
+    import pandas as pd
+    import numpy as np
+
+    if not req.targets:
+        raise HTTPException(400, detail="At least one target required")
+    if not req.control_factors:
+        raise HTTPException(400, detail="At least one control factor required")
+
+    uploads_dir = analysis_service.base_dir / session_id / "uploads"
+    csv_path = _find_csv(uploads_dir, req.file_id, analysis_service)
+    df_raw = pd.read_csv(csv_path, encoding="utf-8-sig", low_memory=False)
+
+    df = _apply_filters_and_clean(df_raw, req.filters, req.exclude_indices, req.exclude_cols)
+
+    all_x_cols = req.control_factors + [c for c in req.background_factors if c not in req.control_factors]
+    target_cols = [t.col for t in req.targets]
+
+    missing_x = [c for c in all_x_cols if c not in df.columns]
+    missing_y = [c for c in target_cols if c not in df.columns]
+    if missing_x:
+        raise HTTPException(400, detail=f"X columns not found: {missing_x}")
+    if missing_y:
+        raise HTTPException(400, detail=f"Target columns not found: {missing_y}")
+
+    df_x_raw = df[all_x_cols].copy()
+    for col in df_x_raw.columns:
+        df_x_raw[col] = pd.to_numeric(df_x_raw[col], errors="coerce")
+
+    # Only require control factors to be non-null; fill background factor NaN with median
+    ctrl_cols_present = [c for c in req.control_factors if c in df_x_raw.columns]
+    df_x_raw = df_x_raw.dropna(subset=ctrl_cols_present)
+    for col in df_x_raw.columns:
+        if df_x_raw[col].isna().any():
+            df_x_raw[col] = df_x_raw[col].fillna(df_x_raw[col].median())
+
+    if len(df_x_raw) < 10:
+        nan_info = {c: int(df[c].isna().sum()) for c in ctrl_cols_present if c in df.columns}
+        raise HTTPException(400, detail=f"Not enough valid rows ({len(df_x_raw)}) after cleaning. NaN counts per control factor: {nan_info}")
+
+    hp = req.hyperparams or {}
+    model_results = []
+    factor_effects = {f: [] for f in req.control_factors}
+    trained_models = {}
+
+    for target_item in req.targets:
+        tcol = target_item.col
+        y_series = pd.to_numeric(df.loc[df_x_raw.index, tcol], errors="coerce").dropna()
+        common_idx = df_x_raw.index.intersection(y_series.index)
+        X_df = df_x_raw.loc[common_idx].copy()
+        y = y_series.loc[common_idx].values
+
+        if len(y) < 5:
+            raise HTTPException(400, detail=f"Not enough valid rows for target '{tcol}'")
+
+        if req.algorithm == "xgboost":
+            try:
+                from xgboost import XGBRegressor
+            except ImportError:
+                raise HTTPException(500, detail="xgboost not installed. Run: pip install xgboost")
+            model = XGBRegressor(
+                n_estimators=int(hp.get("n_estimators", 100)),
+                max_depth=int(hp.get("max_depth", 4)),
+                learning_rate=float(hp.get("learning_rate", 0.1)),
+                subsample=float(hp.get("subsample", 0.8)),
+                verbosity=0, random_state=42,
+            )
+        else:  # pls
+            from sklearn.cross_decomposition import PLSRegression
+            n_comp = min(int(hp.get("n_components", 5)), X_df.shape[1], len(y) - 1)
+            model = PLSRegression(n_components=max(1, n_comp))
+
+        model.fit(X_df.values, y)
+        trained_models[tcol] = model
+        y_pred = np.asarray(model.predict(X_df.values)).ravel()
+        ss_res = float(np.sum((y - y_pred) ** 2))
+        ss_tot = float(np.sum((y - np.mean(y)) ** 2))
+        r2 = round(1 - ss_res / ss_tot if ss_tot > 0 else 0.0, 4)
+        model_results.append({"target": tcol, "r2": r2})
+
+        for factor in req.control_factors:
+            if factor not in X_df.columns:
+                continue
+            if req.analysis_method == "pdp":
+                curve = _compute_pdp(model, X_df, factor, req.grid_resolution)
+            else:
+                curve = _compute_ale(model, X_df, factor, req.grid_resolution)
+
+            factor_effects[factor].append({
+                "target": tcol,
+                "weight": target_item.weight,
+                "grid": curve["grid"],
+                "ale": curve["ale"],
+            })
+
+    # Build results with weighted score
+    results = []
+    for factor in req.control_factors:
+        effects = factor_effects[factor]
+        total_weight = sum(e["weight"] for e in effects) or 1.0
+        weighted_score = sum(
+            (max(e["ale"]) - min(e["ale"])) * (e["weight"] / total_weight)
+            for e in effects if e["ale"]
+        )
+        results.append({
+            "factor": factor,
+            "weighted_score": round(weighted_score, 6),
+            "effects": [
+                {"target": e["target"],
+                 "grid": [round(v, 6) for v in e["grid"]],
+                 "ale": [round(v, 6) if v is not None else None for v in e["ale"]]}
+                for e in effects
+            ],
+        })
+
+    results.sort(key=lambda r: r["weighted_score"], reverse=True)
+
+    col_stats = {}
+    for col in all_x_cols:
+        vals = df_x_raw[col].dropna()
+        if len(vals) > 0:
+            hist_counts, hist_edges = np.histogram(vals.values, bins=20)
+            col_stats[col] = {
+                "min": round(float(vals.min()), 6),
+                "max": round(float(vals.max()), 6),
+                "median": round(float(vals.median()), 6),
+                "mean": round(float(vals.mean()), 6),
+                "std": round(float(vals.std()), 6),
+                "p5":  round(float(np.percentile(vals.values, 5)),  6),
+                "p95": round(float(np.percentile(vals.values, 95)), 6),
+                "hist_counts": hist_counts.tolist(),
+                "hist_edges": [round(float(e), 6) for e in hist_edges],
+            }
+
+    target_stats = {}
+    for target_item in req.targets:
+        tcol = target_item.col
+        vals = pd.to_numeric(df.loc[df_x_raw.index, tcol], errors="coerce").dropna()
+        if len(vals) > 0:
+            mean = float(vals.mean())
+            std = float(vals.std())
+            # Prefer user-set USL/LSL; fall back to data-based UCL/LCL
+            usl = target_item.usl if target_item.usl is not None else round(mean + 3 * std, 4)
+            lsl = target_item.lsl if target_item.lsl is not None else round(mean - 3 * std, 4)
+            target_stats[tcol] = {
+                "mean": round(mean, 4),
+                "std": round(std, 4),
+                "ucl": round(mean + 3 * std, 4),
+                "lcl": round(mean - 3 * std, 4),
+                "usl": usl,
+                "lsl": lsl,
+                "target_mean": target_item.target_mean,
+            }
+
+    import pickle
+    temp_dir = analysis_service.base_dir / session_id / "temp"
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    me_state = {
+        "trained_models": trained_models,
+        "col_stats": col_stats,
+        "target_stats": target_stats,
+        "all_x_cols": all_x_cols,
+        "background_factors": req.background_factors,
+        "algorithm": req.algorithm,
+    }
+    try:
+        with open(temp_dir / "me_state.pkl", "wb") as _f:
+            pickle.dump(me_state, _f)
+    except Exception:
+        pass
+
+    # Scatter samples (X-stratified, evenly spaced across X range) for "show real data" toggle
+    MAX_SCATTER = req.max_scatter
+    scatter_data = {}
+    for target_item in req.targets:
+        tcol = target_item.col
+        y_series = pd.to_numeric(df.loc[df_x_raw.index, tcol], errors="coerce")
+        scatter_data[tcol] = {}
+        for factor in req.control_factors:
+            if factor not in df_x_raw.columns:
+                continue
+            both = pd.DataFrame({"x": df_x_raw[factor], "y": y_series}).dropna()
+            if len(both) > MAX_SCATTER:
+                # X-stratified: sort by X then take evenly-spaced indices for full X coverage
+                both = both.sort_values("x").iloc[
+                    np.linspace(0, len(both) - 1, MAX_SCATTER, dtype=int)
+                ].reset_index(drop=True)
+            scatter_data[tcol][factor] = {
+                "x": [round(float(v), 6) for v in both["x"]],
+                "y": [round(float(v), 6) for v in both["y"]],
+            }
+
+    return {
+        "algorithm": req.algorithm,
+        "analysis_method": req.analysis_method,
+        "n_rows": len(df_x_raw),
+        "models": model_results,
+        "results": results,
+        "col_stats": col_stats,
+        "target_stats": target_stats,
+        "scatter_data": scatter_data,
+    }
+
+
+# ========== 多目標最佳化 (NSGA-II / fallback) ==========
+
+# Session-level progress tracking (in-memory, cleared on new run)
+_opt_progress: dict = {}   # session_id -> {done, total, phase}
+
+
+@router.get("/me-optimize-progress")
+async def me_optimize_progress(session_id: str = Query("default")):
+    return _opt_progress.get(session_id, {"done": 0, "total": 0, "phase": "idle"})
+
+
+class MeOptimizeRequest(BaseModel):
+    directions: dict          # target -> "min" | "max" | "target"
+    target_values: dict = {}  # target -> ideal value (used when direction=="target")
+    fixed_factors: List[str] = []
+    fixed_values: dict = {}   # factor -> locked value
+    n_solutions: int = 50
+    n_gen: int = 50           # reduced from 200; adjust via UI if needed
+
+
+@router.post("/me-optimize")
+async def me_optimize(
+    req: MeOptimizeRequest,
+    session_id: str = Query("default"),
+    analysis_service=Depends(get_intelligent_analysis_service),
+):
+    import pickle, numpy as np, asyncio
+    from concurrent.futures import ThreadPoolExecutor
+
+    temp_dir = analysis_service.base_dir / session_id / "temp"
+    pkl_path = temp_dir / "me_state.pkl"
+    if not pkl_path.exists():
+        raise HTTPException(400, detail="請先執行主效應分析再進行最佳化")
+
+    with open(pkl_path, "rb") as f:
+        state = pickle.load(f)
+
+    trained_models = state["trained_models"]   # {target: model}
+    col_stats      = state["col_stats"]
+    all_x_cols     = state["all_x_cols"]
+
+    # Background factors must never be disturbed — always treat them as fixed.
+    # Combine with any factors the frontend explicitly marked as fixed.
+    bg_factors = set(state.get("background_factors", []))
+    all_fixed  = set(req.fixed_factors) | bg_factors
+
+    target_order = list(req.directions.keys())
+    free_factors = [c for c in all_x_cols if c not in all_fixed and c in col_stats]
+    if not free_factors:
+        raise HTTPException(400, detail="沒有可調整的控制參數（全部被固定）")
+
+    # Limit to top 40 free factors by data range to keep computation tractable
+    MAX_FREE = 40
+    if len(free_factors) > MAX_FREE:
+        free_factors = sorted(
+            free_factors,
+            key=lambda f: col_stats[f].get("max", 0) - col_stats[f].get("min", 0),
+            reverse=True,
+        )[:MAX_FREE]
+
+    # Use p5–p95 range so the optimizer stays within the typical operating distribution.
+    # Falls back to min/max if percentile data is not available (e.g., older saved states).
+    xl = np.array([col_stats[f].get("p5",  col_stats[f]["min"]) for f in free_factors])
+    xu = np.array([col_stats[f].get("p95", col_stats[f]["max"]) for f in free_factors])
+
+    def _predict_all(x_free: np.ndarray):
+        """Given free-factor values, return objective values for each target."""
+        row = {}
+        for i, f in enumerate(free_factors):
+            row[f] = x_free[i]
+        for f in all_fixed:
+            row[f] = req.fixed_values.get(f, col_stats.get(f, {}).get("median", 0))
+        # fill background params with their median
+        for c in all_x_cols:
+            if c not in row:
+                row[c] = col_stats.get(c, {}).get("median", 0)
+        X_arr = np.array([[row.get(c, 0) for c in all_x_cols]])
+        import pandas as pd
+        X_df = pd.DataFrame(X_arr, columns=all_x_cols)
+        preds = {}
+        for t in target_order:
+            if t in trained_models:
+                preds[t] = float(np.asarray(trained_models[t].predict(X_df)).ravel()[0])
+        return preds
+
+    def _obj_values(x_free: np.ndarray):
+        preds = _predict_all(x_free)
+        objs = []
+        for t in target_order:
+            p = preds.get(t, 0.0)
+            d = req.directions.get(t, "min")
+            if d == "max":
+                objs.append(-p)   # pymoo minimises; negate to maximise
+            elif d == "target":
+                tv = req.target_values.get(t, p)
+                objs.append(abs(p - tv))
+            else:
+                objs.append(p)
+        return np.array(objs)
+
+    # ── Run optimization in a thread (avoid blocking the event loop) ─
+    total_evals_nsga = req.n_gen * req.n_solutions
+    total_evals_scipy = max(req.n_solutions * 40, 2000)  # random sampling count
+    _opt_progress[session_id] = {"done": 0, "total": total_evals_nsga, "phase": "NSGA-II"}
+
+    def _run_sync():
+        solutions = []
+        try:
+            from pymoo.algorithms.moo.nsga2 import NSGA2
+            from pymoo.core.problem import Problem
+            from pymoo.core.callback import Callback as PymooCallback
+            from pymoo.optimize import minimize as pymoo_min
+            from pymoo.termination import get_termination
+
+            class _Prob(Problem):
+                def __init__(self):
+                    super().__init__(n_var=len(free_factors), n_obj=len(target_order),
+                                     xl=xl, xu=xu)
+                def _evaluate(self, X, out, *args, **kwargs):
+                    F = np.array([_obj_values(x) for x in X])
+                    out["F"] = F
+
+            class _ProgressCb(PymooCallback):
+                def notify(self, algorithm):
+                    gen = algorithm.n_gen
+                    _opt_progress[session_id] = {
+                        "done": min(gen * req.n_solutions, total_evals_nsga),
+                        "total": total_evals_nsga,
+                        "phase": f"NSGA-II 第 {gen}/{req.n_gen} 代",
+                    }
+
+            res = pymoo_min(_Prob(), NSGA2(pop_size=req.n_solutions),
+                            get_termination("n_gen", req.n_gen), verbose=False,
+                            callback=_ProgressCb())
+            if res.X is not None:
+                # Deduplicate: NSGA-II often converges identical individuals
+                # (especially single-objective). Use tolerance = 1e-4 * range.
+                tol = np.maximum((xu - xl) * 1e-4, 1e-8)
+                seen_X = []
+                for x, f in zip(res.X, res.F):
+                    is_dup = any(np.all(np.abs(x - s) < tol) for s in seen_X)
+                    if not is_dup:
+                        seen_X.append(x)
+                        preds = _predict_all(x)
+                        solutions.append({
+                            "params":  {free_factors[i]: round(float(x[i]), 6) for i in range(len(free_factors))},
+                            "targets": {t: round(preds.get(t, 0), 6) for t in target_order},
+                        })
+
+            # If NSGA-II didn't yield enough unique solutions, supplement with
+            # diverse Latin-hypercube samples sorted by objective quality.
+            if len(solutions) < req.n_solutions:
+                needed = req.n_solutions - len(solutions)
+                N_SUPP = max(needed * 200, 2000)
+                rng2 = np.random.default_rng(0)
+                X_supp = np.zeros((N_SUPP, len(free_factors)))
+                for d in range(len(free_factors)):
+                    perm = rng2.permutation(N_SUPP)
+                    X_supp[:, d] = xl[d] + (perm + rng2.random(N_SUPP)) / N_SUPP * (xu[d] - xl[d])
+                F_supp = np.array([_obj_values(x) for x in X_supp])
+                # Sort by sum of normalised objectives; take most diverse unique ones
+                obj_range = np.maximum(F_supp.max(axis=0) - F_supp.min(axis=0), 1e-9)
+                scores = ((F_supp - F_supp.min(axis=0)) / obj_range).sum(axis=1)
+                order = np.argsort(scores)
+                added = 0
+                for idx in order:
+                    if added >= needed:
+                        break
+                    x = X_supp[idx]
+                    is_dup = any(np.all(np.abs(x - np.array([sol["params"][f] for f in free_factors])) < tol)
+                                 for sol in solutions)
+                    if not is_dup:
+                        preds = _predict_all(x)
+                        solutions.append({
+                            "params":  {free_factors[j]: round(float(x[j]), 6) for j in range(len(free_factors))},
+                            "targets": {t: round(preds.get(t, 0), 6) for t in target_order},
+                        })
+                        added += 1
+        except Exception as _nsga_err:
+            import traceback as _tb, logging as _log
+            _log.warning(f"[me-optimize] NSGA-II failed → random sampling. {_nsga_err}\n{_tb.format_exc()}")
+            _opt_progress[session_id]["phase"] = f"NSGA-II 失敗，改用隨機取樣"
+            # ── Fallback: random sampling + Pareto filter (fast, no iteration) ──
+            N_SAMPLES = max(req.n_solutions * 40, 2000)
+            _opt_progress[session_id] = {"done": 0, "total": N_SAMPLES, "phase": "隨機取樣中"}
+            rng = np.random.default_rng(42)
+
+            # Latin-Hypercube-like sampling: stratified per dimension
+            X_samples = np.zeros((N_SAMPLES, len(free_factors)))
+            for d in range(len(free_factors)):
+                perm = rng.permutation(N_SAMPLES)
+                X_samples[:, d] = xl[d] + (perm + rng.random(N_SAMPLES)) / N_SAMPLES * (xu[d] - xl[d])
+
+            # Evaluate in chunks, update progress
+            CHUNK = 200
+            F_all = np.zeros((N_SAMPLES, len(target_order)))
+            for start in range(0, N_SAMPLES, CHUNK):
+                end = min(start + CHUNK, N_SAMPLES)
+                for i in range(start, end):
+                    F_all[i] = _obj_values(X_samples[i])
+                _opt_progress[session_id] = {
+                    "done": end, "total": N_SAMPLES,
+                    "phase": f"隨機取樣 {end}/{N_SAMPLES}",
+                }
+
+            # Vectorised Pareto filter
+            _opt_progress[session_id] = {"done": 0, "total": 1, "phase": "Pareto 篩選中"}
+            dominated = np.zeros(N_SAMPLES, dtype=bool)
+            for i in range(N_SAMPLES):
+                if dominated[i]: continue
+                # i dominates j if F[i] <= F[j] on all and < on at least one
+                diff = F_all[i] - F_all  # shape (N, n_obj)
+                dominated |= ((diff <= 0).all(axis=1) & (diff < 0).any(axis=1))
+                dominated[i] = False     # i cannot dominate itself
+
+            pareto_idx = np.where(~dominated)[0]
+            # Sort by first objective for diversity; pick up to n_solutions
+            pareto_idx = pareto_idx[np.argsort(F_all[pareto_idx, 0])]
+            # Spread selection: take evenly spaced indices across the Pareto front
+            if len(pareto_idx) > req.n_solutions:
+                pick = np.linspace(0, len(pareto_idx) - 1, req.n_solutions, dtype=int)
+                pareto_idx = pareto_idx[pick]
+
+            tol_fb = np.maximum((xu - xl) * 1e-4, 1e-8)
+            seen_fb = []
+            for i in pareto_idx:
+                x = X_samples[i]
+                is_dup = any(np.all(np.abs(x - s) < tol_fb) for s in seen_fb)
+                if is_dup:
+                    continue
+                seen_fb.append(x)
+                preds = _predict_all(x)
+                solutions.append({
+                    "params":  {free_factors[j]: round(float(x[j]), 6) for j in range(len(free_factors))},
+                    "targets": {t: round(preds.get(t, 0), 6) for t in target_order},
+                })
+
+        _opt_progress[session_id] = {"done": 1, "total": 1, "phase": "完成"}
+        return solutions
+
+    TIMEOUT_SEC = 90
+    loop = asyncio.get_event_loop()
+    try:
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            solutions = await asyncio.wait_for(
+                loop.run_in_executor(pool, _run_sync),
+                timeout=TIMEOUT_SEC,
+            )
+    except asyncio.TimeoutError:
+        raise HTTPException(408, detail=f"最佳化超時（{TIMEOUT_SEC}秒），請固定更多背景參數或減少解的數量")
+
+    if not solutions:
+        raise HTTPException(500, detail="最佳化未找到解，請嘗試放寬固定條件")
+
+    return {
+        "target_order":  target_order,
+        "free_factors":  free_factors,
+        "n_solutions":   len(solutions),
+        "solutions":     solutions,
+    }
+
+
+# ========== 量測模擬 (Monte Carlo Simulation) ==========
+
+class SimParamDist(BaseModel):
+    factor: str
+    dist_type: str = "normal"   # "normal" | "uniform"
+    mean: float = 0.0
+    std: float = 1.0            # used when dist_type=="normal"
+    low: float = 0.0            # used when dist_type=="uniform"
+    high: float = 1.0           # used when dist_type=="uniform"
+
+class MeSimulateRequest(BaseModel):
+    param_distributions: List[SimParamDist]
+    fixed_factors: List[str] = []
+    fixed_values: dict = {}
+    n_simulations: int = 1000
+    target_specs: dict = {}     # {target: {usl, lsl}}
+
+@router.post("/me-simulate")
+async def me_simulate(
+    req: MeSimulateRequest,
+    session_id: str = Query("default"),
+    analysis_service=Depends(get_intelligent_analysis_service),
+):
+    import pickle, numpy as np
+
+    temp_dir = analysis_service.base_dir / session_id / "temp"
+    pkl_path = temp_dir / "me_state.pkl"
+    if not pkl_path.exists():
+        raise HTTPException(400, detail="請先執行主效應分析再進行量測模擬")
+
+    with open(pkl_path, "rb") as f:
+        state = pickle.load(f)
+
+    trained_models = state["trained_models"]
+    col_stats      = state["col_stats"]
+    target_stats   = state.get("target_stats", {})
+    all_x_cols     = state["all_x_cols"]
+    bg_factors     = set(state.get("background_factors", []))
+    all_fixed      = set(req.fixed_factors) | bg_factors
+
+    N = max(100, min(req.n_simulations, 10000))
+    rng = np.random.default_rng(42)
+
+    # Build sample matrix
+    dist_map = {d.factor: d for d in req.param_distributions}
+    X_matrix = np.zeros((N, len(all_x_cols)))
+    for ci, col in enumerate(all_x_cols):
+        if col in all_fixed:
+            val = req.fixed_values.get(col, col_stats.get(col, {}).get("median", 0))
+            X_matrix[:, ci] = val
+        elif col in dist_map:
+            d = dist_map[col]
+            st = col_stats.get(col, {})
+            col_min = st.get("min")
+            col_max = st.get("max")
+            if d.dist_type == "uniform":
+                lo, hi = (d.low, d.high) if d.low <= d.high else (d.high, d.low)
+                X_matrix[:, ci] = rng.uniform(lo, hi, N)
+            else:  # normal
+                samples = rng.normal(d.mean, max(d.std, 1e-9), N)
+                # Clip to actual data range to prevent model extrapolation artifacts
+                if col_min is not None and col_max is not None:
+                    samples = np.clip(samples, col_min, col_max)
+                X_matrix[:, ci] = samples
+        else:
+            # Not simulated and not fixed: use median
+            X_matrix[:, ci] = col_stats.get(col, {}).get("median", 0)
+
+    import pandas as pd
+    X_df = pd.DataFrame(X_matrix, columns=all_x_cols)
+
+    results = {}
+    target_names = list(trained_models.keys())
+    for t in target_names:
+        model = trained_models[t]
+        preds = np.asarray(model.predict(X_df)).ravel().tolist()
+        specs = req.target_specs.get(t, {})
+        usl = specs.get("usl")
+        lsl = specs.get("lsl")
+        out_of_spec_pct = None
+        if usl is not None or lsl is not None:
+            arr = np.array(preds)
+            oos = np.zeros(len(arr), dtype=bool)
+            if usl is not None:
+                oos |= (arr > usl)
+            if lsl is not None:
+                oos |= (arr < lsl)
+            out_of_spec_pct = float(oos.sum()) / len(arr) * 100
+
+        arr = np.array(preds)
+        results[t] = {
+            "values": preds,
+            "mean":   float(arr.mean()),
+            "std":    float(arr.std()),
+            "min":    float(arr.min()),
+            "max":    float(arr.max()),
+            "p5":     float(np.percentile(arr, 5)),
+            "p95":    float(np.percentile(arr, 95)),
+            "out_of_spec_pct": out_of_spec_pct,
+        }
+
+    return {"n_simulations": N, "targets": results}
+
+
+# ========== 智慧化區間 (Smart Range) ==========
+
+class SmartRangeRequest(BaseModel):
+    center_x: dict           # { factor: value }
+    oos_threshold: float = 1.0   # % acceptable OOS
+    n_simulations: int = 5000
+    target_specs: dict = {}      # { target: {usl, lsl} }
+    fixed_factors: list = []
+    fixed_values: dict = {}
+
+@router.post("/me-smart-range")
+async def me_smart_range(
+    req: SmartRangeRequest,
+    session_id: str = Query("default"),
+    analysis_service=Depends(get_intelligent_analysis_service),
+):
+    import pickle, numpy as np, pandas as pd
+
+    temp_dir = analysis_service.base_dir / session_id / "temp"
+    pkl_path = temp_dir / "me_state.pkl"
+    if not pkl_path.exists():
+        raise HTTPException(400, detail="請先執行主效應分析")
+
+    with open(pkl_path, "rb") as f:
+        state = pickle.load(f)
+
+    trained_models = state["trained_models"]
+    col_stats      = state["col_stats"]
+    all_x_cols     = state["all_x_cols"]
+    all_fixed      = set(req.fixed_factors) | set(state.get("background_factors", []))
+    free_factors   = [c for c in all_x_cols if c not in all_fixed and c in req.center_x]
+
+    N   = max(1000, min(req.n_simulations, 10000))
+    rng = np.random.default_rng(42)
+    threshold = req.oos_threshold / 100.0  # convert % → fraction
+
+    # ── Step 2: Sensitivity weights ──────────────────────────────────────
+    center_vec = np.array([req.center_x.get(c, col_stats.get(c, {}).get("median", 0))
+                           for c in all_x_cols])
+
+    sensitivities = {}
+    for fi, factor in enumerate(all_x_cols):
+        if factor in all_fixed or factor not in req.center_x:
+            continue
+        st = col_stats.get(factor, {})
+        data_range = (st.get("max", 1) - st.get("min", 0)) or 1
+        delta = data_range * 0.01  # 1% of data range
+        if delta == 0:
+            sensitivities[factor] = 0.0
+            continue
+        # Perturb +delta
+        x_plus = center_vec.copy(); x_plus[fi] += delta
+        x_minus = center_vec.copy(); x_minus[fi] -= delta
+        df_plus  = pd.DataFrame([x_plus],  columns=all_x_cols)
+        df_minus = pd.DataFrame([x_minus], columns=all_x_cols)
+        total_dy = 0.0
+        for t, model in trained_models.items():
+            y_plus  = float(model.predict(df_plus)[0])
+            y_minus = float(model.predict(df_minus)[0])
+            # Normalize by spec range so all targets contribute equally
+            specs = req.target_specs.get(t, {})
+            spec_range = (specs.get("usl", 1) - specs.get("lsl", 0)) if (specs.get("usl") is not None and specs.get("lsl") is not None) else 1
+            total_dy += abs(y_plus - y_minus) / (abs(spec_range) or 1)
+        sensitivities[factor] = total_dy / (2 * delta)
+
+    # Compute weights: W_i = 1 / S_i, normalized so median W = data_range/2
+    sens_vals = [s for s in sensitivities.values() if s > 0]
+    if not sens_vals:
+        # All factors insensitive — use data range directly
+        weights = {f: (col_stats.get(f, {}).get("max", 1) - col_stats.get(f, {}).get("min", 0)) / 2
+                   for f in free_factors}
+    else:
+        median_s = float(np.median(sens_vals))
+        weights = {}
+        for f in free_factors:
+            s = sensitivities.get(f, 0)
+            st = col_stats.get(f, {})
+            half_range = (st.get("max", 1) - st.get("min", 0)) / 2
+            if s <= 0:
+                weights[f] = half_range  # insensitive → full range
+            else:
+                weights[f] = (median_s / s) * half_range
+
+    # ── Step 3: Binary search on r ────────────────────────────────────────
+    def compute_oos(r):
+        X_mat = np.zeros((N, len(all_x_cols)))
+        for ci, col in enumerate(all_x_cols):
+            if col in all_fixed:
+                X_mat[:, ci] = req.fixed_values.get(col, col_stats.get(col, {}).get("median", 0))
+            elif col in weights:
+                center = req.center_x[col]
+                half   = min(weights[col] * r, (col_stats.get(col, {}).get("max", center) - col_stats.get(col, {}).get("min", center)) / 2)
+                lo = max(center - half, col_stats.get(col, {}).get("min", center - half))
+                hi = min(center + half, col_stats.get(col, {}).get("max", center + half))
+                if lo >= hi: X_mat[:, ci] = center
+                else: X_mat[:, ci] = rng.uniform(lo, hi, N)
+            else:
+                X_mat[:, ci] = req.center_x.get(col, col_stats.get(col, {}).get("median", 0))
+
+        X_df = pd.DataFrame(X_mat, columns=all_x_cols)
+        oos = np.zeros(N, dtype=bool)
+        for t, model in trained_models.items():
+            specs = req.target_specs.get(t, {})
+            usl, lsl = specs.get("usl"), specs.get("lsl")
+            if usl is None and lsl is None:
+                continue
+            preds = np.asarray(model.predict(X_df)).ravel()
+            if usl is not None: oos |= (preds > usl)
+            if lsl is not None: oos |= (preds < lsl)
+        return float(oos.sum()) / N
+
+    # First check: is center point itself causing OOS?
+    oos_at_center = compute_oos(0.001)
+
+    r_lo, r_hi = 0.0, 3.0
+    # Check if even r_hi is safe enough
+    oos_hi = compute_oos(r_hi)
+    if oos_hi <= threshold:
+        r_best = r_hi  # even widest range is safe
+    elif oos_at_center > threshold:
+        r_best = 0.0   # center point itself fails
+    else:
+        for _ in range(20):  # binary search, converges to <0.01% accuracy
+            r_mid = (r_lo + r_hi) / 2
+            oos_mid = compute_oos(r_mid)
+            if oos_mid <= threshold:
+                r_lo = r_mid
+            else:
+                r_hi = r_mid
+        r_best = r_lo
+
+    oos_final = compute_oos(r_best) * 100
+
+    # ── Step 4: Build output ──────────────────────────────────────────────
+    factor_results = {}
+    for f in free_factors:
+        center = req.center_x[f]
+        st = col_stats.get(f, {})
+        col_min, col_max = st.get("min", center), st.get("max", center)
+        half = min(weights[f] * r_best, (col_max - col_min) / 2)
+        lsl_sug = max(center - half, col_min)
+        usl_sug = min(center + half, col_max)
+        s = sensitivities.get(f, 0)
+        factor_results[f] = {
+            "center": round(center, 4),
+            "lsl":    round(lsl_sug, 4),
+            "usl":    round(usl_sug, 4),
+            "half_width": round(half, 4),
+            "sensitivity": round(s, 6),
+            "at_limit": abs(lsl_sug - col_min) < 1e-6 or abs(usl_sug - col_max) < 1e-6,
+        }
+
+    return {
+        "r_best": round(r_best, 4),
+        "oos_achieved": round(oos_final, 3),
+        "oos_threshold": req.oos_threshold,
+        "factors": factor_results,
+    }
+
+
+# ========== 智慧篩選 (Smart Select) ==========
+
+class SmartSelectRequest(BaseModel):
+    file_id: str
+    target_columns: List[str]           # 支援多 Target
+    target_weights: List[float] = []    # 各 Target 權重（可省略，預設等權）
+    algorithm: str = "correlation"      # "correlation" | "xgboost"
+    filters: List[DatasetFilter] = []
+    exclude_indices: List[int] = []
+    exclude_cols: List[str] = []
+
+
+@router.post("/smart-select")
+async def smart_select_endpoint(
+    req: SmartSelectRequest,
+    session_id: str = Query("default"),
+    analysis_service=Depends(get_intelligent_analysis_service),
+):
+    """
+    計算各因子對多個 Target 的重要性並回傳加權平均排序結果。
+    支援 correlation（皮爾森絕對值）與 xgboost（SHAP 平均絕對值）兩種算法。
+    """
+    import pandas as pd
+    import numpy as np
+
+    uploads_dir = analysis_service.base_dir / session_id / "uploads"
+    csv_path = _find_csv(uploads_dir, req.file_id, analysis_service)
+    df_raw = pd.read_csv(csv_path, encoding="utf-8-sig", low_memory=False)
+
+    df = _apply_filters_and_clean(df_raw, req.filters, req.exclude_indices, req.exclude_cols)
+
+    numeric_df = df.select_dtypes(include=[np.number])
+
+    # Validate targets
+    valid_targets = [c for c in req.target_columns if c in numeric_df.columns]
+    if not valid_targets:
+        raise HTTPException(400, detail="No valid numeric target columns found")
+
+    # Normalize weights
+    raw_weights = req.target_weights if len(req.target_weights) == len(valid_targets) else []
+    if raw_weights:
+        w = np.array(raw_weights, dtype=float)
+        weights = (w / w.sum()).tolist()
+    else:
+        weights = [1.0 / len(valid_targets)] * len(valid_targets)
+
+    # Accumulate weighted scores per feature
+    score_accum: Dict[str, float] = {}
+    weight_accum: Dict[str, float] = {}
+    n_rows = None
+
+    for target_col, weight in zip(valid_targets, weights):
+        y_raw = numeric_df[target_col].replace([np.inf, -np.inf], np.nan)
+        X_all = numeric_df.drop(columns=[target_col]).replace([np.inf, -np.inf], np.nan)
+
+        valid_mask = y_raw.notna()
+        y = y_raw[valid_mask].values
+        X = X_all[valid_mask].fillna(X_all[valid_mask].median())
+
+        if len(y) < 5 or X.shape[1] == 0:
+            continue
+        if n_rows is None:
+            n_rows = int(len(y))
+
+        if req.algorithm == "correlation":
+            raw_corrs = X.corrwith(pd.Series(y, index=X.index))
+            for col in X.columns:
+                val = raw_corrs.get(col, float("nan"))
+                if not np.isnan(val):
+                    score_accum[col] = score_accum.get(col, 0.0) + abs(float(val)) * weight
+                    weight_accum[col] = weight_accum.get(col, 0.0) + weight
+
+        elif req.algorithm == "xgboost":
+            try:
+                import xgboost as xgb
+                import shap
+            except ImportError:
+                raise HTTPException(500, detail="xgboost / shap not installed")
+
+            model = xgb.XGBRegressor(n_estimators=100, max_depth=4, random_state=42, verbosity=0)
+            model.fit(X, y)
+            explainer = shap.TreeExplainer(model)
+            shap_values = explainer.shap_values(X)
+            if isinstance(shap_values, list):
+                shap_values = shap_values[0]
+            vals = np.abs(shap_values).mean(axis=0)
+            for col, val in zip(X.columns, vals):
+                score_accum[col] = score_accum.get(col, 0.0) + float(val) * weight
+                weight_accum[col] = weight_accum.get(col, 0.0) + weight
+
+        else:
+            raise HTTPException(400, detail="Unknown algorithm")
+
+    if not score_accum:
+        raise HTTPException(400, detail="Insufficient data for analysis")
+
+    # Normalize accumulated scores by actual weight sum (handles missing targets)
+    results = []
+    for col, acc in score_accum.items():
+        w_sum = weight_accum.get(col, 1.0)
+        results.append({"col": str(col), "score": round(acc / w_sum, 6)})
+    results.sort(key=lambda r: r["score"], reverse=True)
+
+    return {
+        "status": "success",
+        "algorithm": req.algorithm,
+        "targets": valid_targets,
+        "n_rows": n_rows or 0,
+        "results": results,
+    }
+
+
+# ========== ME Predict ==========
+
+class MePredictRequest(BaseModel):
+    control_values: Dict[str, float]
+
+
+@router.post("/me-predict")
+async def me_predict_endpoint(
+    req: MePredictRequest,
+    session_id: str = Query("default"),
+    analysis_service=Depends(get_intelligent_analysis_service),
+):
+    """
+    Run prediction using the last trained ME model.
+    Control factor values come from the request; background factors use their median.
+    """
+    import pickle
+    import numpy as np
+
+    temp_dir = analysis_service.base_dir / session_id / "temp"
+    state_path = temp_dir / "me_state.pkl"
+    if not state_path.exists():
+        raise HTTPException(400, detail="No trained model found. Please run analysis first.")
+
+    with open(state_path, "rb") as f:
+        state = pickle.load(f)
+
+    all_x_cols = state["all_x_cols"]
+    col_stats = state["col_stats"]
+
+    # Build input row
+    row = []
+    for col in all_x_cols:
+        if col in req.control_values:
+            row.append(float(req.control_values[col]))
+        else:
+            row.append(col_stats.get(col, {}).get("median", 0.0))
+
+    X_input = np.array([row])
+
+    predictions = {}
+    for tcol, model in state["trained_models"].items():
+        try:
+            pred = float(np.asarray(model.predict(X_input)).ravel()[0])
+        except Exception:
+            pred = float("nan")
+        t_stats = state["target_stats"].get(tcol, {})
+        predictions[tcol] = {
+            "predicted": round(pred, 4),
+            "ucl": t_stats.get("ucl"),
+            "lcl": t_stats.get("lcl"),
+            "usl": t_stats.get("usl"),   # user-set spec limit
+            "lsl": t_stats.get("lsl"),   # user-set spec limit
+            "mean": t_stats.get("mean"),
+            "std": t_stats.get("std"),
+        }
+
+    return {"status": "success", "predictions": predictions}

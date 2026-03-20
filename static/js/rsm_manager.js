@@ -171,12 +171,33 @@
 
         sel.onchange = function () {
             _rsmTarget = sel.value;
-            if (_rsmTarget) _loadTrend(_rsmTarget);
+            const chartArea = document.getElementById('rsm-trend-area');
+            if (_rsmTarget) {
+                _loadTrend(_rsmTarget);
+            } else {
+                // Clear the trend preview when no target selected
+                if (chartArea) chartArea.innerHTML = '';
+                _rsmTrendData = null;
+            }
         };
 
         // Also populate the available factors pool
         _rsmAllCols = cols.map(c => c.name);
         _rsmColsPopulated = true;
+
+        // Reset trend if current target is no longer in the new column list
+        const isTargetValid = _rsmTarget && cols.some(c => c.name === _rsmTarget);
+        if (isTargetValid) {
+            sel.value = _rsmTarget;
+            _loadTrend(_rsmTarget);
+        } else {
+            // Target gone or never set: clear preview
+            _rsmTarget = '';
+            sel.value = '';
+            const chartArea = document.getElementById('rsm-trend-area');
+            if (chartArea) chartArea.innerHTML = '';
+            _rsmTrendData = null;
+        }
     }
 
     let _rsmAllCols = [];
@@ -944,9 +965,16 @@
     function _drawScatter(data, term) {
         const canvas = document.getElementById('rsm-scatter-canvas');
         if (!canvas) return;
-        
+
         if (_rsmLastChart) {
             _rsmLastChart.destroy();
+            _rsmLastChart = null;
+        }
+
+        if (!data.x || !data.y || data.x.length === 0) {
+            const placeholder = document.getElementById('rsm-plot-placeholder');
+            if (placeholder) { placeholder.style.display = 'flex'; placeholder.innerHTML = '<div style="color:#94a3b8;">無資料可顯示</div>'; }
+            return;
         }
 
         const points = data.x.map((x, i) => ({ x: x, y: data.y[i] }));
