@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''backend/routers/data_preparation_router.py''\\).read\\(\\)\\); print\\(''OK''\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''backend/routers/data_preparation_router.py'', encoding=''utf-8''\\).read\\(\\)\\); print\\(''OK''\\)\")",
+      "Bash(python -c \"import pymoo; print\\(''pymoo version:'', pymoo.__version__\\)\")",
+      "Bash(python -c \"import pymoo; print\\(pymoo.__version__\\)\")",
+      "Bash(python -m pip install pymoo)",
+      "Bash(python -c \"import pymoo; print\\(''OK:'', pymoo.__version__\\)\")",
+      "Bash(python -c \"from pymoo.core.callback import Callback; import inspect; print\\(inspect.getsource\\(Callback.notify\\)\\)\")",
+      "Bash(node --check \"c:/Users/foresight/Desktop/MantleTemp/pythaon/Sigma2/static/js/me_manager.js\")",
+      "Bash(node -e \"try { require\\(''fs''\\).readFileSync\\(''c:/Users/foresight/Desktop/MantleTemp/pythaon/Sigma2/static/js/me_manager.js'',''utf8''\\); console.log\\(''OK''\\) } catch\\(e\\) { console.error\\(e.message\\) }\")",
+      "Bash(python -c \":*)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8000/)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5000/)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000/)",
+      "Bash(netstat -ano)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8001/)",
+      "Bash(curl -s http://localhost:8001/)",
+      "Bash(curl -s \"http://localhost:8001/static/html/data_preparation.html\" -o /dev/null -w \"%{http_code}\")",
+      "Bash(curl -s \"http://localhost:8001/api/data-prep/me-predict\" -o /dev/null -w \"%{http_code}\")",
+      "Bash(curl -s \"http://localhost:8001/static/html/data_preparation.html\")",
+      "Bash(curl -s \"http://localhost:8001/static/js/me_manager.js\")",
+      "Bash(grep -v \"^.*//.*remove\")"
+    ]
+  }
+}
