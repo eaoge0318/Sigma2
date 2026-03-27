@@ -9,13 +9,18 @@
     'use strict';
 
     let _rsmStep = 1;
-    let _rsmTarget = '';
+    let _rsmTarget = '';        // primary target (first in _rsmTargets)
+    let _rsmTargets = [];       // all selected targets (multi-target)
     let _rsmSelectedFactors = [];
     let _rsmTrendData = null;
     let _rsmColsPopulated = false;
-    let _rsmLastResult = null; // Store last analysis result for sorting/interaction
-    let _rsmSortState = { key: 'coefficient', dir: 'desc' }; // Default sort
-    let _rsmTypeFilter = 'all'; // Default type filter
+    let _rsmLastResult = null;
+    let _rsmSortState = { key: 'coefficient', dir: 'desc' };
+    let _rsmTypeFilter = 'all';
+    let _rsmActiveTargetTab = 'combined';  // 'combined' or target name
+    let _rsmSmartScores = {};              // col → score from smart filter
+    let _rsmCurrentSingleTarget = '';      // target for single-tab row clicks
+    let _rsmMultiCharts = [];              // mini charts in combined mode
 
     // ============ PUBLIC API ============
 
@@ -23,13 +28,15 @@
     window.rsmInit = function () {
         if (typeof allFields !== 'undefined' && allFields.length > 0) {
             _populateColumns();
-            // Reset target if it was excluded in Data Cleaning
-            const isExcluded = typeof _clExcludedCols !== 'undefined' && 
-                (_clExcludedCols instanceof Set ? _clExcludedCols.has(_rsmTarget) : _clExcludedCols.includes(_rsmTarget));
-            if (_rsmTarget && isExcluded) {
-                _rsmTarget = '';
-                const sel = document.getElementById('rsm-target-select');
-                if (sel) sel.value = '';
+            // Filter out excluded targets
+            if (typeof _clExcludedCols !== 'undefined') {
+                _rsmTargets = _rsmTargets.filter(t => {
+                    if (_clExcludedCols instanceof Set) return !_clExcludedCols.has(t);
+                    if (Array.isArray(_clExcludedCols)) return !_clExcludedCols.includes(t);
+                    return true;
+                });
+                _rsmTarget = _rsmTargets[0] || '';
+                _renderTargetTags();
             }
         }
         rsmGotoStep(1);
@@ -39,13 +46,100 @@
     window.rsmRun = rsmRunAnalysis;
     window.rsmResetCols = function () { _rsmColsPopulated = false; };
 
+    // ── Multi-target tag management ──
+    window.rsmAddTarget = function () {
+        const sel = document.getElementById('rsm-target-select');
+        const val = sel ? sel.value : '';
+        if (!val) return;
+        if (_rsmTargets.includes(val)) { sel.value = ''; return; }
+        _rsmTargets.push(val);
+        _rsmTarget = _rsmTargets[0];
+        _renderTargetTags();
+        _loadTrend(_rsmTarget);
+        sel.value = '';
+        _updateRunBtn();
+    };
+
+    function _renderTargetTags() {
+        const container = document.getElementById('rsm-target-tags');
+        if (!container) return;
+        const colors = ['#6366f1','#0ea5e9','#10b981','#f59e0b','#ef4444','#8b5cf6'];
+        container.innerHTML = _rsmTargets.map((t, i) => {
+            const c = colors[i % colors.length];
+            return `<span style="display:inline-flex;align-items:center;gap:4px;background:${c}18;color:${c};border:1.5px solid ${c}44;border-radius:20px;padding:3px 10px 3px 10px;font-size:12px;font-weight:600;">
+                ${t}
+                <span onclick="rsmRemoveTarget(${i})" style="cursor:pointer;font-size:14px;line-height:1;opacity:0.7;margin-left:2px;">&times;</span>
+            </span>`;
+        }).join('');
+    }
+
+    // Preview trend when user selects from dropdown (before clicking 加入)
+    window._rsmPreviewTarget = function (col) {
+        _loadTrend(col);
+    };
+
+    window.rsmRemoveTarget = function (idx) {
+        _rsmTargets.splice(idx, 1);
+        _rsmTarget = _rsmTargets[0] || '';
+        _renderTargetTags();
+        if (_rsmTarget) _loadTrend(_rsmTarget);
+        else { const a = document.getElementById('rsm-trend-area'); if (a) a.innerHTML = ''; }
+        _updateRunBtn();
+    };
+
+    // ── Smart Filter ──
+    window.rsmOpenSmartModal = function () {
+        if (_rsmTargets.length === 0) { alert('請先在第一步選擇目標 Y'); return; }
+        const modal = document.getElementById('rsm-smart-modal');
+        if (!modal) return;
+        modal.style.display = 'flex';
+        document.getElementById('rsm-smart-status').textContent = '';
+        const btn = document.getElementById('rsm-smart-run-btn');
+        btn.textContent = '開始智慧分析'; btn.disabled = false;
+    };
+    window.rsmCloseSmartModal = function () {
+        const modal = document.getElementById('rsm-smart-modal');
+        if (modal) modal.style.display = 'none';
+    };
+    window.rsmRunSmartFilter = async function () {
+        const algo = (document.querySelector('input[name="rsm-smart-algo"]:checked') || {}).value || 'correlation';
+        const statusEl = document.getElementById('rsm-smart-status');
+        const btn = document.getElementById('rsm-smart-run-btn');
+        statusEl.textContent = '⏳ 分析中...'; statusEl.style.color = '#6366f1';
+        btn.disabled = true; btn.textContent = '分析中...';
+        try {
+            const sid = typeof getSessionId === 'function' ? getSessionId() : 'default';
+            const filters = (typeof _activeDataset !== 'undefined' && _activeDataset?.filters) ?
+                _activeDataset.filters.map(f => ({ column: f.col, keyword: '==' + String(f.value || ''), exclude_empty: false })) : [];
+            const res = await fetch(`/api/data-prep/smart-select?session_id=${sid}`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    file_id: currentFileId,
+                    target_columns: _rsmTargets,
+                    target_weights: _rsmTargets.map(() => 1),
+                    algorithm: algo,
+                    filters,
+                    exclude_indices: (typeof _clOutlierIndices !== 'undefined') ? _clOutlierIndices : [],
+                    exclude_cols: (typeof _clExcludedCols !== 'undefined') ? [..._clExcludedCols] : [],
+                }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail));
+            _rsmSmartScores = {};
+            (data.results || []).forEach(r => { _rsmSmartScores[r.col] = r.score; });
+            _populateAvailableFactors();
+            window.rsmCloseSmartModal();
+        } catch (e) {
+            statusEl.textContent = `❌ ${e.message}`; statusEl.style.color = '#ef4444';
+            btn.textContent = '重試'; btn.disabled = false;
+        }
+    };
+
     // ============ STEP NAVIGATION ============
 
     function rsmGotoStep(n) {
-        // Validation before jumping: can't jump to 2 without target, etc.
         if (n > 1) {
-            _rsmTarget = document.getElementById('rsm-target-select') ? document.getElementById('rsm-target-select').value : '';
-            if (!_rsmTarget) { alert('請先選擇 Target (Y)'); return; }
+            if (_rsmTargets.length === 0) { alert('請先選擇至少 1 個 Target (Y)'); return; }
         }
         if (n > 2) {
             _syncSelectedFromList();
@@ -89,7 +183,7 @@
         // Run Button
         const runBtn = document.getElementById('rsm-sidebar-run-btn');
         if (runBtn) {
-            const canRun = _rsmTarget && _rsmSelectedFactors.length > 0;
+            const canRun = _rsmTargets.length > 0 && _rsmSelectedFactors.length > 0;
             if (canRun) {
                 runBtn.style.background = '#2563eb';
                 runBtn.style.color = '#fff';
@@ -136,16 +230,26 @@
 
     window.rsmNext = function () {
         if (_rsmStep === 1) {
-            _rsmTarget = document.getElementById('rsm-target-select').value;
-            if (!_rsmTarget) { alert('請選擇 Target (Y)'); return; }
+            if (_rsmTargets.length === 0) { alert('請選擇至少 1 個 Target (Y)'); return; }
             rsmGotoStep(2);
         } else if (_rsmStep === 2) {
             _syncSelectedFromList();
             if (_rsmSelectedFactors.length < 1) { alert('請選擇至少 1 個 Factor (X)'); return; }
-            if (_rsmSelectedFactors.includes(_rsmTarget)) { alert('Factor 不能包含 Target'); return; }
+            const overlap = _rsmSelectedFactors.filter(f => _rsmTargets.includes(f));
+            if (overlap.length > 0) { alert(`Factor 不能與 Target 重複：${overlap.join(', ')}`); return; }
             rsmGotoStep(3);
         }
     };
+
+    function _updateRunBtn() {
+        const btn = document.getElementById('rsm-sidebar-run-btn');
+        if (!btn) return;
+        const can = _rsmTargets.length > 0 && _rsmSelectedFactors.length > 0;
+        btn.disabled = !can;
+        btn.style.background = can ? '#2563eb' : '#e2e8f0';
+        btn.style.color = can ? '#fff' : '#64748b';
+        btn.style.cursor = can ? 'pointer' : 'not-allowed';
+    }
 
     // ============ STEP 1: TARGET + TREND ============
 
@@ -166,38 +270,21 @@
 
         const sel = document.getElementById('rsm-target-select');
         if (!sel) return;
+        const colNames = cols.map(c => c.name);
         sel.innerHTML = '<option value="">— 選擇 Target —</option>';
-        cols.forEach(f => sel.add(new Option(f.name, f.name)));
-
-        sel.onchange = function () {
-            _rsmTarget = sel.value;
-            const chartArea = document.getElementById('rsm-trend-area');
-            if (_rsmTarget) {
-                _loadTrend(_rsmTarget);
-            } else {
-                // Clear the trend preview when no target selected
-                if (chartArea) chartArea.innerHTML = '';
-                _rsmTrendData = null;
-            }
-        };
+        colNames.forEach(n => sel.add(new Option(n, n)));
 
         // Also populate the available factors pool
-        _rsmAllCols = cols.map(c => c.name);
+        _rsmAllCols = colNames;
         _rsmColsPopulated = true;
 
-        // Reset trend if current target is no longer in the new column list
-        const isTargetValid = _rsmTarget && cols.some(c => c.name === _rsmTarget);
-        if (isTargetValid) {
-            sel.value = _rsmTarget;
-            _loadTrend(_rsmTarget);
-        } else {
-            // Target gone or never set: clear preview
-            _rsmTarget = '';
-            sel.value = '';
-            const chartArea = document.getElementById('rsm-trend-area');
-            if (chartArea) chartArea.innerHTML = '';
-            _rsmTrendData = null;
-        }
+        // Remove invalid targets from _rsmTargets
+        _rsmTargets = _rsmTargets.filter(t => colNames.includes(t));
+        _rsmTarget = _rsmTargets[0] || '';
+        _renderTargetTags();
+
+        if (_rsmTarget) _loadTrend(_rsmTarget);
+        else { const a = document.getElementById('rsm-trend-area'); if (a) a.innerHTML = ''; }
     }
 
     let _rsmAllCols = [];
@@ -311,28 +398,49 @@
         const selList = document.getElementById('rsm-sel-list');
         if (!availList || !selList) return;
 
-        // Ensure Target is never in the selected factors list
-        if (_rsmTarget) {
-            _rsmSelectedFactors = _rsmSelectedFactors.filter(f => f !== _rsmTarget);
+        // Exclude all targets from factors
+        _rsmSelectedFactors = _rsmSelectedFactors.filter(f => !_rsmTargets.includes(f));
+
+        const excluded = new Set([..._rsmTargets, ..._rsmSelectedFactors]);
+        let available = _rsmAllCols.filter(c => !excluded.has(c));
+
+        // Sort available by smart score if present
+        if (Object.keys(_rsmSmartScores).length > 0) {
+            available = available.slice().sort((a, b) => (_rsmSmartScores[b] || 0) - (_rsmSmartScores[a] || 0));
         }
 
-        // Build available = all numeric cols minus target minus already selected
-        const excluded = new Set([_rsmTarget, ..._rsmSelectedFactors]);
-        const available = _rsmAllCols.filter(c => !excluded.has(c));
-
-        _renderList(availList, available);
-        _renderList(selList, _rsmSelectedFactors);
+        _renderList(availList, available, true);
+        _renderList(selList, _rsmSelectedFactors, false);
         _updateSelCount();
+        _updateRunBtn();
     }
 
-    function _renderList(ul, items) {
+    function _renderList(ul, items, showScore) {
         ul.innerHTML = '';
+        const scores = showScore ? _rsmSmartScores : {};
+        const maxScore = Math.max(...Object.values(scores).filter(v => v > 0), 1e-9);
         items.forEach(name => {
+            const score = showScore && scores[name] != null ? scores[name] : null;
             const li = document.createElement('div');
             li.className = 'list-item rsm-pick-item';
             li.draggable = true;
             li.ondragstart = (e) => { e.dataTransfer.setData('text/plain', name); };
-            li.textContent = name;
+            if (score != null) {
+                const barPct = Math.min((score / maxScore) * 100, 100).toFixed(1);
+                li.style.display = 'flex';
+                li.style.alignItems = 'center';
+                li.style.gap = '6px';
+                li.innerHTML = `
+                    <div style="flex:1;min-width:0;">
+                        <div style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${name}</div>
+                        <div style="height:3px;background:#e2e8f0;border-radius:2px;margin-top:3px;">
+                            <div style="height:100%;width:${barPct}%;background:#7c3aed;border-radius:2px;"></div>
+                        </div>
+                    </div>
+                    <span style="font-size:11px;color:#6d28d9;font-weight:600;flex-shrink:0;min-width:36px;text-align:right;">${score.toFixed(3)}</span>`;
+            } else {
+                li.textContent = name;
+            }
             li.dataset.col = name;
             li.ondblclick = () => {
                 if (ul.id === 'rsm-avail-list') _moveToSelected([name]);
@@ -561,22 +669,22 @@
     // ============ STEP 3: ANALYSIS ============
 
     async function rsmRunAnalysis() {
-        if (!_rsmTarget) { alert('請先選擇 Target'); rsmGotoStep(1); return; }
+        if (_rsmTargets.length === 0) { alert('請先選擇 Target'); rsmGotoStep(1); return; }
         _syncSelectedFromList();
         if (_rsmSelectedFactors.length < 1) { alert('請先選擇 Factors'); rsmGotoStep(2); return; }
 
-        // Auto-navigate to Step 3
         rsmGotoStep(3);
 
         const resultArea = document.getElementById('rsm-result-area');
         const runBtn = document.getElementById('rsm-sidebar-run-btn');
+        const targetsLabel = _rsmTargets.join(' / ');
         if (resultArea) {
             resultArea.innerHTML = `
                 <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:20px;">
                     <div style="font-size:40px;">🧪</div>
                     <div style="text-align:center;">
                         <div style="color:#3b82f6;font-size:16px;font-weight:700;margin-bottom:4px;">正在進行多項式展開相關分析...</div>
-                        <div style="color:#94a3b8;font-size:12px;">目標: ${_rsmTarget} | 因子: ${_rsmSelectedFactors.length} 個</div>
+                        <div style="color:#94a3b8;font-size:12px;">目標: ${targetsLabel} | 因子: ${_rsmSelectedFactors.length} 個</div>
                     </div>
                     
                     <div style="width:300px;height:12px;background:#f1f5f9;border-radius:6px;overflow:hidden;border:1px solid #e2e8f0;position:relative;">
@@ -611,10 +719,10 @@
             const sid = typeof getSessionId === 'function' ? getSessionId() : 'default';
             const body = {
                 file_id: currentFileId,
-                target: _rsmTarget,
+                targets: _rsmTargets,      // multi-target
+                target: _rsmTargets[0] || '',  // backwards compat
                 factors: _rsmSelectedFactors,
-                // Respect Data Cleaning module state if available
-                filters: (typeof _activeDataset !== 'undefined' && _activeDataset?.filters) ? 
+                filters: (typeof _activeDataset !== 'undefined' && _activeDataset?.filters) ?
                     _activeDataset.filters.map(f => ({
                         column: f.col, keyword: '==' + String(f.value || ''), exclude_empty: false
                     })) : [],
@@ -653,45 +761,487 @@
     }
 
     function _renderResults(data, container) {
-        _rsmLastResult = data; // Save for sorting
+        _rsmLastResult = data;
+        window._rsmLastResult = data;  // expose for nbSaveRsmNote in HTML
+        // Destroy any existing multi charts
+        _rsmMultiCharts.forEach(c => { try { c.destroy(); } catch(e) {} });
+        _rsmMultiCharts = [];
+        if (_rsmLastChart) { try { _rsmLastChart.destroy(); } catch(e) {} _rsmLastChart = null; }
+
+        if (data.multi_target && data.targets && data.targets.length > 1) {
+            _renderMultiTargetResults(data, container);
+        } else {
+            _renderSingleTargetResults(data, container);
+        }
+    }
+
+    // ── Single-target layout (unchanged behaviour) ──
+    function _renderSingleTargetResults(data, container) {
+        _rsmCurrentSingleTarget = data.target || _rsmTargets[0] || _rsmTarget;
+        window._rsmCurrentTarget = _rsmCurrentSingleTarget;
+        _rsmActiveTargetTab = 'single';
         container.innerHTML = `
             <div id="rsm-result-layout" style="display:grid; grid-template-columns: 1fr 1fr; gap:20px; align-items: start;">
                 <div id="rsm-result-left-panel">
-                    <!-- Summary cards moved here -->
-                    <div id="rsm-summary-cards" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;"></div>
-                    <!-- Method badge -->
-                    <div id="rsm-method-badge" style="margin-bottom:12px;"></div>
-                    <!-- The Table -->
                     <div id="rsm-table-container"></div>
-                    <!-- Other sections -->
                     <div id="rsm-extra-sections" style="margin-top:20px;"></div>
                 </div>
-                <div id="rsm-result-right-panel" style="position:sticky; top:10px; background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:16px; min-height:400px; display:flex; flex-direction:column;">
-                    <div style="font-size:13px; font-weight:700; color:#1e293b; margin-bottom:12px; display:flex; align-items:center; gap:6px;">
-                        📈 <span id="rsm-plot-title">點擊左側項目查看散佈圖</span>
-                    </div>
-                    <div style="flex:1; position:relative; min-height:300px;">
-                        <canvas id="rsm-scatter-canvas"></canvas>
-                        <div id="rsm-plot-placeholder" style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#94a3b8; font-size:12px; background:#f8fafc; border-radius:8px;">
-                            請從左表選擇一項分析因子或交互作用項
-                        </div>
-                    </div>
-                    <div id="rsm-plot-stats" style="margin-top:12px; font-size:11px; color:#64748b; border-top:1px dashed #e2e8f0; padding-top:8px;"></div>
-                </div>
-            </div>
-        `;
-
-        // Render Table
+                ${_rightPanelHTML()}
+            </div>`;
         _renderResultsTable();
     }
+
+    // ── Multi-target layout ──
+    function _renderMultiTargetResults(data, container) {
+        _rsmActiveTargetTab = 'combined';
+        // Set current target to first target so _rsmRowClick / nbSaveRsmNote have a fallback
+        _rsmCurrentSingleTarget = (data.targets && data.targets[0]) || '';
+        window._rsmCurrentTarget = _rsmCurrentSingleTarget;
+
+        container.innerHTML = `
+            <div id="rsm-result-layout" style="display:grid; grid-template-columns: 1fr 1fr; gap:20px; align-items: start;">
+                <div id="rsm-result-left-panel">
+                    <div id="rsm-table-container"></div>
+                </div>
+                <div id="rsm-result-right-panel" style="position:sticky;top:10px;height:calc(100vh - 120px);background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:16px;display:flex;flex-direction:column;overflow:hidden;">
+                    <div style="font-size:13px;font-weight:700;color:#1e293b;margin-bottom:10px;display:flex;align-items:center;gap:6px;flex-shrink:0;">
+                        📈 <span id="rsm-plot-title">點擊左側項目查看散佈圖</span>
+                    </div>
+                    <div id="rsm-multi-scatter" style="flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#94a3b8;font-size:12px;background:#f8fafc;border-radius:8px;padding:12px;">
+                        請從左表選擇一項來查看各目標散佈圖
+                    </div>
+                </div>
+            </div>`;
+
+        if (!document.getElementById('rsm-table-style')) {
+            const style = document.createElement('style');
+            style.id = 'rsm-table-style';
+            style.textContent = `
+                .rsm-table-row:hover { background-color: #eff6ff !important; }
+                .rsm-table-row.active { background-color: #dbeafe !important; box-shadow: inset 2px 0 0 #2563eb; }
+            `;
+            document.head.appendChild(style);
+        }
+
+        _renderCombinedTab(data);
+    }
+
+    // ── Tab switcher ──
+    window._rsmSwitchTab = function(tab) {
+        _rsmActiveTargetTab = tab;
+        const data = _rsmLastResult;
+
+        // Update button styles
+        const tabColors = ['#6366f1','#0ea5e9','#10b981','#f59e0b','#ef4444','#8b5cf6'];
+        document.querySelectorAll('.rsm-tab-btn').forEach(btn => {
+            const isActive = btn.dataset.tab === tab;
+            if (isActive) {
+                if (tab === 'combined') {
+                    btn.style.background = '#3b82f6';
+                } else {
+                    const idx = data.targets.indexOf(tab);
+                    btn.style.background = tabColors[idx % tabColors.length];
+                }
+                btn.style.color = '#fff';
+            } else {
+                btn.style.background = '#f8fafc';
+                btn.style.color = '#64748b';
+            }
+        });
+
+        // Reset right panel
+        const singleScatter = document.getElementById('rsm-single-scatter');
+        const multiScatter = document.getElementById('rsm-multi-scatter');
+        const plotTitle = document.getElementById('rsm-plot-title');
+        if (plotTitle) plotTitle.textContent = '點擊左側項目查看散佈圖';
+
+        if (tab === 'combined') {
+            if (singleScatter) singleScatter.style.display = 'none';
+            if (multiScatter) {
+                multiScatter.style.display = 'flex';
+                multiScatter.innerHTML = '<span style="color:#94a3b8;font-size:12px;">請從左表選擇一項來查看各目標散佈圖</span>';
+            }
+            _renderCombinedTab(data);
+        } else {
+            if (singleScatter) { singleScatter.style.display = 'block'; }
+            if (multiScatter) multiScatter.style.display = 'none';
+            // Reset single scatter placeholder
+            const placeholder = document.getElementById('rsm-plot-placeholder');
+            if (placeholder) { placeholder.style.display = 'flex'; placeholder.textContent = '請從左表選擇一項分析因子或交互作用項'; }
+            _renderPerTargetTableForTab(tab, data);
+        }
+    };
+
+    // ── Combined heatmap table ──
+    function _renderCombinedTab(data) {
+        const container = document.getElementById('rsm-table-container');
+        if (!container) return;
+        const terms = data.combined_terms || [];
+        const targets = data.targets || [];
+        // Expose for nbSaveRsmNote (combined mode: adapt to per-target format using first target's corr)
+        window._rsmDisplayedTerms = terms.map(t => ({
+            name: t.name, type: t.type,
+            coefficient: (t.scores && t.scores[targets[0]] !== undefined) ? t.scores[targets[0]] : 0,
+            correlation: (t.scores && t.scores[targets[0]] !== undefined) ? t.scores[targets[0]] : 0,
+        }));
+
+        let maxAbs = 0.01;
+        terms.forEach(t => Object.values(t.scores || {}).forEach(s => { if (Math.abs(s) > maxAbs) maxAbs = Math.abs(s); }));
+
+        const typeIcons = { main: '📌', interaction: '🔗', quadratic: '📐', cubic: '🧊' };
+        const tabColors = ['#6366f1','#0ea5e9','#10b981','#f59e0b','#ef4444','#8b5cf6'];
+
+        // Apply type filter
+        let filteredTerms = terms;
+        if (_rsmTypeFilter !== 'all') {
+            filteredTerms = terms.filter(t => t.type === _rsmTypeFilter);
+        }
+
+        // Apply sort
+        const sk = _rsmSortState.key;
+        if (sk.startsWith('combined_')) {
+            const ti = parseInt(sk.replace('combined_', ''), 10);
+            const tCol = targets[ti];
+            if (tCol !== undefined) {
+                filteredTerms = [...filteredTerms].sort((a, b) => {
+                    const va = Math.abs((a.scores && a.scores[tCol]) ?? 0);
+                    const vb = Math.abs((b.scores && b.scores[tCol]) ?? 0);
+                    return _rsmSortState.dir === 'desc' ? vb - va : va - vb;
+                });
+            }
+        }
+        // default order (max abs) is already in terms array from backend
+
+        const sortIcon = (key) => _rsmSortState.key !== key ? '<span style="opacity:0.3;font-size:10px;">↕</span>' : (_rsmSortState.dir === 'desc' ? '⬇' : '⬆');
+
+        let html = `<div style="border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;background:#fff;">`;
+        html += `<table style="width:100%;border-collapse:collapse;font-size:12px;">`;
+
+        // Header
+        html += `<thead><tr style="background:#f8fafc;color:#64748b;border-bottom:1px solid #e2e8f0;">
+            <th style="padding:8px 6px;text-align:center;width:26px;font-weight:600;">#</th>
+            <th style="padding:8px 10px;text-align:left;font-weight:600;">項名稱</th>
+            <th style="padding:8px 6px;text-align:center;width:80px;">
+                <select id="rsm-type-filter-select" onchange="window._rsmChangeTypeFilter(this.value)" style="border:1px solid #cbd5e1;border-radius:4px;font-size:11px;padding:2px 4px;background:#fff;outline:none;cursor:pointer;">
+                    <option value="all" ${_rsmTypeFilter==='all'?'selected':''}>類型(全)</option>
+                    <option value="main" ${_rsmTypeFilter==='main'?'selected':''}>主效應</option>
+                    <option value="interaction" ${_rsmTypeFilter==='interaction'?'selected':''}>交互</option>
+                    <option value="quadratic" ${_rsmTypeFilter==='quadratic'?'selected':''}>二階</option>
+                    <option value="cubic" ${_rsmTypeFilter==='cubic'?'selected':''}>三階</option>
+                </select>
+            </th>
+            ${targets.map((t, i) => {
+                const c = tabColors[i % tabColors.length];
+                const short = t.length > 9 ? t.substring(0, 8) + '…' : t;
+                const isActive = _rsmSortState.key === `combined_${i}`;
+                return `<th onclick="window._rsmToggleSort('combined_${i}')" style="padding:8px 6px;text-align:center;min-width:80px;color:${c};font-weight:700;cursor:pointer;user-select:none;${isActive ? 'background:#f0f9ff;' : ''}" title="${t}（點擊排序）">
+                    <div style="display:flex;align-items:center;justify-content:center;gap:3px;">${short} ${sortIcon('combined_'+i)}</div>
+                </th>`;
+            }).join('')}
+        </tr></thead><tbody id="rsm-table-tbody">`;
+
+        if (filteredTerms.length === 0) {
+            html += `<tr><td colspan="${3 + targets.length}" style="text-align:center;padding:24px;color:#94a3b8;">無符合條件的項目</td></tr>`;
+        }
+
+        filteredTerms.forEach((term, idx) => {
+            html += `<tr onclick='window._rsmMultiRowClick(this, ${JSON.stringify(term).replace(/'/g, "&apos;")})'
+                class="rsm-table-row" tabindex="0"
+                style="border-bottom:1px solid #f1f5f9;cursor:pointer;transition:background 0.15s;">
+                <td style="padding:7px 6px;text-align:center;color:#94a3b8;font-size:10px;">${idx + 1}</td>
+                <td style="padding:7px 10px;color:#1e293b;font-weight:500;" title="${term.name}">${_truncateName(term.name, 20).replace(/²/g, '<span style="color:#f97316;font-weight:700;">²</span>').replace(/³/g, '<span style="color:#a855f7;font-weight:700;">³</span>')}</td>
+                <td style="padding:7px 6px;text-align:center;font-size:13px;">${typeIcons[term.type] || ''}</td>
+                ${targets.map((t, ti) => {
+                    const score = (term.scores && term.scores[t] !== undefined) ? term.scores[t] : 0;
+                    const pct = Math.min(Math.abs(score) / maxAbs * 100, 100);
+                    const c = tabColors[ti % tabColors.length];
+                    const bg = score >= 0
+                        ? `linear-gradient(to right, transparent ${100 - pct}%, ${c}28 ${100 - pct}%)`
+                        : `linear-gradient(to left, transparent ${100 - pct}%, ${c}28 ${100 - pct}%)`;
+                    const bold = Math.abs(score) > 0.3 ? 700 : 400;
+                    const textColor = Math.abs(score) > 0.3 ? c : '#94a3b8';
+                    return `<td style="padding:7px 6px;text-align:center;background:${bg};">
+                        <span style="font-family:monospace;font-size:11px;font-weight:${bold};color:${textColor};">${score >= 0 ? '+' : ''}${score.toFixed(3)}</span>
+                    </td>`;
+                }).join('')}
+            </tr>`;
+        });
+
+        html += `</tbody></table></div>
+        <div style="margin-top:6px;font-size:11px;color:#94a3b8;text-align:right;padding-right:4px;">
+            顯示 ${filteredTerms.length} / ${terms.length} 項 · 點擊列查看各目標散佈圖
+        </div>`;
+        // Expose for CSV/note save
+        window._rsmDisplayedTerms = filteredTerms.map(t => ({
+            name: t.name, type: t.type,
+            coefficient: (t.scores && t.scores[targets[0]] !== undefined) ? t.scores[targets[0]] : 0,
+            correlation: (t.scores && t.scores[targets[0]] !== undefined) ? t.scores[targets[0]] : 0,
+        }));
+        container.innerHTML = html;
+        _setupKeyboardNavigation();
+    }
+
+    // ── Per-target tab table ──
+    function _renderPerTargetTableForTab(target, data) {
+        _rsmCurrentSingleTarget = target;
+        window._rsmCurrentTarget = target;
+        const container = document.getElementById('rsm-table-container');
+        if (!container) return;
+        const targetData = (data.results || {})[target];
+        if (!targetData) {
+            container.innerHTML = `<div style="text-align:center;padding:24px;color:#94a3b8;">無 ${target} 的分析結果</div>`;
+            return;
+        }
+
+        let terms = [...(targetData.surviving_terms || [])];
+        if (_rsmTypeFilter !== 'all') {
+            terms = terms.filter(t => t.type === _rsmTypeFilter);
+        }
+        terms.sort((a, b) => {
+            let vA = a[_rsmSortState.key], vB = b[_rsmSortState.key];
+            if (_rsmSortState.key === 'coefficient') { vA = Math.abs(vA); vB = Math.abs(vB); }
+            return _rsmSortState.dir === 'desc' ? vB - vA : vA - vB;
+        });
+
+        const maxAbsCoef = Math.max(...terms.map(t => Math.abs(t.coefficient || 0)), 0.01);
+        const typeIcons = { main: '📌', interaction: '🔗', quadratic: '📐', cubic: '🧊' };
+        window._rsmDisplayedTerms = terms;
+
+        const sortIcon = (key) => _rsmSortState.key !== key ? '↕️' : (_rsmSortState.dir === 'desc' ? '⬇️' : '⬆️');
+
+        let html = `<div style="font-size:13px;font-weight:700;color:#1e293b;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center;padding:8px 2px 4px;">
+            <span>🎯 顯著相關項 (${terms.length})</span>
+            <span style="font-size:11px;font-weight:400;color:#94a3b8;">* 點擊列查看散佈圖</span>
+        </div>`;
+        html += `<div style="border:1px solid #e2e8f0;border-radius:0 0 10px 10px;overflow:hidden;background:#fff;margin-top:-1px;">`;
+        html += `<table style="width:100%;border-collapse:collapse;font-size:12px;">`;
+        html += `<thead><tr style="background:#f8fafc;color:#64748b;border-bottom:1px solid #e2e8f0;">
+            <th style="padding:8px 6px;text-align:center;width:26px;">#</th>
+            <th style="padding:8px 10px;text-align:left;">項名稱</th>
+            <th style="padding:8px 6px;text-align:center;width:72px;">
+                <select id="rsm-type-filter-select" onchange="window._rsmChangeTypeFilter(this.value)" style="border:1px solid #cbd5e1;border-radius:4px;font-size:11px;padding:2px 4px;background:#fff;outline:none;cursor:pointer;">
+                    <option value="all" ${_rsmTypeFilter === 'all' ? 'selected' : ''}>類型(全)</option>
+                    <option value="main" ${_rsmTypeFilter === 'main' ? 'selected' : ''}>主效應</option>
+                    <option value="interaction" ${_rsmTypeFilter === 'interaction' ? 'selected' : ''}>交互</option>
+                    <option value="quadratic" ${_rsmTypeFilter === 'quadratic' ? 'selected' : ''}>二階</option>
+                    <option value="cubic" ${_rsmTypeFilter === 'cubic' ? 'selected' : ''}>三階</option>
+                </select>
+            </th>
+            <th onclick="window._rsmToggleSort('coefficient')" style="padding:8px 6px;text-align:center;width:150px;cursor:pointer;user-select:none;color:#1e293b;">相關係數 ${sortIcon('coefficient')}</th>
+        </tr></thead><tbody id="rsm-table-tbody">`;
+
+        if (terms.length === 0) {
+            html += `<tr><td colspan="4" style="text-align:center;padding:20px;color:#94a3b8;">沒有符合此類型的顯著項</td></tr>`;
+        }
+
+        terms.forEach((t, idx) => {
+            const coefPct = Math.min(Math.abs(t.coefficient) / maxAbsCoef * 100, 100);
+            const coefColor = t.coefficient >= 0 ? '#3b82f6' : '#f97316';
+            const coefBg = t.coefficient >= 0
+                ? `linear-gradient(to right, transparent ${100 - coefPct}%, ${coefColor} ${100 - coefPct}%)`
+                : `linear-gradient(to left, transparent ${100 - coefPct}%, ${coefColor} ${100 - coefPct}%)`;
+            const icon = typeIcons[t.type] || '';
+            const shortName = _truncateName(t.name, 22);
+            html += `<tr onclick='window._rsmRowClick(this, ${JSON.stringify(t).replace(/'/g, "&apos;")})' class="rsm-table-row" tabindex="0" style="border-bottom:1px solid #f1f5f9;cursor:pointer;transition:background 0.15s;">
+                <td style="padding:7px 6px;text-align:center;color:#94a3b8;font-size:10px;">${idx + 1}</td>
+                <td style="padding:7px 10px;color:#1e293b;font-weight:500;" title="${t.name}">${shortName.replace(/²/g, '<span style="color:#f97316;font-weight:700;">²</span>').replace(/³/g, '<span style="color:#a855f7;font-weight:700;">³</span>')}</td>
+                <td style="padding:7px 6px;font-size:11px;color:#64748b;text-align:center;">${icon}</td>
+                <td style="padding:7px 6px;"><div style="display:flex;align-items:center;gap:6px;">
+                    <span style="font-family:monospace;font-size:11px;min-width:52px;text-align:right;">${(t.coefficient || 0).toFixed(4)}</span>
+                    <div style="flex:1;height:6px;border-radius:3px;background:${coefBg};"></div>
+                </div></td>
+            </tr>`;
+        });
+        html += `</tbody></table></div>`;
+
+        // R² badge
+        if (targetData.r_squared !== undefined) {
+            html += `<div style="margin-top:8px;font-size:11px;color:#64748b;text-align:right;padding-right:4px;">R² = <b>${(targetData.r_squared || 0).toFixed(4)}</b></div>`;
+        }
+        container.innerHTML = html;
+
+        if (!document.getElementById('rsm-table-style')) {
+            const style = document.createElement('style');
+            style.id = 'rsm-table-style';
+            style.textContent = `.rsm-tab-btn:hover{filter:brightness(0.92);}.rsm-table-row:hover{background-color:#eff6ff!important;}.rsm-table-row.active{background-color:#dbeafe!important;box-shadow:inset 2px 0 0 #2563eb;}`;
+            document.head.appendChild(style);
+        }
+        _setupKeyboardNavigation();
+    }
+
+    // ── Right panel HTML helper (single-target) ──
+    function _rightPanelHTML() {
+        return `<div id="rsm-result-right-panel" style="position:sticky;top:10px;height:calc(100vh - 120px);background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:16px;display:flex;flex-direction:column;overflow:hidden;">
+            <div style="font-size:13px;font-weight:700;color:#1e293b;margin-bottom:10px;display:flex;align-items:center;gap:6px;flex-shrink:0;">
+                📈 <span id="rsm-plot-title">點擊左側項目查看散佈圖</span>
+            </div>
+            <div id="rsm-scatter-area" style="flex:1;min-height:0;position:relative;">
+                <div id="rsm-single-scatter" style="position:absolute;inset:0;">
+                    <canvas id="rsm-scatter-canvas" style="width:100%;height:100%;"></canvas>
+                    <div id="rsm-plot-placeholder" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#94a3b8;font-size:12px;background:#f8fafc;border-radius:8px;">
+                        請從左表選擇一項分析因子或交互作用項
+                    </div>
+                </div>
+                <div id="rsm-multi-scatter" style="display:none;"></div>
+            </div>
+            <div id="rsm-plot-stats" style="margin-top:10px;font-size:11px;color:#64748b;border-top:1px dashed #e2e8f0;padding-top:8px;flex-shrink:0;"></div>
+        </div>`;
+    }
+
+    // ── Multi-target combined row click ──
+    window._rsmMultiRowClick = async function(rowEl, term) {
+        document.querySelectorAll('.rsm-table-row').forEach(el => el.classList.remove('active'));
+        rowEl.classList.add('active');
+
+        const plotTitle = document.getElementById('rsm-plot-title');
+        if (plotTitle) plotTitle.textContent = `${_truncateName(term.name, 28)} — 多目標對比`;
+
+        const multiScatter = document.getElementById('rsm-multi-scatter');
+        if (!multiScatter) return;
+        multiScatter.style.alignItems = 'center';
+        multiScatter.style.justifyContent = 'center';
+        multiScatter.innerHTML = '<div style="color:#94a3b8;font-size:12px;">載入中...</div>';
+
+        // Destroy previous mini charts
+        _rsmMultiCharts.forEach(c => { try { c.destroy(); } catch(e) {} });
+        _rsmMultiCharts = [];
+
+        const data = _rsmLastResult;
+
+        // Parse factors
+        let factors = [];
+        if (term.type === 'main') factors = [term.name];
+        else if (term.type === 'quadratic') factors = [term.name.replace('²', '')];
+        else if (term.type === 'interaction') factors = term.name.split(' × ');
+        else if (term.type === 'cubic') factors = term.name.replace(/[²³]/g, '').split(' × ');
+
+        const sid = typeof getSessionId === 'function' ? getSessionId() : 'default';
+        const baseBody = {
+            file_id: currentFileId,
+            term_name: term.name,
+            factors: factors,
+            term_type: term.type,
+            filters: (typeof _activeDataset !== 'undefined' && _activeDataset?.filters)
+                ? _activeDataset.filters.map(f => ({ column: f.col, keyword: '==' + String(f.value || ''), exclude_empty: false }))
+                : [],
+            exclude_indices: (typeof _clOutlierIndices !== 'undefined') ? _clOutlierIndices : [],
+            exclude_cols: (typeof _clExcludedCols !== 'undefined') ? [..._clExcludedCols] : [],
+        };
+
+        // Fetch all targets in parallel
+        const results = await Promise.all(data.targets.map(async t => {
+            try {
+                const res = await fetch(`/api/data-prep/rsm-scatter-data?session_id=${sid}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ...baseBody, target: t }),
+                });
+                const d = await res.json();
+                if (!res.ok) throw new Error(d.detail || '載入失敗');
+                return { target: t, d };
+            } catch(e) {
+                return { target: t, error: e.message };
+            }
+        }));
+
+        const tabColors = ['#6366f1','#0ea5e9','#10b981','#f59e0b','#ef4444','#8b5cf6'];
+        multiScatter.innerHTML = '';
+        multiScatter.style.alignItems = 'stretch';
+        multiScatter.style.justifyContent = 'flex-start';
+
+        results.forEach(({ target, d, error }, ti) => {
+            const color = tabColors[ti % tabColors.length];
+            const score = (term.scores && term.scores[target] !== undefined) ? term.scores[target] : null;
+            const corrText = score !== null ? (score >= 0 ? '+' : '') + score.toFixed(3) : '—';
+            const corrColor = score !== null && Math.abs(score) > 0.3 ? color : '#94a3b8';
+
+            const wrap = document.createElement('div');
+            wrap.style.cssText = 'margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid #f1f5f9;';
+
+            const header = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                <span style="font-size:11px;font-weight:700;color:${color};">▍${target}</span>
+                <span style="font-size:11px;font-family:monospace;color:${corrColor};font-weight:600;">r = ${corrText}</span>
+            </div>`;
+
+            if (error) {
+                wrap.innerHTML = header + `<div style="height:120px;display:flex;align-items:center;justify-content:center;font-size:11px;color:#ef4444;">❌ ${error}</div>`;
+                multiScatter.appendChild(wrap);
+                return;
+            }
+
+            const canvasId = `rsm-mini-${ti}`;
+            wrap.innerHTML = header + `<div style="position:relative;height:170px;"><canvas id="${canvasId}"></canvas></div>`;
+            multiScatter.appendChild(wrap);
+
+            const canvas = document.getElementById(canvasId);
+            if (!canvas || !d.x || d.x.length === 0) return;
+
+            const points = d.x.map((x, i) => ({ x, y: d.y[i] }));
+            const n = points.length;
+            const sumX = points.reduce((a, b) => a + b.x, 0);
+            const sumY = points.reduce((a, b) => a + b.y, 0);
+            const sumXY = points.reduce((a, b) => a + b.x * b.y, 0);
+            const sumXX = points.reduce((a, b) => a + b.x * b.x, 0);
+            const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX) || 0;
+            const intercept = (sumY - slope * sumX) / n;
+            const xMin = Math.min(...d.x), xMax = Math.max(...d.x);
+
+            const chart = new Chart(canvas.getContext('2d'), {
+                type: 'scatter',
+                data: {
+                    datasets: [{
+                        data: points,
+                        backgroundColor: color + '55',
+                        borderColor: color,
+                        borderWidth: 1,
+                        pointRadius: 3,
+                        pointHoverRadius: 5,
+                    }, {
+                        data: [{ x: xMin, y: slope * xMin + intercept }, { x: xMax, y: slope * xMax + intercept }],
+                        type: 'line',
+                        borderColor: color + 'aa',
+                        borderWidth: 1.5,
+                        fill: false,
+                        pointRadius: 0,
+                        showLine: true,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: { duration: 300 },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: { callbacks: { label: (c) => `X:${c.parsed.x.toFixed(2)}, Y:${c.parsed.y.toFixed(2)}` } }
+                    },
+                    scales: {
+                        x: { title: { display: true, text: term.name, font: { size: 9 } }, grid: { color: '#f1f5f9' }, ticks: { font: { size: 9 }, maxTicksLimit: 5 } },
+                        y: { title: { display: true, text: target, font: { size: 9 } }, grid: { color: '#f1f5f9' }, ticks: { font: { size: 9 }, maxTicksLimit: 5 } }
+                    },
+                    layout: { padding: { right: 8, top: 4 } }
+                }
+            });
+            _rsmMultiCharts.push(chart);
+        });
+
+        // Remove last border
+        const last = multiScatter.lastElementChild;
+        if (last) last.style.borderBottom = 'none';
+    };
 
     function _renderResultsTable() {
         const data = _rsmLastResult;
         const container = document.getElementById('rsm-table-container');
         if (!data || !container) return;
 
+        // Multi-target: always render combined view
+        if (data.multi_target) {
+            _renderCombinedTab(data);
+            return;
+        }
+
         // Sort & Filter terms
-        let terms = [...data.surviving_terms];
+        let terms = [...(data.surviving_terms || [])];
         
         // Apply type filter
         if (_rsmTypeFilter !== 'all') {
@@ -900,12 +1450,23 @@
         const placeholder = document.getElementById('rsm-plot-placeholder');
         const statsEl = document.getElementById('rsm-plot-stats');
         
-        if (plotTitle) plotTitle.textContent = `${_truncateName(term.name, 30)} vs ${_rsmTarget}`;
+        const activeTarget = _rsmCurrentSingleTarget || _rsmTarget;
+        if (!activeTarget) {
+            console.warn('[RSM] activeTarget is empty, skipping scatter fetch');
+            return;
+        }
+        if (plotTitle) plotTitle.textContent = `${_truncateName(term.name, 30)} vs ${activeTarget}`;
+
+        // Show single scatter (hide multi-scatter if present)
+        const singleDiv = document.getElementById('rsm-single-scatter');
+        const multiDiv = document.getElementById('rsm-multi-scatter');
+        if (singleDiv) singleDiv.style.display = 'block';
+        if (multiDiv) multiDiv.style.display = 'none';
+
         if (placeholder) placeholder.innerHTML = '<div class="spinner"></div><div style="margin-top:8px;">載入數據中...</div>';
         if (statsEl) statsEl.innerHTML = '';
 
         try {
-            // Find underlying factors for this term
             let factors = [];
             if (term.type === 'main') {
                 factors = [term.name];
@@ -914,13 +1475,13 @@
             } else if (term.type === 'interaction') {
                 factors = term.name.split(' × ');
             } else if (term.type === 'cubic') {
-                factors = term.name.replace(/³/g, '').replace(/²/g, '').split(' × ');
+                factors = term.name.replace(/[²³]/g, '').split(' × ');
             }
 
             const sid = typeof getSessionId === 'function' ? getSessionId() : 'default';
             const body = {
                 file_id: currentFileId,
-                target: _rsmTarget,
+                target: activeTarget,
                 term_name: term.name,
                 factors: factors,
                 term_type: term.type,
@@ -1037,7 +1598,7 @@
                         ticks: { font: { size: 10 } }
                     },
                     y: {
-                        title: { display: true, text: _rsmTarget, font: { size: 10 } },
+                        title: { display: true, text: (_rsmCurrentSingleTarget || _rsmTarget), font: { size: 10 } },
                         grid: { color: '#f1f5f9' },
                         ticks: { font: { size: 10 } }
                     }

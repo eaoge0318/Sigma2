@@ -1,0 +1,22 @@
+{
+  "features": {
+    "files": true,
+    "charts": true,
+    "data_analysis": true,
+    "model_training": true,
+    "dashboard": true,
+    "ai": true
+  },
+  "data_analysis_tools": {
+    "pivot": true,
+    "cleaning": true,
+    "mva": true,
+    "gb": true,
+    "maineffect": true,
+    "rsm": true,
+    "association": true
+  },
+  "advanced": {
+    "download": false
+  }
+}

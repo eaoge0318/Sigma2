@@ -21,7 +21,9 @@
       "Bash(curl -s \"http://localhost:8001/api/data-prep/me-predict\" -o /dev/null -w \"%{http_code}\")",
       "Bash(curl -s \"http://localhost:8001/static/html/data_preparation.html\")",
       "Bash(curl -s \"http://localhost:8001/static/js/me_manager.js\")",
-      "Bash(grep -v \"^.*//.*remove\")"
+      "Bash(grep -v \"^.*//.*remove\")",
+      "Bash(grep -n \"apriori\\\\|association\\\\|mlxtend\" /c/Users/foresight/Desktop/MantleTemp/pythaon/Sigma2/backend/routers/*.py)",
+      "Bash(\"C:\\\\Users\\\\foresight\\\\AppData\\\\Local\\\\Programs\\\\Python\\\\Python312\\\\python.exe\" -m pip install mlxtend --quiet)"
     ]
   }
 }

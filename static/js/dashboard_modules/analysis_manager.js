@@ -183,7 +183,10 @@ export async function loadAnalysisPage(page) {
                         return arr;
                     });
                 } else {
-                    // Normal file: load all at once
+                    // Normal file: remove large-dataset banner if present from previous file
+                    const oldCtrl = document.getElementById('large-preview-ctrl');
+                    if (oldCtrl) oldCtrl.remove();
+                    // Load all at once
                     const fullRes = await fetch(`/api/view_file/${analysisFilename}?page=1&page_size=1000000&session_id=${sid}`);
                     const fullData = await fullRes.json();
                     const lines = fullData.content.trim().split('\n');

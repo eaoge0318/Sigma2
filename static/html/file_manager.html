@@ -90,6 +90,36 @@
             animation: spin 0.8s linear infinite;
             flex-shrink: 0;
         }
+        /* Download button — hidden until toggled */
+        .btn-download {
+            padding: 4px 10px;
+            border: 1px solid #0369a1;
+            border-radius: 4px;
+            background: #fff;
+            color: #0369a1;
+            font-size: 12px;
+            cursor: pointer;
+            margin-left: 4px;
+            transition: all 0.15s;
+            line-height: 1.5;
+        }
+        .btn-download:hover { background: #e0f2fe; }
+
+        /* Subtle indicator when download mode is on */
+        #dl-mode-badge {
+            display: none;
+            position: fixed;
+            bottom: 14px;
+            right: 18px;
+            background: #0369a1;
+            color: #fff;
+            font-size: 11px;
+            padding: 4px 10px;
+            border-radius: 20px;
+            opacity: 0.75;
+            pointer-events: none;
+            z-index: 999;
+        }
     </style>
 </head>
 
@@ -529,6 +559,7 @@
                                 <button onclick="navigateToAnalysis('${f.filename}')" class="action-btn btn-view">資料</button>
                                 <button onclick="navigateToTraining('${f.filename}')" class="action-btn btn-train">訓練</button>
                                 <button onclick="deleteFile('${f.filename}')" class="action-btn btn-delete">刪除</button>
+                                <a href="/api/files/download/${encodeURIComponent(f.filename)}?session_id=${SESSION_ID}" download="${f.filename}" class="action-btn btn-download dl-btn" style="display:none;text-decoration:none;">下載</a>
                             </div>
                         </td>
                     `;
@@ -611,13 +642,26 @@
             loadFileList();
         });
 
-        // Listen for messages from parent to refresh file list
+
+        // ── 下載模式：由系統管理員面板控制（postMessage） ──
+        function _applyDownloadMode(enabled) {
+            document.querySelectorAll('.dl-btn').forEach(el => {
+                el.style.display = enabled ? 'inline-flex' : 'none';
+            });
+            const badge = document.getElementById('dl-mode-badge');
+            if (badge) badge.style.display = enabled ? 'block' : 'none';
+        }
         window.addEventListener('message', (e) => {
+            if (e.data?.type === 'TOGGLE_DOWNLOAD_MODE') {
+                _applyDownloadMode(!!e.data.enabled);
+            }
             if (e.data?.type === 'sigma2:refreshFiles') {
                 loadFileList();
             }
         });
     </script>
+
+    <div id="dl-mode-badge">⬇ 下載模式</div>
 </body>
 
 </html>

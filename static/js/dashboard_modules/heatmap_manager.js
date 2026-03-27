@@ -15,6 +15,14 @@ let _hmColorScheme = 'bluered';
 let _lastDrawnColsKey = '';  // track column selection for pin clearing
 let _hmLastFilename = '';    // track last loaded filename to reset state
 
+// Brush selection mode state
+let _brushMode = false;
+let _brushDragging = false;
+let _brushStartClient = null;
+let _brushOverlay = null;
+let _brushModeSetup = false;
+let _hmTrendChart = null;
+
 // Layout constants
 const HM_PAD = { top: 10, bottom: 60, left: 140, right: 60 };
 const HM_LEGEND_W = 20;
@@ -680,8 +688,9 @@ function setupHeatmapTooltip() {
         });
     }
 
-    // Click to pin (supports multiple pins)
+    // Click to pin (supports multiple pins) — skip in brush mode
     _hmCanvas.addEventListener('click', e => {
+        if (_brushMode) return;
         const hit = _getHeatmapCell(e);
         if (!hit) return;
 
@@ -772,6 +781,9 @@ function setupHeatmapTooltip() {
         });
         document.addEventListener('mouseup', () => { dragging = false; });
     });
+
+    // Initialize brush selection mode handlers
+    setupBrushMode();
 }
 
 function _removePin(pinId) {
@@ -792,4 +804,302 @@ export function unpinHeatmapTooltip() {
     const wrap = document.getElementById('hm-canvas-wrap');
     if (!wrap) return;
     wrap.querySelectorAll('.hm-pin-marker, .hm-pin-tooltip, .hm-pin-svg').forEach(el => el.remove());
+}
+
+// ─── Brush Selection Mode ─────────────────────────────────────────────────────
+
+export function setHeatmapMode(mode) {
+    _brushMode = (mode === 'brush');
+    // Update toggle buttons in settings panel
+    const lblBtn   = document.getElementById('hm-mode-label');
+    const brushBtn = document.getElementById('hm-mode-brush');
+    if (lblBtn) {
+        lblBtn.style.background  = !_brushMode ? '#fff'     : '#e2e8f0';
+        lblBtn.style.color       = !_brushMode ? '#3b82f6'  : '#64748b';
+        lblBtn.style.boxShadow   = !_brushMode ? '0 1px 2px rgba(0,0,0,0.08)' : 'none';
+    }
+    if (brushBtn) {
+        brushBtn.style.background = _brushMode ? '#fff'     : '#e2e8f0';
+        brushBtn.style.color      = _brushMode ? '#3b82f6'  : '#64748b';
+        brushBtn.style.boxShadow  = _brushMode ? '0 1px 2px rgba(0,0,0,0.08)' : 'none';
+    }
+    if (_hmCanvas) _hmCanvas.style.cursor = _brushMode ? 'crosshair' : '';
+    if (!_brushMode) _clearBrushOverlay();
+}
+
+export function toggleBrushMode() {
+    setHeatmapMode(_brushMode ? 'label' : 'brush');
+}
+
+function _clearBrushOverlay() {
+    if (_brushOverlay) { _brushOverlay.remove(); _brushOverlay = null; }
+    _brushDragging = false;
+    _brushStartClient = null;
+}
+
+function setupBrushMode() {
+    if (_brushModeSetup || !_hmCanvas) return;
+    _brushModeSetup = true;
+
+    _hmCanvas.addEventListener('mousedown', e => {
+        if (!_brushMode) return;
+        e.preventDefault();
+        _brushDragging = true;
+        _brushStartClient = { x: e.clientX, y: e.clientY };
+        const wrap = document.getElementById('hm-canvas-wrap');
+        if (!wrap) return;
+        if (!_brushOverlay) {
+            _brushOverlay = document.createElement('div');
+            _brushOverlay.style.cssText = 'position:absolute;top:0;bottom:0;border:2px solid #3b82f6;background:rgba(59,130,246,0.1);pointer-events:none;z-index:200;box-sizing:border-box;';
+            wrap.appendChild(_brushOverlay);
+        }
+        const wrapRect = wrap.getBoundingClientRect();
+        _brushOverlay.style.left  = (e.clientX - wrapRect.left) + 'px';
+        _brushOverlay.style.width = '0px';
+    });
+
+    document.addEventListener('mousemove', e => {
+        if (!_brushMode || !_brushDragging || !_brushStartClient) return;
+        const wrap = document.getElementById('hm-canvas-wrap');
+        if (!wrap || !_brushOverlay) return;
+        const wrapRect = wrap.getBoundingClientRect();
+        _brushOverlay.style.left  = Math.min(_brushStartClient.x, e.clientX) - wrapRect.left + 'px';
+        _brushOverlay.style.width = Math.abs(e.clientX - _brushStartClient.x) + 'px';
+    });
+
+    document.addEventListener('mouseup', e => {
+        if (!_brushMode || !_brushDragging || !_brushStartClient) return;
+        _brushDragging = false;
+
+        const L = _hmCanvas?._hmLayout;
+        if (!L) { _clearBrushOverlay(); return; }
+
+        const rect   = _hmCanvas.getBoundingClientRect();
+        const scaleX = _hmCanvas.width / rect.width;
+
+        const px1 = Math.min(_brushStartClient.x, e.clientX);
+        const px2 = Math.max(_brushStartClient.x, e.clientX);
+
+        if (px2 - px1 < 5) { _clearBrushOverlay(); return; }
+
+        const canvasX1 = (px1 - rect.left) * scaleX;
+        const canvasX2 = (px2 - rect.left) * scaleX;
+        const colStart = Math.max(0,           Math.floor((canvasX1 - HM_PAD.left) / L.cellW));
+        const colEnd   = Math.min(L.nCols - 1, Math.floor((canvasX2 - HM_PAD.left) / L.cellW));
+
+        if (colStart > colEnd) { _clearBrushOverlay(); return; }
+
+        const selectedCols = L.cols.slice(colStart, colEnd + 1);
+        _showBrushPreviewDialog(selectedCols);
+    });
+}
+
+// ── Stat helpers ──────────────────────────────────────────────────────────────
+
+function _computeStat(rowData, colNames, mode) {
+    const nums = colNames
+        .map(col => Number(rowData[_hmHeaders.indexOf(col)]))
+        .filter(v => !isNaN(v));
+    if (nums.length === 0) return null;
+    switch (mode) {
+        case 'mean':  return nums.reduce((a, b) => a + b, 0) / nums.length;
+        case 'std': {
+            const m = nums.reduce((a, b) => a + b, 0) / nums.length;
+            return Math.sqrt(nums.reduce((a, b) => a + (b - m) ** 2, 0) / nums.length);
+        }
+        case 'min':   return Math.min(...nums);
+        case 'max':   return Math.max(...nums);
+        case 'sum':   return nums.reduce((a, b) => a + b, 0);
+        case 'range': return Math.max(...nums) - Math.min(...nums);
+        default:      return null;
+    }
+}
+
+// ── Preview Dialog ────────────────────────────────────────────────────────────
+
+function _showBrushPreviewDialog(initialCols) {
+    const autoName    = 'Feature_' + Date.now().toString().slice(-4);
+    const defaultMode = document.getElementById('hm-brush-stat')?.value || 'mean';
+    const xColIdx     = _hmHeaders.indexOf(_hmXCol);
+    const rowStart    = 0;
+    const rowEnd      = _hmRows.length - 1;
+
+    // Build dialog
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:9990;display:flex;align-items:center;justify-content:center;';
+
+    const dlg = document.createElement('div');
+    dlg.style.cssText = 'background:#fff;border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,0.25);width:660px;max-width:96vw;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;font-family:inherit;';
+
+    // Column chips
+    const chipsHtml = initialCols.map(col => {
+        const label = col.length > 22 ? col.slice(0, 22) + '…' : col;
+        const safe  = col.replace(/&/g,'&amp;').replace(/"/g,'&quot;');
+        return `<span class="brush-col-chip active" data-col="${safe}"
+            style="display:inline-flex;align-items:center;padding:3px 8px;background:#eff6ff;color:#3b82f6;border:1px solid #bfdbfe;border-radius:20px;font-size:11px;cursor:pointer;margin:2px;user-select:none;"
+            onclick="this.classList.toggle('active');const a=this.classList.contains('active');this.style.background=a?'#eff6ff':'#f8fafc';this.style.color=a?'#3b82f6':'#94a3b8';this.style.borderColor=a?'#bfdbfe':'#e2e8f0';window._hmBrushRebuild()"
+            title="${safe}">${label}</span>`;
+    }).join('');
+
+    dlg.innerHTML = `
+        <div style="padding:18px 20px 14px;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">
+            <div style="font-size:15px;font-weight:700;color:#1e293b;">⬚ 框選特徵計算</div>
+            <span id="_hm_br_close" style="cursor:pointer;color:#94a3b8;font-size:18px;line-height:1;">✕</span>
+        </div>
+        <div style="padding:16px 20px;overflow-y:auto;flex:1;min-height:0;">
+            <div style="font-size:11px;color:#64748b;margin-bottom:10px;">
+                欄位 <b>${initialCols.length}</b> 個，共 <b>${_hmRows.length}</b> 筆樣本
+            </div>
+
+            <div style="font-size:11px;font-weight:600;color:#475569;margin-bottom:5px;">
+                選取欄位 <span style="color:#94a3b8;font-weight:400">（點擊切換）</span>
+            </div>
+            <div style="max-height:90px;overflow-y:auto;padding:6px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;margin-bottom:12px;">
+                ${chipsHtml}
+            </div>
+
+            <div style="margin-bottom:12px;">
+                <div style="font-size:11px;font-weight:600;color:#475569;margin-bottom:4px;">計算方式</div>
+                <select id="_hm_br_mode" onchange="window._hmBrushRebuild()"
+                    style="width:100%;padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px;">
+                    <option value="mean"  ${defaultMode==='mean' ?'selected':''}>Mean（平均值）</option>
+                    <option value="std"   ${defaultMode==='std'  ?'selected':''}>Std（標準差）</option>
+                    <option value="min"   ${defaultMode==='min'  ?'selected':''}>Min（最小值）</option>
+                    <option value="max"   ${defaultMode==='max'  ?'selected':''}>Max（最大值）</option>
+                    <option value="sum"   ${defaultMode==='sum'  ?'selected':''}>Sum（總和）</option>
+                    <option value="range" ${defaultMode==='range'?'selected':''}>Range（全距）</option>
+                </select>
+            </div>
+
+            <div style="margin-bottom:12px;">
+                <div style="font-size:11px;font-weight:600;color:#475569;margin-bottom:4px;">欄位名稱</div>
+                <input id="_hm_br_name" type="text" value="${autoName}"
+                    style="width:100%;box-sizing:border-box;padding:7px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;outline:none;"
+                    onfocus="this.select()">
+            </div>
+
+            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 10px 6px;">
+                <div id="_hm_br_preview_label" style="font-size:11px;color:#64748b;margin-bottom:6px;"></div>
+                <div style="position:relative;height:200px;">
+                    <canvas id="_hm_br_chart"></canvas>
+                </div>
+            </div>
+        </div>
+        <div style="padding:14px 20px;border-top:1px solid #e2e8f0;display:flex;justify-content:flex-end;gap:10px;flex-shrink:0;">
+            <button id="_hm_br_cancel" style="padding:8px 18px;border:1px solid #e2e8f0;background:#fff;color:#475569;border-radius:8px;cursor:pointer;font-size:13px;">取消</button>
+            <button id="_hm_br_ok" style="padding:8px 22px;background:#3b82f6;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;">建立欄位</button>
+        </div>`;
+
+    overlay.appendChild(dlg);
+    document.body.appendChild(overlay);
+
+    // Rebuild preview chart
+    let _dlgChart = null;
+    const TREND_COLORS = ['#3b82f6','#ef4444','#22c55e','#f59e0b','#a855f7','#06b6d4','#f97316','#84cc16','#ec4899','#14b8a6'];
+
+    window._hmBrushRebuild = () => {
+        const mode       = dlg.querySelector('#_hm_br_mode').value;
+        const activeCols = Array.from(dlg.querySelectorAll('.brush-col-chip.active')).map(el => el.dataset.col);
+        const labelEl    = dlg.querySelector('#_hm_br_preview_label');
+        const canvas     = dlg.querySelector('#_hm_br_chart');
+        if (!canvas) return;
+
+        if (_dlgChart) { _dlgChart.destroy(); _dlgChart = null; }
+
+        if (activeCols.length === 0) {
+            if (labelEl) labelEl.textContent = '請至少選取一個欄位';
+            return;
+        }
+
+        if (labelEl) labelEl.textContent = `趨勢預覽 — ${_hmRows.length} 筆，${activeCols.length} 個欄位 → ${mode.toUpperCase()}`;
+
+        // One value per row: stat across selected columns
+        const labels = _hmRows.map((_, i) => i + 1);
+        const data   = _hmRows.map(r => _computeStat(r, activeCols, mode));
+
+        _dlgChart = new Chart(canvas.getContext('2d'), {
+            type: 'line',
+            data: {
+                labels,
+                datasets: [{
+                    label: mode.toUpperCase(),
+                    data,
+                    borderColor: '#3b82f6',
+                    backgroundColor: 'rgba(59,130,246,0.08)',
+                    borderWidth: 1.5,
+                    pointRadius: 0,
+                    tension: 0.2,
+                    spanGaps: true,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false, animation: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { ticks: { maxTicksLimit: 10, font: { size: 10 }, maxRotation: 0 }, grid: { color: 'rgba(0,0,0,0.04)' } },
+                    y: { ticks: { font: { size: 10 } }, grid: { color: 'rgba(0,0,0,0.04)' } }
+                }
+            }
+        });
+    };
+
+    window._hmBrushRebuild();
+
+    const inp = dlg.querySelector('#_hm_br_name');
+    inp.focus(); inp.select();
+
+    const close = () => {
+        if (_dlgChart) { _dlgChart.destroy(); _dlgChart = null; }
+        overlay.remove();
+        _clearBrushOverlay();
+        delete window._hmBrushRebuild;
+    };
+
+    const confirm = () => {
+        const name       = inp.value.trim() || autoName;
+        const mode       = dlg.querySelector('#_hm_br_mode').value;
+        const activeCols = Array.from(dlg.querySelectorAll('.brush-col-chip.active')).map(el => el.dataset.col);
+        if (activeCols.length === 0) { alert('請至少選取一個欄位'); return; }
+        _addBrushColumn(activeCols, mode, name);
+        // 不關閉視窗，更新欄位名稱為下一個自動名稱
+        inp.value = 'Feature_' + Date.now().toString().slice(-4);
+        inp.select();
+        // 在按鈕旁顯示成功提示
+        const okBtn = dlg.querySelector('#_hm_br_ok');
+        const orig = okBtn.textContent;
+        okBtn.textContent = '✓ 已建立';
+        okBtn.style.background = '#22c55e';
+        setTimeout(() => { okBtn.textContent = orig; okBtn.style.background = '#3b82f6'; }, 1500);
+    };
+
+    dlg.querySelector('#_hm_br_close').addEventListener('click', close);
+    dlg.querySelector('#_hm_br_cancel').addEventListener('click', close);
+    dlg.querySelector('#_hm_br_ok').addEventListener('click', confirm);
+    overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+    const _escHandler = ev => { if (ev.key === 'Escape') { close(); document.removeEventListener('keydown', _escHandler); } };
+    document.addEventListener('keydown', _escHandler);
+}
+
+function _addBrushColumn(activeCols, mode, colName) {
+    _hmHeaders.push(colName);
+    const newIdx = _hmHeaders.length - 1;
+    for (let i = 0; i < _hmRows.length; i++) {
+        const v = _computeStat(_hmRows[i], activeCols, mode);
+        _hmRows[i].push(v !== null ? String(+v.toFixed(6)) : '');
+    }
+
+    // Update heatmap column list
+    _hmAllCols.push(colName);
+    _hmSelectedCols.push(colName);
+    renderColumnSelector();
+
+    if (typeof window.addVisibleColumn    === 'function') window.addVisibleColumn(newIdx);
+    if (typeof window.refreshTableDisplay === 'function') window.refreshTableDisplay();
+
+    const toast = document.createElement('div');
+    toast.style.cssText = 'position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#1e293b;color:#fff;padding:10px 22px;border-radius:8px;font-size:13px;font-weight:600;z-index:99999;box-shadow:0 4px 16px rgba(0,0,0,0.2);pointer-events:none;white-space:nowrap;';
+    toast.textContent = `✓ 欄位「${colName}」已建立（${mode.toUpperCase()}，${activeCols.length} 個特徵，${_hmRows.length} 筆）`;
+    document.body.appendChild(toast);
+    setTimeout(() => { toast.style.transition = 'opacity 0.5s'; toast.style.opacity = '0'; setTimeout(() => toast.remove(), 500); }, 2800);
 }

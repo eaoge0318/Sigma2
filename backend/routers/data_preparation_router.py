@@ -55,6 +55,52 @@ async def get_file_columns(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ========== 欄位統計 ==========
+
+
+@router.get("/stats/{file_id}")
+async def get_file_stats(
+    file_id: str,
+    session_id: str = Query("default"),
+    max_cols: int = Query(60, description="最多回傳幾個欄位的統計（避免 token 過多）"),
+    analysis_service: AnalysisService = Depends(get_intelligent_analysis_service),
+):
+    """回傳數值型欄位的基本統計（mean/std/min/max/median），供 LLM 引用實際數值"""
+    import pandas as pd
+    import math
+
+    def _read_stats():
+        uploads_dir = analysis_service.base_dir / session_id / "uploads"
+        csv_path = _find_csv(uploads_dir, file_id, analysis_service)
+        df = pd.read_csv(csv_path, encoding="utf-8-sig")
+        df.columns = [str(c).strip() for c in df.columns]
+        num_df = df.select_dtypes(include=["number"])
+        stats = {}
+        for col in list(num_df.columns)[:max_cols]:
+            s = num_df[col].dropna()
+            if len(s) == 0:
+                continue
+            def _safe(v):
+                return None if (v is None or (isinstance(v, float) and math.isnan(v))) else round(float(v), 4)
+            stats[col] = {
+                "mean": _safe(s.mean()),
+                "std": _safe(s.std()),
+                "min": _safe(s.min()),
+                "max": _safe(s.max()),
+                "median": _safe(s.median()),
+                "count": int(s.count()),
+            }
+        return {"stats": stats, "total_rows": len(df)}
+
+    try:
+        return await asyncio.to_thread(_read_stats)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Get stats error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ========== 樞紐分析表 ==========
 
 
@@ -2444,7 +2490,8 @@ class RSMFilter(BaseModel):
 # ========== RSM 響應曲面法分析 ==========
 class RSMRequest(BaseModel):
     file_id: str
-    target: str
+    target: str = ""          # single target (backwards compat)
+    targets: List[str] = []   # multi-target (new)
     factors: List[str]
     filters: List[RSMFilter] = []
     exclude_indices: List[int] = []
@@ -2510,32 +2557,42 @@ async def rsm_analysis(
         if valid:
             df = df.drop(index=valid).reset_index(drop=True)
 
-    # Validate columns
-    if req.target not in df.columns:
-        raise HTTPException(400, detail=f"Target '{req.target}' not found")
+    # Determine effective target list
+    all_targets = req.targets if req.targets else ([req.target] if req.target else [])
+    if not all_targets:
+        raise HTTPException(400, detail="請選擇至少一個 Target")
+    missing_targets = [t for t in all_targets if t not in df.columns]
+    if missing_targets:
+        raise HTTPException(400, detail=f"Target not found: {missing_targets}")
+
+    # Validate factors
     missing = [c for c in req.factors if c not in df.columns]
     if missing:
         raise HTTPException(400, detail=f"Factors not found: {missing}")
     if len(req.factors) < 1:
         raise HTTPException(400, detail="At least 1 factor required")
 
-    # Extract numeric data
-    y_series = pd.to_numeric(df[req.target], errors="coerce")
-    x_df = df[req.factors].apply(pd.to_numeric, errors="coerce")
-    
-    # 首先：只保留 Target 有值的列，因為如果 Target 缺值，該列對建模毫無意義
-    # 如果不提前過濾，會導致因子的缺失率被錯誤地放大，甚至誤判因子無效
+    # Build combined valid mask: rows valid for ALL targets
     orig_len = len(df)
-    mask = y_series.notna()
-    y_series = y_series[mask]
-    x_df = x_df[mask]
-    
-    n = len(y_series)
+    x_df = df[req.factors].apply(pd.to_numeric, errors="coerce")
+    combined_mask = pd.Series([True] * len(df), index=df.index)
+    for t in all_targets:
+        combined_mask &= pd.to_numeric(df[t], errors="coerce").notna()
+
+    all_y_arrays = {
+        t: pd.to_numeric(df[t], errors="coerce")[combined_mask].values
+        for t in all_targets
+    }
+    x_df = x_df[combined_mask]
+
+    n = int(combined_mask.sum())
     if n < 5:
-        target_nan_count = orig_len - n
-        raise HTTPException(400, detail=f"數據不足: {n} 筆 (需要至少 5 筆)。\n原始資料有 {orig_len} 筆，但 Target('{req.target}') 存在 {target_nan_count} 筆空值(NaN)被剔除。\n請返回資料清洗頁面檢查 Target 是否有足夠的有效數值，或檢查您的「過濾/異常排除」條件是否排除了所有有解答的行。")
+        raise HTTPException(400, detail=f"數據不足: {n} 筆 (需要至少 5 筆)。請確認 Target 欄位有足夠有效數值。")
+
+    # Use first target's y for primary analysis (factor selection heuristics)
+    y_series = pd.Series(all_y_arrays[all_targets[0]])
     
-    # 1. 強化數據清洗：處理大量因子時的 NaN 問題 (僅計算 Target 有效列的因子缺失率)
+    # 強化數據清洗：處理 NaN 因子
     valid_factors = []
     dropped_factors = []
     for col in req.factors:
@@ -2544,17 +2601,14 @@ async def rsm_analysis(
             dropped_factors.append(f"{col} (缺失率 {missing_pct:.1%})")
         else:
             valid_factors.append(col)
-    
+
     if not valid_factors:
-        target_nan_count = orig_len - n
-        raise HTTPException(400, detail=f"建模失敗：可分析的因子全被剔除。\n原因：在排除 Target 的異常與空值 ({target_nan_count} 筆) 後，剩餘的 {n} 筆資料中，您選擇的所有因子的數值缺值率皆超過 50%。\n被排除因子: {dropped_factors}\n(※提示：分析模組會過濾您的資料清洗規則，並且欄位內若含有無法轉為數值的字串也會被視為空值 NaN，請檢查。)")
-    
-    # 只保留有效因子並補值 (中位數)
+        raise HTTPException(400, detail=f"建模失敗：可分析的因子全被剔除。被排除因子: {dropped_factors}")
+
     x_df = x_df[valid_factors]
     x_df = x_df.fillna(x_df.median())
-    
-    # 對齊 Y 和 X
-    y = y_series.values
+
+    y = y_series.values  # primary target y (for smart interaction selection)
     x_raw = x_df.values
 
     def _safe_float(v, default=0.0):
@@ -2675,78 +2729,98 @@ async def rsm_analysis(
 
     n_total_terms = len(term_names)
 
-    # Filter out near-constant columns
-    all_terms = []
-    sig_threshold = 0.05
+    # ── Per-target correlation calculation ──
+    def _calc_terms_for_y(y_arr):
+        all_terms = []
+        for i in range(n_total_terms):
+            col = cols_list[i]
+            if np.var(col) < 1e-10:
+                continue
+            try:
+                r_corr, p_corr = sp_stats.pearsonr(col, y_arr)
+                r_corr = _safe_float(r_corr)
+                p_corr = _safe_float(p_corr, default=1.0)
+            except Exception:
+                r_corr, p_corr = 0.0, 1.0
+            all_terms.append({
+                "name": term_names[i],
+                "type": term_types[i],
+                "coefficient": round(r_corr, 6),
+                "correlation": round(r_corr, 4),
+                "p_value": round(p_corr, 4),
+            })
+        all_terms.sort(key=lambda t: abs(t["correlation"]), reverse=True)
+        surviving, eliminated = [], []
+        for idx, t in enumerate(all_terms):
+            if t["p_value"] < 0.10 or (idx < 50 and abs(t["correlation"]) > 0.001):
+                t["surviving"] = True
+                surviving.append(t)
+            else:
+                t["surviving"] = False
+                eliminated.append(t)
+        best_r = max((abs(t["correlation"]) for t in all_terms), default=0.0)
+        return surviving, eliminated, best_r ** 2
 
-    for i in range(n_total_terms):
-        col = cols_list[i]
-        # Skip near-constant
-        if np.var(col) < 1e-10:
-            continue
-        try:
-            r_corr, p_corr = sp_stats.pearsonr(col, y)
-            r_corr = _safe_float(r_corr)
-            p_corr = _safe_float(p_corr, default=1.0)
-        except Exception:
-            r_corr = 0.0
-            p_corr = 1.0
+    def _calc_factor_summary_for_y(y_arr):
+        fs = []
+        for i, fname in enumerate(factors):
+            try:
+                r, p = sp_stats.pearsonr(x_raw[:, i], y_arr)
+                r, p = _safe_float(r), _safe_float(p, default=1.0)
+            except Exception:
+                r, p = 0.0, 1.0
+            fs.append({"name": fname, "correlation": round(r, 4), "p_value": round(p, 4)})
+        fs.sort(key=lambda x: abs(x["correlation"]), reverse=True)
+        return fs
 
-        all_terms.append({
-            "name": term_names[i],
-            "type": term_types[i],
-            "coefficient": round(r_corr, 6),  # Use correlation as the "coefficient"
-            "correlation": round(r_corr, 4),
-            "p_value": round(p_corr, 4),
-        })
+    # Single target: return backwards-compatible format
+    if len(all_targets) == 1:
+        t = all_targets[0]
+        surviving_terms, eliminated_terms, r_squared = _calc_terms_for_y(all_y_arrays[t])
+        factor_summary = _calc_factor_summary_for_y(all_y_arrays[t])
+        return {
+            "n_obs": int(n), "n_factors": k, "n_total_terms": n_total_terms,
+            "n_surviving": len(surviving_terms), "alpha": 0.0,
+            "r_squared": round(_safe_float(r_squared), 4),
+            "method": "Poly Expansion + Correlation",
+            "surviving_terms": surviving_terms,
+            "eliminated_terms": eliminated_terms[:20],
+            "factor_summary": factor_summary,
+        }
 
-    # Sort all by |correlation| descending
-    all_terms.sort(key=lambda t: abs(t["correlation"]), reverse=True)
+    # Multi-target: return per-target results + combined ranking
+    per_target = {}
+    for t in all_targets:
+        surviving, eliminated, r2 = _calc_terms_for_y(all_y_arrays[t])
+        per_target[t] = {
+            "surviving_terms": surviving,
+            "eliminated_terms": eliminated[:20],
+            "factor_summary": _calc_factor_summary_for_y(all_y_arrays[t]),
+            "r_squared": round(_safe_float(r2), 4),
+            "n_surviving": len(surviving),
+        }
 
-    # For industrial exploration, strict p-value often eliminates everything.
-    # We relax the threshold and guarantee at least top N features are returned.
-    surviving_terms = []
-    eliminated_terms = []
-    for idx, t in enumerate(all_terms):
-        # keep if p < 0.1 OR it's in the top 50 (and has some correlation)
-        if t["p_value"] < 0.10 or (idx < 50 and abs(t["correlation"]) > 0.001):
-            t["surviving"] = True
-            surviving_terms.append(t)
-        else:
-            t["surviving"] = False
-            eliminated_terms.append(t)
-
-    # R² = max individual r² (best single-term explanatory power)
-    best_r = max((abs(t["correlation"]) for t in all_terms), default=0.0)
-    r_squared = best_r ** 2
-
-    # Factor-level summary (individual correlations)
-    factor_summary = []
-    for i, fname in enumerate(factors):
-        try:
-            r, p = sp_stats.pearsonr(x_raw[:, i], y)
-            r = _safe_float(r)
-            p = _safe_float(p, default=1.0)
-        except Exception:
-            r, p = 0.0, 1.0
-        factor_summary.append({
-            "name": fname,
-            "correlation": round(r, 4),
-            "p_value": round(p, 4),
-        })
-    factor_summary.sort(key=lambda x: abs(x["correlation"]), reverse=True)
+    # Build combined ranking: union of all surviving terms, scored by max |corr|
+    combined_map = {}
+    for t, res in per_target.items():
+        for term in res["surviving_terms"]:
+            nm = term["name"]
+            if nm not in combined_map:
+                combined_map[nm] = {"name": nm, "type": term["type"], "scores": {}}
+            combined_map[nm]["scores"][t] = term["correlation"]
+    combined_terms = sorted(
+        combined_map.values(),
+        key=lambda x: max(abs(v) for v in x["scores"].values()),
+        reverse=True,
+    )
 
     return {
-        "n_obs": int(n),
-        "n_factors": k,
-        "n_total_terms": n_total_terms,
-        "n_surviving": len(surviving_terms),
-        "alpha": 0.0,
-        "r_squared": round(_safe_float(r_squared), 4),
-        "method": "Poly Expansion + Correlation",
-        "surviving_terms": surviving_terms,
-        "eliminated_terms": eliminated_terms[:20],
-        "factor_summary": factor_summary,
+        "multi_target": True,
+        "targets": all_targets,
+        "n_obs": int(n), "n_factors": k, "n_total_terms": n_total_terms,
+        "method": "Poly Expansion + Correlation (Multi-Target)",
+        "results": per_target,
+        "combined_terms": combined_terms[:100],
     }
 
 
@@ -2761,10 +2835,16 @@ async def get_rsm_scatter_data(
     import pandas as pd
     import numpy as np
 
+    if not req.target or not req.target.strip():
+        raise HTTPException(status_code=400, detail="target 不可為空")
+
     uploads_dir = analysis_service.base_dir / session_id / "uploads"
     csv_path = _find_csv(uploads_dir, req.file_id, analysis_service)
     df = pd.read_csv(csv_path, encoding="utf-8-sig")
     df.columns = [str(c).strip() for c in df.columns]
+
+    if req.target not in df.columns:
+        raise HTTPException(status_code=400, detail=f"欄位 '{req.target}' 不存在於資料中")
 
     # Apply filters
     for f in req.filters:

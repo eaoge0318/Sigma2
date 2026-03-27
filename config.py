@@ -71,6 +71,19 @@ BASE_STORAGE_DIR = "workspace"
 DASHBOARD_DIR = "monitor_dashboard"
 API_PORT = int(os.environ.get("SIGMA_API_PORT", "8001"))
 
+# --- 功能模組開關 ---
+def _bool_env(key: str, default: bool = True) -> bool:
+    return os.environ.get(key, "true").strip().lower() not in ("false", "0", "no", "off")
+
+FEATURES = {
+    "files":          _bool_env("SIGMA_FEATURE_FILES"),
+    "charts":         _bool_env("SIGMA_FEATURE_CHARTS"),
+    "data_analysis":  _bool_env("SIGMA_FEATURE_DATA_ANALYSIS"),
+    "model_training": _bool_env("SIGMA_FEATURE_MODEL_TRAINING"),
+    "dashboard":      _bool_env("SIGMA_FEATURE_DASHBOARD"),
+    "ai":             _bool_env("SIGMA_FEATURE_AI"),
+}
+
 # --- 初始化基本目錄 ---
 os.makedirs(DASHBOARD_DIR, exist_ok=True)
 os.makedirs(BASE_STORAGE_DIR, exist_ok=True)

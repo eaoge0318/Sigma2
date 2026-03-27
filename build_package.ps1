@@ -122,8 +122,8 @@ if (Test-Path $userPackagesPath) {
 # ==========================================
 Write-Host "[4/5] Copying application code..." -ForegroundColor Yellow
 
-# Directories to copy
-$copyDirs = @("backend", "core_logic", "engines", "static", "lib", "ai_agent", "model", "data")
+# Directories to copy (純程式碼，不含使用者資料)
+$copyDirs = @("backend", "core_logic", "engines", "static", "lib", "ai_agent")
 foreach ($dir in $copyDirs) {
     $src = Join-Path $ScriptDir $dir
     if (Test-Path $src) {
@@ -151,10 +151,12 @@ foreach ($f in $copyFiles) {
 }
 
 # Create required empty directories
-$emptyDirs = @("workspace", "monitor_dashboard", "user_uploads", "user_cache", "user_models", "logs")
+# model/ data/ → 空目錄，客戶端自行產生資料，不帶入開發機的資料
+$emptyDirs = @("workspace", "monitor_dashboard", "user_uploads", "user_cache", "user_models", "logs", "model", "data")
 foreach ($dir in $emptyDirs) {
     New-Item -ItemType Directory -Path (Join-Path $AppDir $dir) -Force | Out-Null
 }
+Write-Host "  Created empty dirs: model/ data/ workspace/ logs/ ..." -ForegroundColor DarkGray
 
 # ==========================================
 # Step 5: Copy startup and config files

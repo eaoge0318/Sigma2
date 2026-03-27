@@ -413,63 +413,116 @@
                         </button>
                     </div>
                     <!-- Settings Popover -->
-                    <div id="hm-settings-panel" style="display:none; position: absolute; bottom: 100%; left: 12px; right: 12px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 10px; box-shadow: 0 -4px 20px rgba(0,0,0,0.15); padding: 16px; margin-bottom: 8px; z-index: 50;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px;">
-                            <div style="font-size: 14px; font-weight: 700; color: #1e293b;">⚙ 熱力圖設定</div>
-                            <span onclick="document.getElementById('hm-settings-panel').style.display='none'" style="cursor:pointer;color:#94a3b8;font-size:16px;">✕</span>
+                    <div id="hm-settings-panel" style="display:none; position: absolute; bottom: 100%; left: 12px; right: 12px; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; box-shadow: 0 -6px 24px rgba(0,0,0,0.12); padding: 0; margin-bottom: 8px; z-index: 50; overflow: hidden; max-height: 72vh;">
+
+                        <!-- Header -->
+                        <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px 12px;border-bottom:1px solid #f1f5f9;flex-shrink:0;">
+                            <div style="font-size:13px;font-weight:700;color:#1e293b;">⚙ 熱力圖設定</div>
+                            <span onclick="document.getElementById('hm-settings-panel').style.display='none'" style="cursor:pointer;color:#94a3b8;font-size:16px;line-height:1;padding:2px 4px;">✕</span>
                         </div>
-                        <div style="font-size: 11px; color: #64748b; margin-bottom: 4px;">正規化</div>
-                        <select id="hm-normalize" style="width: 100%; padding: 4px 6px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 11px; margin-bottom: 8px;">
-                            <option value="raw">原始值</option>
-                            <option value="zscore">Z-score 標準化</option>
-                        </select>
-                        <div style="font-size: 11px; color: #64748b; margin-bottom: 4px;">色階</div>
-                        <select id="hm-color-scheme" onchange="window.setHeatmapColorScheme(this.value)"
-                            style="width: 100%; padding: 4px 6px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 11px; margin-bottom: 8px;">
-                            <option value="bluered">藍 → 白 → 紅</option>
-                            <option value="viridis">Viridis</option>
-                        </select>
-                        <div style="display: flex; gap: 6px; margin-bottom: 8px;">
-                            <div style="flex:1;">
-                                <div style="font-size: 10px; color: #94a3b8; margin-bottom: 2px;">色階最小值</div>
-                                <input type="number" id="hm-color-min" placeholder="自動" oninput="this.dataset.userModified='1'; window.drawHeatmap();"
-                                    style="width: 100%; padding: 4px 6px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 11px; box-sizing: border-box;">
+
+                        <!-- Scrollable body -->
+                        <div style="overflow-y:auto;max-height:calc(72vh - 50px);">
+
+                        <!-- 顯示設定（共用） -->
+                        <div style="padding:14px 16px;border-bottom:1px solid #f1f5f9;">
+                            <div style="font-size:10px;font-weight:600;color:#94a3b8;letter-spacing:0.5px;text-transform:uppercase;margin-bottom:12px;">顯示設定</div>
+                            <div style="margin-bottom:10px;">
+                                <div style="font-size:11px;color:#64748b;margin-bottom:4px;">正規化</div>
+                                <select id="hm-normalize" style="width:100%;padding:6px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;background:#fff;">
+                                    <option value="raw">原始值</option>
+                                    <option value="zscore">Z-score</option>
+                                </select>
                             </div>
-                            <div style="flex:1;">
-                                <div style="font-size: 10px; color: #94a3b8; margin-bottom: 2px;">色階最大值</div>
-                                <input type="number" id="hm-color-max" placeholder="自動" oninput="this.dataset.userModified='1'; window.drawHeatmap();"
-                                    style="width: 100%; padding: 4px 6px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 11px; box-sizing: border-box;">
+                            <div style="margin-bottom:10px;">
+                                <div style="font-size:11px;color:#64748b;margin-bottom:4px;">色階</div>
+                                <select id="hm-color-scheme" onchange="window.setHeatmapColorScheme(this.value)" style="width:100%;padding:6px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;background:#fff;">
+                                    <option value="bluered">藍→白→紅</option>
+                                    <option value="viridis">Viridis</option>
+                                </select>
+                            </div>
+                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
+                                <div>
+                                    <div style="font-size:11px;color:#64748b;margin-bottom:4px;">色階 Min</div>
+                                    <input type="number" id="hm-color-min" placeholder="自動" oninput="this.dataset.userModified='1'; window.drawHeatmap();"
+                                        style="width:100%;padding:6px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;box-sizing:border-box;">
+                                </div>
+                                <div>
+                                    <div style="font-size:11px;color:#64748b;margin-bottom:4px;">色階 Max</div>
+                                    <input type="number" id="hm-color-max" placeholder="自動" oninput="this.dataset.userModified='1'; window.drawHeatmap();"
+                                        style="width:100%;padding:6px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;box-sizing:border-box;">
+                                </div>
+                            </div>
+                            <div style="margin-bottom:10px;">
+                                <div style="font-size:11px;color:#64748b;margin-bottom:4px;">每行高度(px) <span style="color:#94a3b8;font-size:10px;">空白 = 自動適配</span></div>
+                                <input type="number" id="hm-row-height" placeholder="auto" min="0.5" max="20" step="0.5" oninput="this.dataset.userModified='1'" onchange="window.drawHeatmap()"
+                                    style="width:100%;padding:6px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;box-sizing:border-box;">
+                            </div>
+                            <!-- 互動模式 Toggle -->
+                            <div>
+                                <div style="font-size:11px;color:#64748b;margin-bottom:6px;">互動模式</div>
+                                <div style="display:flex;background:#f1f5f9;border-radius:8px;padding:3px;gap:3px;">
+                                    <button id="hm-mode-label" onclick="window.setHeatmapMode('label')"
+                                        style="flex:1;padding:7px 4px;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;background:#fff;color:#3b82f6;box-shadow:0 1px 3px rgba(0,0,0,0.1);transition:all 0.15s;">
+                                        📌 標籤
+                                    </button>
+                                    <button id="hm-mode-brush" onclick="window.setHeatmapMode('brush')"
+                                        style="flex:1;padding:7px 4px;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;background:#e2e8f0;color:#64748b;transition:all 0.15s;">
+                                        ⬚ 框選特徵
+                                    </button>
+                                </div>
                             </div>
                         </div>
-                        <div style="margin-bottom: 8px;">
-                            <div style="font-size: 10px; color: #94a3b8; margin-bottom: 2px;">每行高度(px) <span style="color:#cbd5e1">空白=自動適配</span></div>
-                            <input type="number" id="hm-row-height" placeholder="自動" min="0.5" max="20" step="0.5" oninput="this.dataset.userModified='1'" onchange="window.drawHeatmap()"
-                                style="width: 100%; padding: 4px 6px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 11px; box-sizing: border-box;">
-                        </div>
-                        <div style="margin-bottom: 4px;">
-                            <div style="font-size: 10px; color: #94a3b8; margin-bottom: 4px;">標記顏色</div>
-                            <input type="hidden" id="hm-pin-color" value="#f59e0b">
-                            <div style="display:flex;gap:5px;" id="hm-pin-swatches">
-                                <span class="hm-swatch" onclick="document.getElementById('hm-pin-color').value=this.dataset.c; document.querySelectorAll('#hm-pin-swatches .hm-swatch').forEach(s=>s.style.outline='none'); this.style.outline='2px solid #3b82f6'" data-c="#f59e0b" style="width:22px;height:22px;border-radius:50%;background:#f59e0b;cursor:pointer;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.2);outline:2px solid #3b82f6"></span>
-                                <span class="hm-swatch" onclick="document.getElementById('hm-pin-color').value=this.dataset.c; document.querySelectorAll('#hm-pin-swatches .hm-swatch').forEach(s=>s.style.outline='none'); this.style.outline='2px solid #3b82f6'" data-c="#ef4444" style="width:22px;height:22px;border-radius:50%;background:#ef4444;cursor:pointer;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.2)"></span>
-                                <span class="hm-swatch" onclick="document.getElementById('hm-pin-color').value=this.dataset.c; document.querySelectorAll('#hm-pin-swatches .hm-swatch').forEach(s=>s.style.outline='none'); this.style.outline='2px solid #3b82f6'" data-c="#22c55e" style="width:22px;height:22px;border-radius:50%;background:#22c55e;cursor:pointer;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.2)"></span>
-                                <span class="hm-swatch" onclick="document.getElementById('hm-pin-color').value=this.dataset.c; document.querySelectorAll('#hm-pin-swatches .hm-swatch').forEach(s=>s.style.outline='none'); this.style.outline='2px solid #3b82f6'" data-c="#3b82f6" style="width:22px;height:22px;border-radius:50%;background:#3b82f6;cursor:pointer;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.2)"></span>
-                                <span class="hm-swatch" onclick="document.getElementById('hm-pin-color').value=this.dataset.c; document.querySelectorAll('#hm-pin-swatches .hm-swatch').forEach(s=>s.style.outline='none'); this.style.outline='2px solid #3b82f6'" data-c="#a855f7" style="width:22px;height:22px;border-radius:50%;background:#a855f7;cursor:pointer;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.2)"></span>
-                                <span class="hm-swatch" onclick="document.getElementById('hm-pin-color').value=this.dataset.c; document.querySelectorAll('#hm-pin-swatches .hm-swatch').forEach(s=>s.style.outline='none'); this.style.outline='2px solid #3b82f6'" data-c="#ffffff" style="width:22px;height:22px;border-radius:50%;background:#ffffff;cursor:pointer;border:2px solid #cbd5e1;box-shadow:0 1px 3px rgba(0,0,0,.2)"></span>
+
+                        <!-- 標籤模式設定（標籤 mode） -->
+                        <div id="hm-settings-label-section" style="padding:14px 16px;">
+                            <div style="font-size:10px;font-weight:600;color:#94a3b8;letter-spacing:0.5px;text-transform:uppercase;margin-bottom:12px;">標籤樣式</div>
+                            <div style="margin-bottom:12px;">
+                                <div style="font-size:11px;color:#64748b;margin-bottom:6px;">標記顏色</div>
+                                <input type="hidden" id="hm-pin-color" value="#f59e0b">
+                                <div style="display:flex;gap:6px;" id="hm-pin-swatches">
+                                    <span class="hm-swatch" onclick="document.getElementById('hm-pin-color').value=this.dataset.c; document.querySelectorAll('#hm-pin-swatches .hm-swatch').forEach(s=>s.style.outline='none'); this.style.outline='2px solid #3b82f6'" data-c="#f59e0b" style="width:22px;height:22px;border-radius:50%;background:#f59e0b;cursor:pointer;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.2);outline:2px solid #3b82f6"></span>
+                                    <span class="hm-swatch" onclick="document.getElementById('hm-pin-color').value=this.dataset.c; document.querySelectorAll('#hm-pin-swatches .hm-swatch').forEach(s=>s.style.outline='none'); this.style.outline='2px solid #3b82f6'" data-c="#ef4444" style="width:22px;height:22px;border-radius:50%;background:#ef4444;cursor:pointer;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.2)"></span>
+                                    <span class="hm-swatch" onclick="document.getElementById('hm-pin-color').value=this.dataset.c; document.querySelectorAll('#hm-pin-swatches .hm-swatch').forEach(s=>s.style.outline='none'); this.style.outline='2px solid #3b82f6'" data-c="#22c55e" style="width:22px;height:22px;border-radius:50%;background:#22c55e;cursor:pointer;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.2)"></span>
+                                    <span class="hm-swatch" onclick="document.getElementById('hm-pin-color').value=this.dataset.c; document.querySelectorAll('#hm-pin-swatches .hm-swatch').forEach(s=>s.style.outline='none'); this.style.outline='2px solid #3b82f6'" data-c="#3b82f6" style="width:22px;height:22px;border-radius:50%;background:#3b82f6;cursor:pointer;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.2)"></span>
+                                    <span class="hm-swatch" onclick="document.getElementById('hm-pin-color').value=this.dataset.c; document.querySelectorAll('#hm-pin-swatches .hm-swatch').forEach(s=>s.style.outline='none'); this.style.outline='2px solid #3b82f6'" data-c="#a855f7" style="width:22px;height:22px;border-radius:50%;background:#a855f7;cursor:pointer;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.2)"></span>
+                                    <span class="hm-swatch" onclick="document.getElementById('hm-pin-color').value=this.dataset.c; document.querySelectorAll('#hm-pin-swatches .hm-swatch').forEach(s=>s.style.outline='none'); this.style.outline='2px solid #3b82f6'" data-c="#ffffff" style="width:22px;height:22px;border-radius:50%;background:#ffffff;cursor:pointer;border:2px solid #cbd5e1;box-shadow:0 1px 3px rgba(0,0,0,.2)"></span>
+                                </div>
+                            </div>
+                            <div>
+                                <div style="font-size:10px;color:#64748b;margin-bottom:5px;">卡片背景</div>
+                                <input type="hidden" id="hm-tip-bg-color" value="#0f172a">
+                                <div style="display:flex;gap:6px;" id="hm-tip-swatches">
+                                    <span class="hm-swatch" onclick="document.getElementById('hm-tip-bg-color').value=this.dataset.c; document.querySelectorAll('#hm-tip-swatches .hm-swatch').forEach(s=>s.style.outline='none'); this.style.outline='2px solid #3b82f6'" data-c="#0f172a" style="width:22px;height:22px;border-radius:50%;background:#0f172a;cursor:pointer;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.2);outline:2px solid #3b82f6"></span>
+                                    <span class="hm-swatch" onclick="document.getElementById('hm-tip-bg-color').value=this.dataset.c; document.querySelectorAll('#hm-tip-swatches .hm-swatch').forEach(s=>s.style.outline='none'); this.style.outline='2px solid #3b82f6'" data-c="#ffffff" style="width:22px;height:22px;border-radius:50%;background:#ffffff;cursor:pointer;border:2px solid #cbd5e1;box-shadow:0 1px 3px rgba(0,0,0,.2)"></span>
+                                    <span class="hm-swatch" onclick="document.getElementById('hm-tip-bg-color').value=this.dataset.c; document.querySelectorAll('#hm-tip-swatches .hm-swatch').forEach(s=>s.style.outline='none'); this.style.outline='2px solid #3b82f6'" data-c="#fef3c7" style="width:22px;height:22px;border-radius:50%;background:#fef3c7;cursor:pointer;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.2)"></span>
+                                    <span class="hm-swatch" onclick="document.getElementById('hm-tip-bg-color').value=this.dataset.c; document.querySelectorAll('#hm-tip-swatches .hm-swatch').forEach(s=>s.style.outline='none'); this.style.outline='2px solid #3b82f6'" data-c="#dcfce7" style="width:22px;height:22px;border-radius:50%;background:#dcfce7;cursor:pointer;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.2)"></span>
+                                    <span class="hm-swatch" onclick="document.getElementById('hm-tip-bg-color').value=this.dataset.c; document.querySelectorAll('#hm-tip-swatches .hm-swatch').forEach(s=>s.style.outline='none'); this.style.outline='2px solid #3b82f6'" data-c="#dbeafe" style="width:22px;height:22px;border-radius:50%;background:#dbeafe;cursor:pointer;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.2)"></span>
+                                    <span class="hm-swatch" onclick="document.getElementById('hm-tip-bg-color').value=this.dataset.c; document.querySelectorAll('#hm-tip-swatches .hm-swatch').forEach(s=>s.style.outline='none'); this.style.outline='2px solid #3b82f6'" data-c="#ef4444" style="width:22px;height:22px;border-radius:50%;background:#ef4444;cursor:pointer;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.2)"></span>
+                                </div>
                             </div>
                         </div>
-                        <div style="margin-bottom: 12px;">
-                            <div style="font-size: 10px; color: #94a3b8; margin-bottom: 4px;">卡片背景</div>
-                            <input type="hidden" id="hm-tip-bg-color" value="#0f172a">
-                            <div style="display:flex;gap:5px;" id="hm-tip-swatches">
-                                <span class="hm-swatch" onclick="document.getElementById('hm-tip-bg-color').value=this.dataset.c; document.querySelectorAll('#hm-tip-swatches .hm-swatch').forEach(s=>s.style.outline='none'); this.style.outline='2px solid #3b82f6'" data-c="#0f172a" style="width:22px;height:22px;border-radius:50%;background:#0f172a;cursor:pointer;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.2);outline:2px solid #3b82f6"></span>
-                                <span class="hm-swatch" onclick="document.getElementById('hm-tip-bg-color').value=this.dataset.c; document.querySelectorAll('#hm-tip-swatches .hm-swatch').forEach(s=>s.style.outline='none'); this.style.outline='2px solid #3b82f6'" data-c="#ffffff" style="width:22px;height:22px;border-radius:50%;background:#ffffff;cursor:pointer;border:2px solid #cbd5e1;box-shadow:0 1px 3px rgba(0,0,0,.2)"></span>
-                                <span class="hm-swatch" onclick="document.getElementById('hm-tip-bg-color').value=this.dataset.c; document.querySelectorAll('#hm-tip-swatches .hm-swatch').forEach(s=>s.style.outline='none'); this.style.outline='2px solid #3b82f6'" data-c="#fef3c7" style="width:22px;height:22px;border-radius:50%;background:#fef3c7;cursor:pointer;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.2)"></span>
-                                <span class="hm-swatch" onclick="document.getElementById('hm-tip-bg-color').value=this.dataset.c; document.querySelectorAll('#hm-tip-swatches .hm-swatch').forEach(s=>s.style.outline='none'); this.style.outline='2px solid #3b82f6'" data-c="#dcfce7" style="width:22px;height:22px;border-radius:50%;background:#dcfce7;cursor:pointer;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.2)"></span>
-                                <span class="hm-swatch" onclick="document.getElementById('hm-tip-bg-color').value=this.dataset.c; document.querySelectorAll('#hm-tip-swatches .hm-swatch').forEach(s=>s.style.outline='none'); this.style.outline='2px solid #3b82f6'" data-c="#dbeafe" style="width:22px;height:22px;border-radius:50%;background:#dbeafe;cursor:pointer;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.2)"></span>
-                                <span class="hm-swatch" onclick="document.getElementById('hm-tip-bg-color').value=this.dataset.c; document.querySelectorAll('#hm-tip-swatches .hm-swatch').forEach(s=>s.style.outline='none'); this.style.outline='2px solid #3b82f6'" data-c="#ef4444" style="width:22px;height:22px;border-radius:50%;background:#ef4444;cursor:pointer;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.2)"></span>
+
+                        <!-- 框選特徵設定（brush mode） -->
+                        <div id="hm-settings-brush-section" style="display:none;padding:14px 16px;">
+                            <div style="margin-bottom:10px;">
+                                <div style="font-size:11px;color:#64748b;margin-bottom:4px;">預設計算方式</div>
+                                <select id="hm-brush-stat"
+                                    style="width:100%;padding:6px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;background:#fff;">
+                                    <option value="mean">Mean（平均值）</option>
+                                    <option value="std">Std（標準差）</option>
+                                    <option value="min">Min（最小值）</option>
+                                    <option value="max">Max（最大值）</option>
+                                    <option value="sum">Sum（總和）</option>
+                                    <option value="range">Range（全距）</option>
+                                </select>
+                            </div>
+                            <div style="padding:10px 12px;background:#eff6ff;border-radius:8px;font-size:11px;color:#3b82f6;line-height:1.6;">
+                                拖曳畫矩形選取列 × 欄位範圍，<br>系統計算後新增為資料欄位。
                             </div>
                         </div>
+
+                        </div><!-- /scrollable body -->
                     </div>
                 </div>
             </div>
@@ -510,22 +563,29 @@
                 👋 <strong>您好！</strong>我是您的圖表分析專家。點擊上方按鈕，我將根據您最近的圖表分析記錄生成深度報告。您也可以直接與我對話，詢問關於圖表的任何問題。
             </div>
         </div>
-        <div id="chart-file-preview" style="display: none;"></div>
         <div class="chat-input-wrapper"
-            style="background: linear-gradient(to top, #f8f9fa 0%, #ffffff 100%); border-top: 1px solid #e9ecef; padding: 15px; min-height: 80px;">
-            <button onclick="document.getElementById('chart-chat-file').click()" title="附加檔案"
-                style="background: linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%); color: #7c3aed; border: 1.5px solid #c4b5fd; padding: 10px 14px; border-radius: 10px; font-size: 18px; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 3px rgba(124, 58, 237, 0.1);">
-                📎
-            </button>
-            <input type="file" id="chart-chat-file" style="display: none;" multiple
-                accept="image/*,.csv,.txt,.log" onchange="handleChartFileSelect(this)">
-            <textarea id="chart-chat-input" placeholder="對報告有疑問？在此輸入您的問題... (或是點擊左側夾帶圖標)"
-                onkeydown="handleChartChatKey(event)"
-                style="flex: 1; border: 1.5px solid #e9ecef; border-radius: 10px; padding: 12px 15px; font-size: 14px; resize: none; outline: none; min-height: 50px; line-height: 1.5;"></textarea>
-            <button onclick="sendChartChatMessage()" title="發送訊息"
-                style="background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); color: white; border: none; padding: 12px 24px; border-radius: 10px; cursor: pointer; font-weight: 600; font-size: 14px; box-shadow: 0 2px 8px rgba(124, 58, 237, 0.3);">
-                發送
-            </button>
+            style="background: linear-gradient(to top, #f8f9fa 0%, #ffffff 100%); border-top: 1px solid #e9ecef; padding: 12px 15px; display:flex; flex-direction:column; gap:8px;">
+            <!-- 附件縮圖預覽列 -->
+            <div id="chart-file-preview" style="display:none; flex-wrap:wrap; gap:6px; padding:4px 0;"></div>
+            <!-- 輸入列 -->
+            <div style="display:flex; gap:10px; align-items:flex-end;">
+                <button onclick="document.getElementById('chart-chat-file').click()" title="附加檔案"
+                    style="background: linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%); color: #7c3aed; border: 1.5px solid #c4b5fd; padding: 10px 14px; border-radius: 10px; font-size: 18px; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 3px rgba(124, 58, 237, 0.1); flex-shrink:0;">
+                    📎
+                </button>
+                <input type="file" id="chart-chat-file" style="display: none;" multiple
+                    accept="image/*,.csv,.txt,.log" onchange="handleChartFileSelect(this)">
+                <textarea id="chart-chat-input" placeholder="對報告有疑問？在此輸入您的問題... (或是點擊左側夾帶圖標)"
+                    onkeydown="handleChartChatKey(event)"
+                    oninput="handleChartChatInput(this)"
+                    onpaste="handleChartChatPaste(event)"
+                    style="flex: 1; border: 1.5px solid #e9ecef; border-radius: 10px; padding: 12px 15px; font-size: 14px; resize: none; outline: none; min-height: 50px; max-height: 160px; line-height: 1.5; overflow-y:auto; transition:border-color 0.15s;"
+                    onfocus="this.style.borderColor='#a78bfa'" onblur="this.style.borderColor='#e9ecef'"></textarea>
+                <button onclick="sendChartChatMessage()" title="發送訊息 (Enter)"
+                    style="background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); color: white; border: none; padding: 12px 24px; border-radius: 10px; cursor: pointer; font-weight: 600; font-size: 14px; box-shadow: 0 2px 8px rgba(124, 58, 237, 0.3); flex-shrink:0;">
+                    發送
+                </button>
+            </div>
         </div>
     </div>
 
@@ -569,6 +629,8 @@
 
         // Expose all analysis functions to window for onclick handlers
         window.switchAnalysisMode = Analysis.switchAnalysisMode;
+        window.refreshTableDisplay = Analysis.refreshTableDisplay;
+        window.addVisibleColumn = Analysis.addVisibleColumn;
         window.loadAnalysisPage = Analysis.loadAnalysisPage;
         window.analyzeFile = Analysis.analyzeFile;
         window.toggleFilterMenu = Analysis.toggleFilterMenu;
@@ -620,6 +682,8 @@
         window.initHeatmap = Heatmap.initHeatmap;
         window.drawHeatmap = Heatmap.drawHeatmap;
         window._hmUnpin = Heatmap.unpinHeatmapTooltip;
+        window.toggleBrushMode  = Heatmap.toggleBrushMode;
+        window.setHeatmapMode   = Heatmap.setHeatmapMode;
 
         // Handle filter key (Enter to add)
         window.handleFilterKey = function(event) {

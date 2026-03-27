@@ -1030,33 +1030,129 @@
                         style="font-size: 18px; color: #64748b; padding: 6px; border-radius: 6px; transition: all 0.2s;">☰</button>
                 </div>
 
-                <div class="nav-item active" onclick="switchView('files')" id="nav-files">
+                <div class="nav-item active" onclick="switchView('files')" id="nav-files" data-feature="files">
                     <span>📂</span> <span class="nav-text">檔案管理</span>
                 </div>
-                <div class="nav-item" onclick="switchView('analysis')" id="nav-analysis">
+                <div class="nav-item" onclick="switchView('analysis')" id="nav-analysis" data-feature="charts">
                     <span>📈</span> <span class="nav-text">數據圖表</span>
                 </div>
-                <div class="nav-item" onclick="switchView('data-preparation')" id="nav-data-preparation">
+                <div class="nav-item" onclick="switchView('data-preparation')" id="nav-data-preparation" data-feature="data_analysis">
                     <span>🔧</span> <span class="nav-text">資料分析</span>
                 </div>
-                <div class="nav-item" onclick="switchView('training')" id="nav-training">
+                <div class="nav-item" onclick="switchView('training')" id="nav-training" data-feature="model_training">
                     <span>🧠</span> <span class="nav-text">模型訓練</span>
                 </div>
-                <div class="nav-item" onclick="switchView('dashboard')" id="nav-dashboard">
+                <div class="nav-item" onclick="switchView('dashboard')" id="nav-dashboard" data-feature="dashboard">
                     <span>📺</span> <span class="nav-text">即時看板</span>
                 </div>
-                <div class="nav-item" onclick="switchView('intelligent-analysis')" id="nav-intelligent-analysis">
+                <div class="nav-item" onclick="switchView('intelligent-analysis')" id="nav-intelligent-analysis" data-feature="ai">
                     <span>💡</span> <span class="nav-text">智能分析</span>
                 </div>
 
-                <!-- User Profile Section (Moved to Bottom) -->
-                <div class="user-profile" onclick="switchUser()"
-                    style="margin-top: auto; padding: 15px; border-top: 1px solid #f1f5f9; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.2s;">
+                <!-- Bottom bar: Settings + User -->
+                <!-- User Profile — 連點 3 下開啟系統管理員 -->
+                <div id="user-profile-bar" class="user-profile"
+                    style="margin-top: auto; padding: 15px; border-top: 1px solid #f1f5f9; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.2s;"
+                    title="點擊切換使用者">
                     <span id="current-user-id"
-                        style="font-size: 13px; font-weight: 600; color: #334155; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%;"
-                        title="點擊切換使用者">loading...</span>
+                        style="font-size: 13px; font-weight: 600; color: #334155; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%;">loading...</span>
                 </div>
             </div>
+
+            <!-- Admin Panel Modal -->
+            <div id="admin-panel-overlay" onclick="adminPanelClose()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:9000;"></div>
+            <div id="admin-panel" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:9001;background:#fff;border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,0.25);width:480px;max-width:96vw;max-height:85vh;overflow-y:auto;font-family:inherit;">
+                <div style="padding:20px 24px 14px;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;justify-content:space-between;">
+                    <div style="font-size:17px;font-weight:700;color:#1e293b;">⚙️ 系統管理員</div>
+                    <button onclick="adminPanelClose()" style="background:none;border:none;font-size:20px;cursor:pointer;color:#94a3b8;padding:2px 6px;border-radius:6px;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='none'">✕</button>
+                </div>
+                <div style="padding:20px 24px;">
+                    <!-- Section 1: Main Feature Modules -->
+                    <div style="margin-bottom:20px;">
+                        <div style="font-size:13px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:12px;">大功能模組</div>
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+                            <label class="admin-toggle-row" data-section="features" data-key="files">
+                                <input type="checkbox" data-section="features" data-key="files"> <span>📂 檔案管理</span>
+                            </label>
+                            <label class="admin-toggle-row" data-section="features" data-key="charts">
+                                <input type="checkbox" data-section="features" data-key="charts"> <span>📈 數據圖表</span>
+                            </label>
+                            <label class="admin-toggle-row" data-section="features" data-key="data_analysis">
+                                <input type="checkbox" data-section="features" data-key="data_analysis"> <span>🔧 資料分析</span>
+                            </label>
+                            <label class="admin-toggle-row" data-section="features" data-key="model_training">
+                                <input type="checkbox" data-section="features" data-key="model_training"> <span>🧠 模型訓練</span>
+                            </label>
+                            <label class="admin-toggle-row" data-section="features" data-key="dashboard">
+                                <input type="checkbox" data-section="features" data-key="dashboard"> <span>📺 即時看板</span>
+                            </label>
+                            <label class="admin-toggle-row" data-section="features" data-key="ai">
+                                <input type="checkbox" data-section="features" data-key="ai"> <span>💡 智能分析</span>
+                            </label>
+                        </div>
+                    </div>
+                    <!-- Section 2: Data Analysis Sub-tools -->
+                    <div style="margin-bottom:20px;">
+                        <div style="font-size:13px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:4px;">資料分析子工具</div>
+                        <div style="font-size:11px;color:#94a3b8;margin-bottom:12px;">勾選表示預設開啟，取消勾選則預設隱藏（仍可在工具列手動切換）</div>
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+                            <label class="admin-toggle-row" data-section="data_analysis_tools" data-key="pivot">
+                                <input type="checkbox" data-section="data_analysis_tools" data-key="pivot"> <span>📊 樞紐分析表</span>
+                            </label>
+                            <label class="admin-toggle-row" data-section="data_analysis_tools" data-key="cleaning">
+                                <input type="checkbox" data-section="data_analysis_tools" data-key="cleaning"> <span>🧹 資料清洗</span>
+                            </label>
+                            <label class="admin-toggle-row" data-section="data_analysis_tools" data-key="mva">
+                                <input type="checkbox" data-section="data_analysis_tools" data-key="mva"> <span>🎯 多變量分析</span>
+                            </label>
+                            <label class="admin-toggle-row" data-section="data_analysis_tools" data-key="gb">
+                                <input type="checkbox" data-section="data_analysis_tools" data-key="gb"> <span>⚖️ G/B 檢定</span>
+                            </label>
+                            <label class="admin-toggle-row" data-section="data_analysis_tools" data-key="maineffect">
+                                <input type="checkbox" data-section="data_analysis_tools" data-key="maineffect"> <span>📊 主效應圖</span>
+                            </label>
+                            <label class="admin-toggle-row" data-section="data_analysis_tools" data-key="rsm">
+                                <input type="checkbox" data-section="data_analysis_tools" data-key="rsm"> <span>🌐 多項式特徵</span>
+                            </label>
+                            <label class="admin-toggle-row" data-section="data_analysis_tools" data-key="association">
+                                <input type="checkbox" data-section="data_analysis_tools" data-key="association"> <span>🔗 關聯分析</span>
+                            </label>
+                            <label class="admin-toggle-row" data-section="data_analysis_tools" data-key="notebook">
+                                <input type="checkbox" data-section="data_analysis_tools" data-key="notebook"> <span>📓 分析筆記本</span>
+                            </label>
+                        </div>
+                    </div>
+                    <!-- Section 3: Advanced -->
+                    <div style="margin-bottom:20px;">
+                        <div style="font-size:13px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:4px;">進階功能</div>
+                        <div style="font-size:11px;color:#94a3b8;margin-bottom:12px;">預設關閉，開啟後功能才會顯示</div>
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+                            <label class="admin-toggle-row" data-section="advanced" data-key="download">
+                                <input type="checkbox" data-section="advanced" data-key="download" data-default="false"> <span>⬇️ 顯示下載按鈕</span>
+                            </label>
+                            <label class="admin-toggle-row" style="grid-column:1/-1;cursor:default;">
+                                <span style="flex:1;">🖼️ LLM 圖片上限（0 = 不限）</span>
+                                <input type="number" id="admin-llm-image-limit" min="0" max="50" step="1" value="0"
+                                    style="width:60px;padding:3px 6px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;text-align:center;">
+                            </label>
+                        </div>
+                    </div>
+                    <!-- Actions -->
+                    <div style="display:flex;gap:10px;justify-content:flex-end;padding-top:12px;border-top:1px solid #e2e8f0;">
+                        <button onclick="adminPanelClose()" style="padding:8px 18px;border:1px solid #cbd5e1;background:#fff;color:#475569;border-radius:8px;cursor:pointer;font-size:14px;">取消</button>
+                        <button id="admin-save-btn" onclick="adminPanelSave()" style="padding:8px 22px;background:#3b82f6;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600;">儲存</button>
+                    </div>
+                </div>
+            </div>
+            <style>
+                .admin-toggle-row {
+                    display: flex; align-items: center; gap: 8px; padding: 8px 10px;
+                    border: 1px solid #e2e8f0; border-radius: 8px; cursor: pointer;
+                    font-size: 13px; color: #334155; transition: background 0.15s;
+                }
+                .admin-toggle-row:hover { background: #f8fafc; }
+                .admin-toggle-row input[type=checkbox] { width: 16px; height: 16px; accent-color: #3b82f6; flex-shrink: 0; }
+            </style>
 
             <!-- Main Content Area -->
             <div id="main-content" class="main-view-area">
@@ -2092,6 +2188,147 @@
             </div> <!-- End Main Content Area -->
         </div> <!-- End App Content -->
     </div> <!-- End Container -->
+
+    <!-- Feature Gate + Admin Panel — 根據後端設定隱藏停用的模組 -->
+    <script>
+        // ── _applyFeatures：頂層函式，確保任何地方都能呼叫 ─────────────────────
+        const _featureViewMap = {
+            files: 'files', charts: 'analysis', data_analysis: 'data-preparation',
+            model_training: 'training', dashboard: 'dashboard', ai: 'intelligent-analysis',
+        };
+
+        function _applyFeatures(features) {
+            let firstEnabled = null;
+            document.querySelectorAll('[data-feature]').forEach(el => {
+                const key = el.dataset.feature;
+                if (features[key] === false) {
+                    el.style.display = 'none';
+                } else {
+                    el.style.display = '';
+                    if (!firstEnabled) firstEnabled = _featureViewMap[key];
+                }
+            });
+            const active = document.querySelector('.nav-item.active[data-feature]');
+            if (active && features[active.dataset.feature] === false && firstEnabled) {
+                if (typeof switchView === 'function') switchView(firstEnabled);
+            }
+        }
+
+        // ── Feature Gate ──────────────────────────────────────────────────────
+        (function () {
+            // 暗門 1：URL 加 ?dev=1 全開所有模組
+            const devMode = new URLSearchParams(location.search).get('dev') === '1';
+            if (devMode) { console.log('[Dev] Feature gate bypassed'); return; }
+
+            // 暗門 2：點 Logo 5 下（2 秒內）解鎖所有模組
+            let _logoClicks = 0, _logoTimer = null;
+            document.addEventListener('DOMContentLoaded', () => {
+                const logo = document.querySelector('.app-logo');
+                if (logo) logo.addEventListener('click', () => {
+                    _logoClicks++;
+                    clearTimeout(_logoTimer);
+                    if (_logoClicks >= 5) {
+                        _logoClicks = 0;
+                        document.querySelectorAll('[data-feature]').forEach(el => el.style.display = '');
+                        console.log('[Dev] All modules unlocked');
+                        return;
+                    }
+                    _logoTimer = setTimeout(() => { _logoClicks = 0; }, 2000);
+                });
+            });
+
+            // 正常流程：從後端讀取設定
+            fetch('/api/settings')
+                .then(r => r.json())
+                .then(s => { if (s && s.features) _applyFeatures(s.features); })
+                .catch(() => fetch('/api/features').then(r => r.json()).then(_applyFeatures).catch(() => {}));
+        })();
+
+        // ── Admin Panel ───────────────────────────────────────────────────────
+        let _adminSettings = null;
+
+        // 後門：user-profile-bar 連點 3 下（1.5 秒內）開啟系統管理員
+        // 單擊仍走 switchUser()
+        (function () {
+            let _clicks = 0, _timer = null;
+            document.addEventListener('DOMContentLoaded', () => {
+                const bar = document.getElementById('user-profile-bar');
+                if (!bar) return;
+                bar.addEventListener('click', () => {
+                    _clicks++;
+                    clearTimeout(_timer);
+                    if (_clicks >= 5) {
+                        _clicks = 0;
+                        adminPanelOpen();
+                        return;
+                    }
+                    _timer = setTimeout(() => {
+                        if (_clicks === 1) switchUser();   // 單擊：切換使用者
+                        _clicks = 0;
+                    }, 600);
+                });
+            });
+        })();
+
+        function adminPanelOpen() {
+            fetch('/api/settings').then(r => r.json()).then(s => {
+                _adminSettings = s;
+                // Populate checkboxes
+                document.querySelectorAll('.admin-toggle-row input[type=checkbox]').forEach(cb => {
+                    const sec = cb.dataset.section, key = cb.dataset.key;
+                    const defaultVal = cb.dataset.default !== 'false';  // default true unless data-default="false"
+                    cb.checked = s[sec] ? (s[sec][key] !== false) : defaultVal;
+                });
+                const limEl = document.getElementById('admin-llm-image-limit');
+                if (limEl) limEl.value = (s.advanced && s.advanced.llm_image_limit != null) ? s.advanced.llm_image_limit : 0;
+                document.getElementById('admin-panel').style.display = 'block';
+                document.getElementById('admin-panel-overlay').style.display = 'block';
+                document.getElementById('admin-save-btn').textContent = '儲存';
+            });
+        }
+
+        function adminPanelClose() {
+            document.getElementById('admin-panel').style.display = 'none';
+            document.getElementById('admin-panel-overlay').style.display = 'none';
+        }
+
+        function adminPanelSave() {
+            const payload = { features: {}, data_analysis_tools: {}, advanced: {} };
+            document.querySelectorAll('.admin-toggle-row input[type=checkbox]').forEach(cb => {
+                if (!payload[cb.dataset.section]) payload[cb.dataset.section] = {};
+                payload[cb.dataset.section][cb.dataset.key] = cb.checked;
+            });
+            const limEl = document.getElementById('admin-llm-image-limit');
+            if (limEl) payload.advanced.llm_image_limit = Math.max(0, parseInt(limEl.value) || 0);
+            const btn = document.getElementById('admin-save-btn');
+            btn.disabled = true; btn.textContent = '儲存中...';
+            fetch('/api/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            }).then(r => r.json()).then(res => {
+                btn.textContent = '✓ 已儲存';
+                // Apply feature changes immediately
+                if (res.settings && res.settings.features) {
+                    _applyFeatures(res.settings.features);
+                }
+                // Notify data_preparation iframe about sub-tool changes
+                const iframe = document.getElementById('data-prep-iframe') || document.querySelector('iframe[src*="data_preparation"]');
+                if (iframe && iframe.contentWindow) {
+                    iframe.contentWindow.postMessage({ type: 'APPLY_TOOL_SETTINGS', tools: payload.data_analysis_tools }, '*');
+                }
+                // Notify file_manager iframe about download mode
+                const fmIframe = document.querySelector('iframe[src*="file_manager"]');
+                if (fmIframe && fmIframe.contentWindow) {
+                    fmIframe.contentWindow.postMessage({ type: 'TOGGLE_DOWNLOAD_MODE', enabled: !!payload.advanced?.download }, '*');
+                }
+                setTimeout(() => { btn.disabled = false; btn.textContent = '儲存'; adminPanelClose(); }, 800);
+            }).catch(e => {
+                btn.disabled = false; btn.textContent = '儲存';
+                alert('儲存失敗：' + e.message);
+            });
+        }
+    </script>
 
     <!-- Dashboard 核心邏輯 (Modular) -->
     <script type="module" src="/static/js/dashboard_main.js"></script>

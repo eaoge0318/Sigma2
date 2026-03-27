@@ -49,8 +49,12 @@ async def rename_file(
     session_id: str = Query("default"),
     file_service: FileService = Depends(get_file_service),
 ):
-    """重新命名檔案"""
+    """重新命名檔案，並同步更新 notes / analysis / configs / drafts 中的相關參照"""
     import os
+    import json
+    import hashlib
+    import shutil
+    from pathlib import Path
     from fastapi import HTTPException
 
     upload_dir = file_service.get_user_upload_dir(session_id)
@@ -70,8 +74,117 @@ async def rename_file(
     if os.path.exists(new_path) and os.path.normpath(old_path) != os.path.normpath(new_path):
         raise HTTPException(400, detail=f"檔案 {safe_name} 已存在")
 
+    # ── 1. Rename the actual file ──
     os.rename(old_path, new_path)
+
+    old_stem = os.path.splitext(filename)[0]
+    new_stem = os.path.splitext(safe_name)[0]
+    old_file_id = hashlib.md5(filename.encode()).hexdigest()[:12]
+    new_file_id = hashlib.md5(safe_name.encode()).hexdigest()[:12]
+    user_base = Path(file_service.base_dir) / _safe_session(session_id)
+
+    # ── 2. Rename notes directory ──
+    old_notes_dir = user_base / "notes" / old_stem
+    new_notes_dir = user_base / "notes" / new_stem
+    if old_notes_dir.exists() and old_stem != new_stem:
+        if new_notes_dir.exists():
+            shutil.rmtree(str(new_notes_dir))
+        shutil.move(str(old_notes_dir), str(new_notes_dir))
+
+    # Update meta.json files inside the notes directory (including sub-dataset metas)
+    if new_notes_dir.exists():
+        for meta_path in new_notes_dir.rglob("meta.json"):
+            try:
+                with open(meta_path, "r", encoding="utf-8") as f:
+                    meta = json.load(f)
+                changed = False
+                if meta.get("name") == filename:
+                    meta["name"] = safe_name
+                    changed = True
+                if meta.get("file_stem") == old_stem:
+                    meta["file_stem"] = new_stem
+                    changed = True
+                if meta.get("file_id") == old_file_id:
+                    meta["file_id"] = new_file_id
+                    changed = True
+                if changed:
+                    with open(meta_path, "w", encoding="utf-8") as f:
+                        json.dump(meta, f, ensure_ascii=False, indent=2)
+            except Exception:
+                pass
+
+    # ── 3. Rename analysis directories whose prefix matches old_file_id ──
+    analysis_base = user_base / "analysis"
+    if analysis_base.exists():
+        for ana_dir in list(analysis_base.iterdir()):
+            if not ana_dir.is_dir():
+                continue
+            dir_name = ana_dir.name
+            if not dir_name.startswith(old_file_id):
+                continue
+            new_dir_name = new_file_id + dir_name[len(old_file_id):]
+            new_ana_dir = analysis_base / new_dir_name
+            shutil.move(str(ana_dir), str(new_ana_dir))
+            # Update summary.json inside
+            summary_path = new_ana_dir / "summary.json"
+            if summary_path.exists():
+                try:
+                    with open(summary_path, "r", encoding="utf-8") as f:
+                        summary = json.load(f)
+                    if summary.get("filename") == filename:
+                        summary["filename"] = safe_name
+                    if summary.get("file_id", "").startswith(old_file_id):
+                        summary["file_id"] = new_file_id + summary["file_id"][len(old_file_id):]
+                    with open(summary_path, "w", encoding="utf-8") as f:
+                        json.dump(summary, f, ensure_ascii=False, indent=2)
+                except Exception:
+                    pass
+
+    # ── 4. Update configs / drafts that reference the old filename ──
+    for sub in ("configs", "drafts"):
+        sub_dir = user_base / sub
+        if not sub_dir.exists():
+            continue
+        for json_file in sub_dir.glob("*.json"):
+            try:
+                with open(json_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if data.get("filename") == filename:
+                    data["filename"] = safe_name
+                    with open(json_file, "w", encoding="utf-8") as f:
+                        json.dump(data, f, ensure_ascii=False, indent=2)
+            except Exception:
+                pass
+
     return {"old_name": filename, "new_name": safe_name}
+
+
+def _safe_session(session_id: str) -> str:
+    import re
+    s = re.sub(r"[^a-zA-Z0-9_\-]", "_", session_id)
+    return s if s else "default"
+
+
+@router.get("/download/{filename}")
+async def download_file(
+    filename: str,
+    session_id: str = Query("default"),
+    file_service: FileService = Depends(get_file_service),
+):
+    """下載指定檔案"""
+    import os
+    from fastapi import HTTPException
+    from fastapi.responses import FileResponse
+
+    upload_dir = file_service.get_user_upload_dir(session_id)
+    path = os.path.join(upload_dir, os.path.basename(filename))
+    if not os.path.exists(path):
+        raise HTTPException(404, detail="檔案不存在")
+    return FileResponse(
+        path,
+        filename=os.path.basename(filename),
+        media_type="application/octet-stream",
+    )
 
 
 @router.get("/view/{filename}")

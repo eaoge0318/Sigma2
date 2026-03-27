@@ -1326,8 +1326,8 @@
         const ps = _meParamSpecs[factor] || {};
         const fmt = v => Math.abs(v) >= 100 ? v.toFixed(1) : Math.abs(v) >= 1 ? v.toFixed(2) : v.toFixed(3);
         const parts = [];
-        if (ps.usl != null) parts.push(`<span style="color:#f97316;font-weight:700;">U:${fmt(ps.usl)}</span>`);
         if (ps.lsl != null) parts.push(`<span style="color:#0891b2;font-weight:700;">L:${fmt(ps.lsl)}</span>`);
+        if (ps.usl != null) parts.push(`<span style="color:#f97316;font-weight:700;">U:${fmt(ps.usl)}</span>`);
         return parts.join('');
     }
 
@@ -3650,5 +3650,265 @@
             item.style.display = item.dataset.col.toLowerCase().includes(lower) ? '' : 'none';
         });
     }
+
+    // ═══════════════════════════════════════════════════════════════
+    // NOTE SAVING — state exposure & auto-run helpers
+    // ═══════════════════════════════════════════════════════════════
+
+    window._meGetNoteData = function () {
+        if (!_meRenderCtx) return null;
+        const { factorOrder, targetOrder, byTarget, algorithm, n_rows, analysisMethod } = _meRenderCtx;
+
+        // ALE amplitude per factor (max swing across all targets) for ranking
+        const aleAmplitude = {};
+        factorOrder.forEach(f => {
+            let maxAmp = 0;
+            targetOrder.forEach(t => {
+                const ale = byTarget[t]?.[f]?.ale;
+                if (ale && ale.length > 1) {
+                    const valid = ale.filter(v => v != null);
+                    if (valid.length > 1) maxAmp = Math.max(maxAmp, Math.max(...valid) - Math.min(...valid));
+                }
+            });
+            aleAmplitude[f] = maxAmp;
+        });
+
+        // Current predicted values per target (from DOM label)
+        const predVals = {};
+        targetOrder.forEach((t, ti) => {
+            const el = document.getElementById(`me-pred-${ti}`);
+            predVals[t] = el?.textContent?.trim() || '—';
+        });
+
+        return {
+            factorOrder: [...factorOrder],
+            targetOrder: [...targetOrder],
+            byTarget,
+            algorithm: algorithm || 'XGBoost',
+            n_rows: n_rows || 0,
+            analysisMethod: analysisMethod || 'ale',
+            targetStats: { ..._meTargetStats },
+            colStats:    { ..._meColStats },
+            sliderVals:  { ..._meSliderVals },
+            paramSpecs:  { ..._meParamSpecs },
+            smartScores: { ..._smartScores },
+            simResults:  _meSimResults,
+            targets:         [..._meTargets],
+            controlFactors:  [..._meControlFactors],
+            bgFactors:       [..._meBgFactors],
+            fixedFactors:    [..._meFixedFactors],
+            aleAmplitude,
+            predVals,
+            optSolutions:   window._meOptSolutions   || null,
+            optDrawerCtx:   window._meOptDrawerCtx   || null,
+            lastSmartRange: window._meLastSmartRange || null,
+        };
+    };
+
+    // Auto-run optimization (uses step-1 targets with direction=target, value=target_mean??mean)
+    window._meAutoRunOptimize = async function () {
+        if (window._meOptSolutions) return window._meOptSolutions;
+        if (!_meRenderCtx) throw new Error('請先執行主效應分析');
+        const { targetOrder } = _meRenderCtx;
+
+        const directions = {}, targetValues = {};
+        targetOrder.forEach(t => {
+            const ts = _meTargetStats[t] || {};
+            directions[t] = 'target';
+            const tv = ts.target_mean ?? ts.mean;
+            if (tv != null && !isNaN(tv)) targetValues[t] = tv;
+        });
+
+        const allFixed = new Set([..._meFixedFactors, ..._meBgFactors]);
+        const sid = typeof getSessionId === 'function' ? getSessionId() : 'default';
+        const resp = await fetch(`/api/data-prep/me-optimize?session_id=${sid}`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                directions,
+                target_values: targetValues,
+                fixed_factors: [...allFixed],
+                fixed_values: Object.fromEntries([...allFixed].map(f => [f, _meSliderVals[f] ?? (_meColStats[f]?.median ?? 0)])),
+                n_solutions: 30,
+                n_gen: 50,
+            }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.detail || '最佳化失敗');
+
+        const { target_order, free_factors, solutions } = data;
+        const scored = solutions.map(sol => {
+            let inSpec = 0, normErr = 0;
+            target_order.forEach(t => {
+                const ts = _meTargetStats[t] || {};
+                const v = sol.targets[t];
+                const usl = ts.usl ?? ts.ucl, lsl = ts.lsl ?? ts.lcl;
+                if (usl != null && lsl != null && v >= lsl && v <= usl) inSpec++;
+                const ref = targetValues[t] ?? (ts.mean ?? 0);
+                const specRange = (usl != null && lsl != null) ? (usl - lsl) : (ts.std ?? 1);
+                normErr += Math.abs(v - ref) / (specRange || 1);
+            });
+            return { sol, inSpec, normErr };
+        });
+        scored.sort((a, b) => b.inSpec - a.inSpec || a.normErr - b.normErr);
+
+        window._meOptSolutions = { solutions: scored.map(s => s.sol), free_factors };
+        window._meOptDrawerCtx = { scored, target_order, free_factors, directions, targetValues };
+
+        // Apply best solution to sliders so prediction display updates
+        const best = scored[0]?.sol;
+        if (best) {
+            free_factors.forEach(f => { if (best.params[f] != null) _meSliderVals[f] = best.params[f]; });
+            _updatePredictions();
+        }
+        return window._meOptSolutions;
+    };
+
+    // Auto-run smart range using best optimization solution
+    window._meAutoRunSmartRange = async function () {
+        if (window._meLastSmartRange) return window._meLastSmartRange;
+        if (!window._meOptSolutions) throw new Error('請先執行最佳化');
+        const { solutions, free_factors } = window._meOptSolutions;
+        const { targetOrder } = _meRenderCtx;
+
+        const sol = solutions[window._meOptSelected ?? 0] || solutions[0];
+        if (!sol) throw new Error('無最佳化結果');
+
+        const centerX = {};
+        free_factors.forEach(f => { if (sol.params[f] != null) centerX[f] = sol.params[f]; });
+
+        const targetSpecs = {};
+        targetOrder.forEach(t => {
+            const ts = _meTargetStats[t] || {};
+            if (ts.usl != null || ts.lsl != null)
+                targetSpecs[t] = { usl: ts.usl ?? null, lsl: ts.lsl ?? null };
+        });
+
+        const sid = typeof getSessionId === 'function' ? getSessionId() : 'default';
+        const resp = await fetch(`/api/data-prep/me-smart-range?session_id=${sid}`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                center_x: centerX,
+                oos_threshold: 1.0,
+                n_simulations: 5000,
+                target_specs: targetSpecs,
+                fixed_factors: [..._meFixedFactors, ..._meBgFactors],
+                fixed_values: Object.fromEntries([..._meFixedFactors, ..._meBgFactors].map(f => [f, _meSliderVals[f] ?? (_meColStats[f]?.median ?? 0)])),
+            }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.detail || '智慧化區間計算失敗');
+        window._meLastSmartRange = data;
+        return data;
+    };
+
+    // Auto-run Monte Carlo simulation (uses smart range if available, else data percentiles)
+    window._meAutoRunSimulate = async function () {
+        if (_meSimResults) return _meSimResults;
+        if (!_meRenderCtx) throw new Error('請先執行主效應分析');
+        const { targetOrder, factorOrder } = _meRenderCtx;
+        const allFixed = new Set([..._meFixedFactors, ..._meBgFactors]);
+        const freeFactors = factorOrder.filter(f => !allFixed.has(f));
+
+        const paramDists = freeFactors.map(f => {
+            const cs = _meColStats[f] || {};
+            const ps = _meParamSpecs[f] || {};
+            const sr = window._meLastSmartRange?.factors?.[f];
+            let mean, std, low, high;
+            if (sr) {
+                mean = sr.center; std = Math.max(sr.half_width / 3, 1e-9);
+                low = sr.lsl; high = sr.usl;
+            } else if (ps.usl != null && ps.lsl != null) {
+                mean = (ps.usl + ps.lsl) / 2; std = Math.max((ps.usl - ps.lsl) / 6, 1e-9);
+                low = ps.lsl; high = ps.usl;
+            } else {
+                mean = _meSliderVals[f] ?? cs.median ?? 0;
+                std  = Math.max(((cs.p95 ?? cs.max ?? mean + 1) - (cs.p5 ?? cs.min ?? mean - 1)) / 6, 1e-9);
+                low  = cs.p5  ?? cs.min ?? mean - std * 3;
+                high = cs.p95 ?? cs.max ?? mean + std * 3;
+            }
+            return { factor: f, dist_type: 'normal', mean, std, low, high };
+        });
+
+        const targetSpecs = {};
+        targetOrder.forEach(t => {
+            const ts = _meTargetStats[t] || {};
+            targetSpecs[t] = {};
+            if (ts.usl != null) targetSpecs[t].usl = ts.usl;
+            if (ts.lsl != null) targetSpecs[t].lsl = ts.lsl;
+        });
+
+        const sid = typeof getSessionId === 'function' ? getSessionId() : 'default';
+        const resp = await fetch(`/api/data-prep/me-simulate?session_id=${sid}`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                param_distributions: paramDists,
+                fixed_factors: [...allFixed],
+                fixed_values: Object.fromEntries([...allFixed].map(f => [f, _meSliderVals[f] ?? (_meColStats[f]?.median ?? 0)])),
+                n_simulations: 1000,
+                target_specs: targetSpecs,
+            }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.detail || '模擬失敗');
+        _meSimResults = { data, targetSpecs };
+        return _meSimResults;
+    };
+
+    // Draw a simulation funnel chart onto an already-created canvas element (for note export)
+    window._meGetShowRealData = function () { return _meShowRealData; };
+
+    // Force real-data scatter + X-spec lines on for grid capture; returns prev state
+    window._mePrepareForCapture = function () {
+        const prev = { showReal: _meShowRealData, showXSpec: _meSettings.show_x_spec };
+        _meShowRealData = true;
+        _meSettings.show_x_spec = true;
+        if (_meRenderCtx) {
+            const { factorOrder, targetOrder, byTarget, targetYRange } = _meRenderCtx;
+            targetOrder.forEach((t, ti) => {
+                factorOrder.forEach((f, fi) => {
+                    const d = byTarget[t]?.[f];
+                    if (d) requestAnimationFrame(() => _drawCell(ti, fi, f, t, d, targetYRange[t]));
+                });
+            });
+            factorOrder.forEach((_, fi) => {
+                const f = factorOrder[fi];
+                requestAnimationFrame(() => _drawHistCell(fi, f));
+            });
+        }
+        return prev;
+    };
+
+    // Restore state after capture
+    window._meRestoreAfterCapture = function (prev) {
+        if (!prev) return;
+        _meShowRealData = prev.showReal;
+        _meSettings.show_x_spec = prev.showXSpec;
+        if (_meRenderCtx) {
+            const { factorOrder, targetOrder, byTarget, targetYRange } = _meRenderCtx;
+            targetOrder.forEach((t, ti) => {
+                factorOrder.forEach((f, fi) => {
+                    const d = byTarget[t]?.[f];
+                    if (d) requestAnimationFrame(() => _drawCell(ti, fi, f, t, d, targetYRange[t]));
+                });
+            });
+            factorOrder.forEach((_, fi) => {
+                const f = factorOrder[fi];
+                requestAnimationFrame(() => _drawHistCell(fi, f));
+            });
+        }
+    };
+
+    window._meDrawSimFunnelToEl = function (canvasEl, target) {
+        if (!_meSimResults) return;
+        const r = _meSimResults.data?.targets?.[target];
+        if (!r?.values?.length) return;
+        const specs = _meSimResults.targetSpecs?.[target] || {};
+        // Temporarily give the canvas an ID so _drawSimFunnel can find it
+        const tmpId = '__me_note_sim_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+        canvasEl.id = tmpId;
+        document.body.appendChild(canvasEl);
+        _drawSimFunnel(tmpId, r.values, specs.usl ?? null, specs.lsl ?? null, r.mean);
+        canvasEl.remove();
+    };
 
 })(); // end IIFE

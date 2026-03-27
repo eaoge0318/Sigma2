@@ -285,12 +285,42 @@ async function sendChartChatMessage() {
     }
 }
 
-// 處理Enter鍵發送
+// 處理Enter鍵發送（Shift+Enter 換行）
 function handleChartChatKey(event) {
     if (event.key === 'Enter' && !event.shiftKey) {
         event.preventDefault();
         sendChartChatMessage();
     }
+}
+
+// 自動調整 textarea 高度
+function handleChartChatInput(el) {
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 160) + 'px';
+}
+
+// 貼上圖片或檔案（Ctrl+V）
+function handleChartChatPaste(event) {
+    const items = event.clipboardData && event.clipboardData.items;
+    if (!items) return;
+
+    const fileItems = [];
+    for (const item of items) {
+        // 圖片（截圖或複製的圖）
+        if (item.kind === 'file' && item.type.startsWith('image/')) {
+            fileItems.push(item.getAsFile());
+        }
+        // 一般檔案（非文字）
+        else if (item.kind === 'file' && !item.type.startsWith('text/plain')) {
+            fileItems.push(item.getAsFile());
+        }
+    }
+
+    if (fileItems.length > 0) {
+        event.preventDefault(); // 不把二進位資料貼到文字框
+        chartProcessFiles(fileItems);
+    }
+    // 純文字：讓瀏覽器預設行為處理（正常貼入 textarea）
 }
 
 // Global ESC Handler for Internal Chat Window
@@ -326,14 +356,17 @@ function chartProcessFiles(files) {
 
         if (file.type.startsWith('image/')) {
             reader.onload = (e) => {
-                item.innerHTML = `<img src="${e.target.result}"><div class="preview-remove" onclick="chartRemoveFile('${file.name}')">×</div>`;
+                item.title = file.name;
+                item.innerHTML = `<img src="${e.target.result}" style="width:100%;height:100%;object-fit:cover;border-radius:4px;"><div class="preview-remove" onclick="chartRemoveFile('${file.name}')">×</div>`;
                 chartSelectedFiles.push({ name: file.name, type: 'image', data: e.target.result.split(',')[1] });
                 syncPreviewToPopup();
             };
             reader.readAsDataURL(file);
         } else {
+            const shortName = file.name.length > 8 ? file.name.slice(0, 7) + '…' : file.name;
             reader.onload = (e) => {
-                item.innerHTML = `<span>📄</span><div class="preview-remove" onclick="chartRemoveFile('${file.name}')">×</div>`;
+                item.title = file.name;
+                item.innerHTML = `<span style="font-size:20px;">📄</span><span style="font-size:9px;color:#6b7280;text-align:center;word-break:break-all;line-height:1.2;padding:0 2px;">${shortName}</span><div class="preview-remove" onclick="chartRemoveFile('${file.name}')">×</div>`;
                 chartSelectedFiles.push({ name: file.name, type: 'text', data: e.target.result });
                 syncPreviewToPopup();
             };

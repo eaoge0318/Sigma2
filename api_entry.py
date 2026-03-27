@@ -6,7 +6,17 @@ Sigma2 Agentic Reasoning API - 主入口
 import os
 import uvicorn
 import sys
-from fastapi import FastAPI, UploadFile, File, Form
+
+# 載入 .env（開發環境 & 生產環境都適用）
+_env_path = os.path.join(os.path.dirname(__file__), ".env")
+if os.path.exists(_env_path):
+    with open(_env_path, encoding="utf-8") as _f:
+        for _line in _f:
+            _line = _line.strip()
+            if _line and not _line.startswith("#") and "=" in _line:
+                _k, _v = _line.split("=", 1)
+                os.environ.setdefault(_k.strip(), _v.strip())
+from fastapi import FastAPI, UploadFile, File, Form, Body
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -52,6 +62,9 @@ from backend.routers import (
     draft_router,
     data_preparation_router,
 )
+from backend.routers import association_router
+from backend.routers import notebook_router
+from backend.routers import dataset_router
 
 
 from contextlib import asynccontextmanager
@@ -118,6 +131,18 @@ class NoCacheStaticFiles(StaticFiles):
 app.mount("/static", NoCacheStaticFiles(directory="static"), name="static")
 
 
+# --- Favicon（防止瀏覽器 404 log 噪音）---
+from fastapi.responses import Response as _Resp
+
+_FAVICON_SVG = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#6366f1"/><text x="16" y="23" font-size="18" text-anchor="middle" fill="#fff" font-family="sans-serif">&#931;</text></svg>'
+
+@app.get("/favicon.ico", include_in_schema=False)
+@app.get("/favicon.svg", include_in_schema=False)
+async def favicon():
+    return _Resp(content=_FAVICON_SVG, media_type="image/svg+xml",
+                 headers={"Cache-Control": "public, max-age=86400"})
+
+
 # --- 註冊各功能模組的 Router ---
 # 每個模組完全獨立，修改一個不會影響其他模組
 app.include_router(
@@ -160,6 +185,24 @@ app.include_router(
     data_preparation_router.router,
     prefix="/api/data-prep",
     tags=["DataPrep - 資料整理"],
+)
+
+app.include_router(
+    association_router.router,
+    prefix="/api/association",
+    tags=["Association - 關聯分析"],
+)
+
+app.include_router(
+    notebook_router.router,
+    prefix="/api/notebook",
+    tags=["Notebook - 分析筆記本"],
+)
+
+app.include_router(
+    dataset_router.router,
+    prefix="/api/data-prep/subset",
+    tags=["DataPrep - 子資料集管理"],
 )
 
 
@@ -361,7 +404,6 @@ async def advanced_analysis_legacy(request: dict, session_id: str = "default"):
     """向後相容"""
     from backend.models.request_models import AdvancedAnalysisRequest
     from backend.dependencies import get_analysis_service
-
     req = AdvancedAnalysisRequest(**request)
     return await get_analysis_service().advanced_analysis(req, session_id)
 
@@ -394,6 +436,88 @@ async def get_column_data_legacy(
     from backend.dependencies import get_analysis_service
 
     return await get_analysis_service().get_column_data(filename, column, session_id)
+
+
+# --- 功能開關 API ---
+@app.get("/api/features")
+async def get_features():
+    """回傳各功能模組是否啟用，前端根據此結果顯示/隱藏導覽項目。"""
+    return config.FEATURES
+
+
+# --- 系統設定 API ---
+import json as _json
+
+_SETTINGS_PATH = os.path.join(os.path.dirname(__file__), "settings.json")
+
+_DEFAULT_SETTINGS = {
+    "features": {
+        "files": True,
+        "charts": True,
+        "data_analysis": True,
+        "model_training": False,
+        "dashboard": False,
+        "ai": False,
+    },
+    "data_analysis_tools": {
+        "pivot": True,
+        "cleaning": True,
+        "mva": True,
+        "gb": True,
+        "maineffect": True,
+        "rsm": True,
+        "association": True,
+    },
+    "advanced": {
+        "download": False,
+        "llm_image_limit": 0,
+    },
+}
+
+
+def _load_settings() -> dict:
+    if os.path.exists(_SETTINGS_PATH):
+        try:
+            with open(_SETTINGS_PATH, "r", encoding="utf-8") as f:
+                saved = _json.load(f)
+            # Merge with defaults so new keys always exist
+            result = _json.loads(_json.dumps(_DEFAULT_SETTINGS))
+            for section, vals in saved.items():
+                if section in result and isinstance(vals, dict):
+                    result[section].update(vals)
+                else:
+                    result[section] = vals
+            return result
+        except Exception:
+            pass
+    # If no file, bootstrap from config.FEATURES + all tools enabled
+    result = _json.loads(_json.dumps(_DEFAULT_SETTINGS))
+    result["features"].update(config.FEATURES)
+    return result
+
+
+@app.get("/api/settings")
+async def get_settings():
+    """回傳系統設定（功能模組 + 子工具）。"""
+    return _load_settings()
+
+
+@app.post("/api/settings")
+async def save_settings(payload: dict = Body(...)):
+    """儲存系統設定。"""
+    try:
+        current = _load_settings()
+        for section, vals in payload.items():
+            if section in current and isinstance(vals, dict):
+                current[section].update(vals)
+            else:
+                current[section] = vals
+        with open(_SETTINGS_PATH, "w", encoding="utf-8") as f:
+            _json.dump(current, f, ensure_ascii=False, indent=2)
+        return {"ok": True, "settings": current}
+    except Exception as e:
+        from fastapi import HTTPException as _HTTPException
+        raise _HTTPException(status_code=500, detail=str(e))
 
 
 # --- Dashboard 頁面 ---
@@ -429,7 +553,6 @@ if __name__ == "__main__":
 
     # 檢查是否帶有 --reload 參數
     use_reload = "--reload" in sys.argv
-    use_reload = True
     if use_reload:
         print("[Development Mode] Auto-reload enabled. Monitoring file changes...")
         # 必須使用字串 "api_entry:app" 才能在 uvicorn 中啟用 reload
