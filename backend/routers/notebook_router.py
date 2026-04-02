@@ -13,7 +13,9 @@ from pathlib import Path
 import httpx
 import json
 import re
+import time
 import logging
+import base64
 
 import config
 
@@ -21,6 +23,30 @@ router = APIRouter(tags=["Notebook - 分析筆記本"])
 logger = logging.getLogger(__name__)
 
 BASE_DIR = Path(config.BASE_STORAGE_DIR)  # workspace/
+
+# Magic bytes for common image formats that PIL/LLM servers can handle
+_IMAGE_MAGIC = [
+    b"\x89PNG",      # PNG
+    b"\xff\xd8\xff", # JPEG
+    b"GIF8",         # GIF
+    b"RIFF",         # WebP (RIFF....WEBP)
+    b"BM",           # BMP
+]
+
+def _is_valid_data_url(data_url: str) -> bool:
+    """Return True only if the data URL contains decodable, non-empty image bytes with a known magic header."""
+    if not isinstance(data_url, str) or not data_url.startswith("data:image/"):
+        return False
+    try:
+        header, _, b64 = data_url.partition(",")
+        if not b64:
+            return False
+        raw = base64.b64decode(b64 + "==")  # pad to avoid padding errors
+        if len(raw) < 4:
+            return False
+        return any(raw.startswith(m) for m in _IMAGE_MAGIC)
+    except Exception:
+        return False
 
 
 def _stem_from_name(file_name: str) -> str:
@@ -82,6 +108,9 @@ class NotebookChatRequest(BaseModel):
     process_context: Optional[str] = None  # 資料說明（背景、欄位代號、品質指標等）
     column_names: List[str] = []           # 資料集所有欄位名稱
     column_stats: Dict[str, Any] = {}      # 數值欄位統計 {col: {mean, std, min, max, median, count}}
+    use_historical: bool = False           # 是否參考歷史知識庫
+    notebook_enabled: bool = True          # 是否使用筆記本 context（False = 純歷史查詢模式）
+    user_id: str = "default"              # 知識庫 user collection
 
 
 class NotebookSaveRequest(BaseModel):
@@ -335,6 +364,44 @@ def _count_text_tokens(text: str) -> int:
     return tokens
 
 
+# ===== HyDE Helper =====
+
+async def _hyde_generate(notes: List[Any], message: str) -> str:
+    """
+    HyDE：根據當前分析筆記 + 使用者訊息，讓 LLM 生成一段
+    「假設中的歷史案例描述」，再用這段文字去搜尋 ChromaDB。
+    生成結果比直接用筆記更貼近知識庫的文件語意空間。
+    """
+    notes_summary = " | ".join(
+        f"{n.tool}: {n.text[:100]}" for n in notes if n.text.strip()
+    )
+    prompt = (
+        "你是製程分析助理。根據以下當前分析筆記與問題，"
+        "以 100 字以內描述一個相關的歷史案例或參考文件「可能包含的核心內容」。"
+        "只輸出描述，不要解釋。\n\n"
+        f"【當前筆記摘要】\n{notes_summary[:800]}\n\n"
+        f"【使用者問題】\n{message}"
+    )
+    payload = {
+        "model": config.LLM_MODEL,
+        "messages": [{"role": "user", "content": prompt}],
+        "stream": False,
+        "temperature": 0.3,
+        "max_tokens": 150,
+    }
+    try:
+        t0 = time.time()
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(config.LLM_API_URL, json=payload)
+            data = resp.json()
+            hyde_text = data["choices"][0]["message"]["content"].strip()
+            logger.info(f"[HyDE-TIMER] LLM call: {time.time()-t0:.2f}s，生成({len(hyde_text)}字): {hyde_text[:80]}")
+            return hyde_text
+    except Exception as e:
+        logger.warning(f"[HyDE] 生成失敗，fallback 原始 query：{e}")
+        return ""
+
+
 # ===== Streaming Helper =====
 
 async def _stream_llm(messages: List[Dict[str, Any]]):
@@ -442,7 +509,7 @@ async def notebook_chat(request: NotebookChatRequest):
         proc_block += f"\n\n【製程背景說明】\n{request.process_context.strip()}\n請優先依據此製程背景解讀數據，使用正確的製程術語與站別名稱。"
     if request.column_names:
         cols_str = "、".join(request.column_names)
-        proc_block += f"\n\n【資料集欄位（共 {len(request.column_names)} 個）】\n{cols_str}\n當使用者提到參數名稱時，請對應到上述欄位。"
+        proc_block += f"\n\n【資料集欄位（共 {len(request.column_names)} 個）】\n{cols_str}\n當使用者提到參數名稱時，請對應到上述欄位。分析方向可參考上述欄位找出潛在關聯參數。"
 
     if request.column_stats:
         # 只保留筆記中有提到的欄位統計，避免 LLM 自行分析無關欄位
@@ -511,6 +578,62 @@ async def notebook_chat(request: NotebookChatRequest):
 你是一位資深製程工程師，請用現場工程師看得懂的語言回答問題。{f"依據資料說明，你熟悉此製程的背景與術語。" if request.process_context and request.process_context.strip() else ""}
 使用條列式或編號清單回答，不寫長段落；有多個面向時用粗體標題分組；禁止加收尾語。避免統計術語，參考對話歷史維持連貫，回答使用繁體中文。"""
 
+    # ── RAG：查詢歷史知識庫 ──
+    logger.info(f"[RAG] use_historical={request.use_historical} user_id={request.user_id}")
+    rag_chunks = []
+    if request.use_historical:
+        try:
+            from backend.services import rag_service
+            t_rag0 = time.time()
+            # HyDE：LLM 生成假設歷史案例描述，再搜尋（有計時）
+            hyde_text = await _hyde_generate(request.notes, request.message)
+            if hyde_text:
+                query_text = hyde_text
+            else:
+                notes_text_for_query = " | ".join(
+                    f"{n.tool} {n.text[:80]}" for n in request.notes if n.text.strip()
+                )
+                query_text = f"{notes_text_for_query} {request.message}".strip()
+            if query_text:
+                raw_chunks = rag_service.query_similar(query_text, user_id=request.user_id)
+                # 去重：同一來源同一頁只保留相似度最高的一筆
+                seen_keys = {}
+                for c in raw_chunks:
+                    key = (c.get("source_name", ""), c.get("location", ""))
+                    if key not in seen_keys or c["score"] > seen_keys[key]["score"]:
+                        seen_keys[key] = c
+                rag_chunks = list(seen_keys.values())
+                scores_str = ", ".join(f"{c['score']:.3f}" for c in rag_chunks)
+                logger.info(f"[RAG] user={request.user_id} 查詢到 {len(raw_chunks)} 筆（去重後 {len(rag_chunks)} 筆）scores=[{scores_str}]，query前80字: {query_text[:80]}")
+                logger.info(f"[RAG-TIMER] 整體 RAG（HyDE+query）總計: {time.time()-t_rag0:.2f}s")
+        except Exception as e:
+            logger.warning(f"[RAG] 查詢失敗，跳過：{e}")
+
+    # ── 根據模式調整 context_block ──
+    if not request.notebook_enabled and request.use_historical:
+        # Mode C：純歷史查詢
+        context_block = (
+            "你是製程分析助理，根據歷史案例、研究文件與過往紀錄回答問題。\n"
+            "只根據提供的歷史資料回答，不要把未提供的內容當成事實。\n"
+            "若資料充分，整理可參考的案例、做法、研究方向或注意事項。\n"
+            "若不同資料之間結論不一致，指出差異，不要強行合併。\n"
+            "若資料不足，明確說明。\n"
+            "【強制要求】每當回答中有任何論點來自歷史資料，必須在該句句尾緊接標記 [1][2][3]，"
+            "不可省略。範例：此問題在類似製程中曾發生[1]。\n"
+            "回答使用繁體中文，直接、清楚、可執行。"
+        )
+    elif request.use_historical and rag_chunks:
+        # Mode B：筆記本 + 歷史 — 在現有 context_block 後加規則
+        context_block += (
+            "\n\n【歷史資料使用規則】\n"
+            "- 筆記本資料代表「當前觀察」，歷史資料代表「參考借鑑」，不可混成同一層證據。\n"
+            "- 歷史資料只是參考，不代表一定適用；若適用性不明，請提醒使用者需再驗證。\n"
+            "- 【強制要求】每當你的回答中有任何論點、數據或說法來自歷史參考資料，"
+            "必須在該句句尾緊接標記 [1] 或 [2] 或 [3]，不可省略。"
+            "範例：此現象在同類製程中曾出現[1]。即使只是間接參考也必須標記。\n"
+            "- 若資料不足，請誠實說明，不要虛構案例或解法。"
+        )
+
     # 2. 組建 messages
     messages = [{"role": "system", "content": context_block}]
 
@@ -542,23 +665,41 @@ async def notebook_chat(request: NotebookChatRequest):
             # 圖片模式：不帶筆記摘要，只看圖 + 對話 + 打字
             summary_block = ""
             all_images = request.images
+            # 即使圖片模式，仍注入 RAG 歷史資料
+            if rag_chunks:
+                hist_parts = []
+                for i, chunk in enumerate(rag_chunks, 1):
+                    loc = f" | {chunk['location']}" if chunk.get("location") else ""
+                    hist_parts.append(
+                        f"[{i}] 來源：{chunk['source_name']}{loc}\n{chunk['content'][:600]}"
+                    )
+                summary_block = "\n\n---\n【歷史參考資料】（每引用一筆必須在句尾加 [N]，如：此現象曾發生[1]。禁止遺漏引用標記）\n" + "\n\n".join(hist_parts)
         else:
-            # 筆記文字摘要（始終附在 user message，讓 LLM 每輪都能對照）
-            notes_summary = "\n\n".join(
-                f"【{n.tool}】{_translate_stats_terms(n.text)}" for n in request.notes if n.text.strip()
-            )
-            format_reminder = "（請用條列式回答，禁用 T²/UCL/PCA/p值等統計術語，禁止加收尾語）"
-            summary_block = f"\n\n---\n【筆記摘要參考】\n{notes_summary}\n{format_reminder}" if notes_summary else f"\n{format_reminder}"
+            # 筆記已在 system prompt 中，user message 只加格式提醒，避免重複
+            format_reminder = "\n（請用條列式回答，禁用 T²/UCL/PCA/p值等統計術語，禁止加收尾語）"
+            summary_block = format_reminder
+
+            # 加入歷史參考資料
+            if rag_chunks:
+                hist_parts = []
+                for i, chunk in enumerate(rag_chunks, 1):
+                    loc = f" | {chunk['location']}" if chunk.get("location") else ""
+                    hist_parts.append(
+                        f"[{i}] 來源：{chunk['source_name']}{loc}\n{chunk['content'][:600]}"
+                    )
+                summary_block += "\n\n---\n【歷史參考資料】（每引用一筆必須在句尾加 [N]，如：此現象曾發生[1]。禁止遺漏引用標記）\n" + "\n\n".join(hist_parts)
             # 合併筆記截圖 + 使用者上傳的圖（history > 3 輪後不帶圖）
             all_images = (note_images + request.images) if include_images else request.images
-        try:
-            import json as _j, os as _os
-            _sp = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.dirname(__file__))), "settings.json")
-            _lim = _j.load(open(_sp, encoding="utf-8")).get("advanced", {}).get("llm_image_limit", 0) if _os.path.exists(_sp) else 0
-            if _lim and int(_lim) > 0:
-                all_images = all_images[:int(_lim)]
-        except Exception:
-            pass
+        # Filter out invalid/unreadable images to avoid PIL errors on the LLM server side
+        valid_images = [img for img in all_images if _is_valid_data_url(img)]
+        invalid_count = len(all_images) - len(valid_images)
+        if invalid_count:
+            logger.warning(f"[IMG] 過濾掉 {invalid_count} 張無效圖片（格式不符或損毀）")
+        all_images = valid_images
+
+        if config.LLM_IMAGE_LIMIT > 0:
+            all_images = all_images[:config.LLM_IMAGE_LIMIT]
+            logger.info(f"[IMG] 圖片限制 {config.LLM_IMAGE_LIMIT} 張，實際送出 {len(all_images)} 張")
 
         if all_images:
             content_parts: List[Any] = []
@@ -574,8 +715,28 @@ async def notebook_chat(request: NotebookChatRequest):
         else:
             messages.append({"role": "user", "content": user_msg + summary_block})
 
+    # 來源資訊（供前端渲染腳注）
+    sources_payload = [
+        {
+            "index": i + 1,
+            "source_name": c.get("source_name", ""),
+            "location": c.get("location", ""),
+            "snippet": c.get("content", "")[:250],
+            "source_type": c.get("source_type", "document"),
+            "score": c.get("score", 0),
+        }
+        for i, c in enumerate(rag_chunks)
+    ] if rag_chunks else []
+
+    async def _stream_with_sources():
+        async for chunk in _stream_llm(messages):
+            if chunk.startswith("event: done") and sources_payload:
+                src_data = json.dumps({"sources": sources_payload}, ensure_ascii=False)
+                yield f"event: sources\ndata: {src_data}\n\n"
+            yield chunk
+
     return StreamingResponse(
-        _stream_llm(messages),
+        _stream_with_sources(),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

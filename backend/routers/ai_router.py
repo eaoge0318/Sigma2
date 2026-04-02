@@ -3,7 +3,7 @@ AI Router - AI 相關 API
 """
 
 from fastapi import APIRouter, Depends, BackgroundTasks
-from backend.models.request_models import ChatRequest
+from backend.models.request_models import ChatRequest, ScatterGridRequest
 from backend.services.session_service import SessionService
 from backend.services.ai_service import AIService
 from backend.dependencies import get_session_service, get_ai_service
@@ -182,3 +182,17 @@ async def get_chat_status(job_id: str):
         return {"status": "error", "error": job.get("error", "Unknown error")}
     else:
         return {"status": "processing"}
+
+
+@router.post("/summarize_scatter_grid")
+async def summarize_scatter_grid(
+    req: ScatterGridRequest,
+    ai_service: AIService = Depends(get_ai_service),
+):
+    """摘要九宮格參數名單"""
+    result = await ai_service.summarize_scatter_grid(
+        x_axis=req.x_axis,
+        y_axis=req.y_axis,
+        grid_groups=req.grid_groups
+    )
+    return result

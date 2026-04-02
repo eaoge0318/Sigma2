@@ -780,9 +780,10 @@
         _rsmCurrentSingleTarget = data.target || _rsmTargets[0] || _rsmTarget;
         window._rsmCurrentTarget = _rsmCurrentSingleTarget;
         _rsmActiveTargetTab = 'single';
+        container.style.cssText = 'height:100%;display:flex;flex-direction:column;';
         container.innerHTML = `
-            <div id="rsm-result-layout" style="display:grid; grid-template-columns: 1fr 1fr; gap:20px; align-items: start;">
-                <div id="rsm-result-left-panel">
+            <div id="rsm-result-layout" style="display:grid;grid-template-columns:1fr 1fr;gap:20px;flex:1;min-height:0;align-items:stretch;">
+                <div id="rsm-result-left-panel" style="overflow-y:auto;">
                     <div id="rsm-table-container"></div>
                     <div id="rsm-extra-sections" style="margin-top:20px;"></div>
                 </div>
@@ -798,14 +799,15 @@
         _rsmCurrentSingleTarget = (data.targets && data.targets[0]) || '';
         window._rsmCurrentTarget = _rsmCurrentSingleTarget;
 
+        container.style.cssText = 'height:100%;display:flex;flex-direction:column;';
         container.innerHTML = `
-            <div id="rsm-result-layout" style="display:grid; grid-template-columns: 1fr 1fr; gap:20px; align-items: start;">
-                <div id="rsm-result-left-panel">
+            <div id="rsm-result-layout" style="display:grid;grid-template-columns:1fr 1fr;gap:20px;flex:1;min-height:0;align-items:stretch;">
+                <div id="rsm-result-left-panel" style="overflow-y:auto;">
                     <div id="rsm-table-container"></div>
                 </div>
-                <div id="rsm-result-right-panel" style="position:sticky;top:10px;height:calc(100vh - 120px);background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:16px;display:flex;flex-direction:column;overflow:hidden;">
-                    <div style="font-size:13px;font-weight:700;color:#1e293b;margin-bottom:10px;display:flex;align-items:center;gap:6px;flex-shrink:0;">
-                        📈 <span id="rsm-plot-title">點擊左側項目查看散佈圖</span>
+                <div id="rsm-result-right-panel" style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:16px;display:flex;flex-direction:column;overflow:hidden;min-height:400px;">
+                    <div style="font-size:13px;font-weight:700;color:#1e293b;margin-bottom:10px;display:flex;align-items:center;gap:6px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                        📈 <span id="rsm-plot-title" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;">點擊左側項目查看散佈圖</span>
                     </div>
                     <div id="rsm-multi-scatter" style="flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#94a3b8;font-size:12px;background:#f8fafc;border-radius:8px;padding:12px;">
                         請從左表選擇一項來查看各目標散佈圖
@@ -998,12 +1000,14 @@
             terms = terms.filter(t => t.type === _rsmTypeFilter);
         }
         terms.sort((a, b) => {
-            let vA = a[_rsmSortState.key], vB = b[_rsmSortState.key];
-            if (_rsmSortState.key === 'coefficient') { vA = Math.abs(vA); vB = Math.abs(vB); }
+            let vA = a[_rsmSortState.key] ?? 0, vB = b[_rsmSortState.key] ?? 0;
+            if (_rsmSortState.key === 'coefficient' || _rsmSortState.key === 'lasso_coef') { vA = Math.abs(vA); vB = Math.abs(vB); }
             return _rsmSortState.dir === 'desc' ? vB - vA : vA - vB;
         });
 
         const maxAbsCoef = Math.max(...terms.map(t => Math.abs(t.coefficient || 0)), 0.01);
+        const hasLasso = terms.some(t => t.lasso_coef != null);
+        const maxAbsLasso = Math.max(...terms.map(t => Math.abs(t.lasso_coef || 0)), 0.0001);
         const typeIcons = { main: '📌', interaction: '🔗', quadratic: '📐', cubic: '🧊' };
         window._rsmDisplayedTerms = terms;
 
@@ -1027,11 +1031,12 @@
                     <option value="cubic" ${_rsmTypeFilter === 'cubic' ? 'selected' : ''}>三階</option>
                 </select>
             </th>
-            <th onclick="window._rsmToggleSort('coefficient')" style="padding:8px 6px;text-align:center;width:150px;cursor:pointer;user-select:none;color:#1e293b;">相關係數 ${sortIcon('coefficient')}</th>
+            <th onclick="window._rsmToggleSort('coefficient')" style="padding:8px 6px;text-align:center;width:110px;cursor:pointer;user-select:none;color:#1e293b;">相關係數 r ${sortIcon('coefficient')}</th>
+            <th onclick="window._rsmToggleSort('lasso_coef')" style="padding:8px 6px;text-align:center;width:100px;cursor:pointer;user-select:none;color:#7c3aed;">Lasso β ${sortIcon('lasso_coef')}</th>
         </tr></thead><tbody id="rsm-table-tbody">`;
 
         if (terms.length === 0) {
-            html += `<tr><td colspan="4" style="text-align:center;padding:20px;color:#94a3b8;">沒有符合此類型的顯著項</td></tr>`;
+            html += `<tr><td colspan="5" style="text-align:center;padding:20px;color:#94a3b8;">沒有符合此類型的顯著項</td></tr>`;
         }
 
         terms.forEach((t, idx) => {
@@ -1040,15 +1045,28 @@
             const coefBg = t.coefficient >= 0
                 ? `linear-gradient(to right, transparent ${100 - coefPct}%, ${coefColor} ${100 - coefPct}%)`
                 : `linear-gradient(to left, transparent ${100 - coefPct}%, ${coefColor} ${100 - coefPct}%)`;
+            const lcVal = t.lasso_coef != null ? t.lasso_coef : null;
+            const lcPct = lcVal != null ? Math.min(Math.abs(lcVal) / maxAbsLasso * 100, 100) : 0;
+            const lcColor = lcVal == null ? '#94a3b8' : lcVal > 0 ? '#7c3aed' : lcVal < 0 ? '#db2777' : '#94a3b8';
+            const lcBg = lcVal != null && lcVal !== 0
+                ? (lcVal > 0
+                    ? `linear-gradient(to right, transparent ${100 - lcPct}%, ${lcColor}33 ${100 - lcPct}%)`
+                    : `linear-gradient(to left, transparent ${100 - lcPct}%, ${lcColor}33 ${100 - lcPct}%)`)
+                : 'none';
+            const lcText = lcVal == null ? '—' : lcVal === 0 ? '<span style="color:#cbd5e1;">0</span>' : _fmtSlope(lcVal);
             const icon = typeIcons[t.type] || '';
             const shortName = _truncateName(t.name, 22);
-            html += `<tr onclick='window._rsmRowClick(this, ${JSON.stringify(t).replace(/'/g, "&apos;")})' class="rsm-table-row" tabindex="0" style="border-bottom:1px solid #f1f5f9;cursor:pointer;transition:background 0.15s;">
+            html += `<tr onclick='window._rsmRowClick(this, ${JSON.stringify(t).replace(/'/g, "&apos;")})' class="rsm-table-row" tabindex="0" style="border-bottom:1px solid #f1f5f9;cursor:pointer;transition:background 0.15s;${lcVal === 0 ? 'opacity:0.65;' : ''}">
                 <td style="padding:7px 6px;text-align:center;color:#94a3b8;font-size:10px;">${idx + 1}</td>
                 <td style="padding:7px 10px;color:#1e293b;font-weight:500;" title="${t.name}">${shortName.replace(/²/g, '<span style="color:#f97316;font-weight:700;">²</span>').replace(/³/g, '<span style="color:#a855f7;font-weight:700;">³</span>')}</td>
                 <td style="padding:7px 6px;font-size:11px;color:#64748b;text-align:center;">${icon}</td>
                 <td style="padding:7px 6px;"><div style="display:flex;align-items:center;gap:6px;">
-                    <span style="font-family:monospace;font-size:11px;min-width:52px;text-align:right;">${(t.coefficient || 0).toFixed(4)}</span>
+                    <span style="font-family:monospace;font-size:11px;min-width:48px;text-align:right;">${(t.coefficient || 0).toFixed(4)}</span>
                     <div style="flex:1;height:6px;border-radius:3px;background:${coefBg};"></div>
+                </div></td>
+                <td style="padding:7px 6px;"><div style="display:flex;align-items:center;gap:6px;">
+                    <span style="font-family:monospace;font-size:11px;min-width:48px;text-align:right;color:${lcColor};">${lcText}</span>
+                    <div style="flex:1;height:6px;border-radius:3px;background:${lcBg};"></div>
                 </div></td>
             </tr>`;
         });
@@ -1071,9 +1089,9 @@
 
     // ── Right panel HTML helper (single-target) ──
     function _rightPanelHTML() {
-        return `<div id="rsm-result-right-panel" style="position:sticky;top:10px;height:calc(100vh - 120px);background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:16px;display:flex;flex-direction:column;overflow:hidden;">
-            <div style="font-size:13px;font-weight:700;color:#1e293b;margin-bottom:10px;display:flex;align-items:center;gap:6px;flex-shrink:0;">
-                📈 <span id="rsm-plot-title">點擊左側項目查看散佈圖</span>
+        return `<div id="rsm-result-right-panel" style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:16px;display:flex;flex-direction:column;overflow:hidden;min-height:400px;">
+            <div style="font-size:13px;font-weight:700;color:#1e293b;margin-bottom:10px;display:flex;align-items:center;gap:6px;flex-shrink:0;overflow:hidden;">
+                📈 <span id="rsm-plot-title" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;">點擊左側項目查看散佈圖</span>
             </div>
             <div id="rsm-scatter-area" style="flex:1;min-height:0;position:relative;">
                 <div id="rsm-single-scatter" style="position:absolute;inset:0;">
@@ -1249,8 +1267,8 @@
         }
 
         terms.sort((a, b) => {
-            let vA = a[_rsmSortState.key], vB = b[_rsmSortState.key];
-            if (_rsmSortState.key === 'coefficient') {
+            let vA = a[_rsmSortState.key] ?? 0, vB = b[_rsmSortState.key] ?? 0;
+            if (_rsmSortState.key === 'coefficient' || _rsmSortState.key === 'lasso_coef') {
                 vA = Math.abs(vA); vB = Math.abs(vB);
             }
             return _rsmSortState.dir === 'desc' ? vB - vA : vA - vB;
@@ -1279,6 +1297,8 @@
             return _rsmSortState.dir === 'desc' ? '⬇️' : '⬆️';
         };
 
+        const hasLasso = terms.some(t => t.lasso_coef != null);
+        const maxAbsLasso = Math.max(...terms.map(t => Math.abs(t.lasso_coef || 0)), 0.0001);
         html += `<thead><tr style="background:#f8fafc;color:#64748b;border-bottom:1px solid #e2e8f0;">
             <th style="padding:10px 8px;text-align:center;width:30px;">#</th>
             <th style="padding:10px 12px;text-align:left;">項名稱</th>
@@ -1291,11 +1311,12 @@
                     <option value="cubic" ${_rsmTypeFilter === 'cubic' ? 'selected' : ''}>三階</option>
                 </select>
             </th>
-            <th onclick="window._rsmToggleSort('coefficient')" style="padding:10px 8px;text-align:center;width:160px;cursor:pointer;user-select:none;color:#1e293b;">相關係數 ${sortIcon('coefficient')}</th>
+            <th onclick="window._rsmToggleSort('coefficient')" style="padding:10px 8px;text-align:center;width:120px;cursor:pointer;user-select:none;color:#1e293b;">相關係數 r ${sortIcon('coefficient')}</th>
+            <th onclick="window._rsmToggleSort('lasso_coef')" style="padding:10px 8px;text-align:center;width:110px;cursor:pointer;user-select:none;color:#7c3aed;" title="Lasso 標準化係數：控制其他 term 後的淨貢獻，可跨 term 直接比較">Lasso β ${sortIcon('lasso_coef')}${hasLasso ? '' : ' <span style="font-size:9px;color:#94a3b8;">(計算中)</span>'}</th>
         </tr></thead><tbody id="rsm-table-tbody">`;
 
         if (terms.length === 0) {
-            html += `<tr><td colspan="4" style="text-align:center;padding:20px;color:#94a3b8;">沒有符合此類型的顯著項</td></tr>`;
+            html += `<tr><td colspan="5" style="text-align:center;padding:20px;color:#94a3b8;">沒有符合此類型的顯著項</td></tr>`;
         }
 
         terms.forEach((t, idx) => {
@@ -1304,17 +1325,30 @@
             const coefBg = t.coefficient >= 0
                 ? `linear-gradient(to right, transparent ${100 - coefPct}%, ${coefColor} ${100 - coefPct}%)`
                 : `linear-gradient(to left, transparent ${100 - coefPct}%, ${coefColor} ${100 - coefPct}%)`;
+            const lc = t.lasso_coef;
+            const lcVal = lc != null ? lc : null;
+            const lcPct = lcVal != null ? Math.min(Math.abs(lcVal) / maxAbsLasso * 100, 100) : 0;
+            const lcColor = lcVal == null ? '#94a3b8' : lcVal > 0 ? '#7c3aed' : lcVal < 0 ? '#db2777' : '#94a3b8';
+            const lcBg = lcVal != null && lcVal !== 0
+                ? (lcVal > 0
+                    ? `linear-gradient(to right, transparent ${100 - lcPct}%, ${lcColor}33 ${100 - lcPct}%)`
+                    : `linear-gradient(to left, transparent ${100 - lcPct}%, ${lcColor}33 ${100 - lcPct}%)`)
+                : 'none';
+            const lcText = lcVal == null ? '—' : lcVal === 0 ? '<span style="color:#cbd5e1;">0</span>' : `${_fmtSlope(lcVal)}`;
             const icon = typeIcons[t.type] || '';
-            const corrStyle = Math.abs(t.correlation) > 0.5 ? 'color:#dc2626;font-weight:700;' : '';
             const shortName = _truncateName(t.name, 25);
 
-            html += `<tr onclick='window._rsmRowClick(this, ${JSON.stringify(t).replace(/'/g, "&apos;")})' class="rsm-table-row" tabindex="0" style="border-bottom:1px solid #f1f5f9;cursor:pointer;transition:background 0.2s; outline:none;">
+            html += `<tr onclick='window._rsmRowClick(this, ${JSON.stringify(t).replace(/'/g, "&apos;")})' class="rsm-table-row" tabindex="0" style="border-bottom:1px solid #f1f5f9;cursor:pointer;transition:background 0.2s; outline:none;${lcVal === 0 ? 'opacity:0.65;' : ''}">
                 <td style="padding:8px 8px;text-align:center;color:#94a3b8;font-size:10px;">${idx + 1}</td>
                 <td style="padding:8px 12px;color:#1e293b;font-weight:500;" title="${t.name}">${shortName.replace(/²/g, '<span style="color:#f97316;font-weight:700;">²</span>').replace(/³/g, '<span style="color:#a855f7;font-weight:700;">³</span>')}</td>
                 <td style="padding:8px 8px;font-size:11px;color:#64748b;">${icon} ${t.type === 'main' ? '主效應' : t.type === 'interaction' ? '交互' : t.type === 'quadratic' ? '二階' : '三階'}</td>
                 <td style="padding:8px 8px;"><div style="display:flex;align-items:center;gap:6px;">
-                    <span style="font-family:monospace;font-size:11px;min-width:55px;text-align:right;">${t.coefficient.toFixed(4)}</span>
+                    <span style="font-family:monospace;font-size:11px;min-width:52px;text-align:right;">${t.coefficient.toFixed(4)}</span>
                     <div style="flex:1;height:6px;border-radius:3px;background:${coefBg};"></div>
+                </div></td>
+                <td style="padding:8px 8px;"><div style="display:flex;align-items:center;gap:6px;">
+                    <span style="font-family:monospace;font-size:11px;min-width:52px;text-align:right;color:${lcColor};">${lcText}</span>
+                    <div style="flex:1;height:6px;border-radius:3px;background:${lcBg};"></div>
                 </div></td>
             </tr>`;
         });
@@ -1381,6 +1415,14 @@
 
     // ============ UI INTERACTION HELPERS ============
 
+    function _fmtSlope(v) {
+        const a = Math.abs(v);
+        if (a === 0) return '0';
+        const sign = v >= 0 ? '+' : '';
+        if (a >= 0.001) return sign + v.toFixed(4);
+        return sign + v.toExponential(2);
+    }
+
     function _truncateName(name, maxLen) {
         if (!name || name.length <= maxLen) return name;
         // if it's an interaction (contains ' × '), split and truncate each part
@@ -1410,12 +1452,13 @@
             return;
         }
         
-        let csvContent = "項名稱,類型,相關係數\n";
-        
+        let csvContent = "項名稱,類型,相關係數 r,Lasso β\n";
+
         window._rsmDisplayedTerms.forEach(t => {
             const name = String(t.name).replace(/"/g, '""');
             const typeText = t.type === 'main' ? '主效應' : t.type === 'interaction' ? '交互' : t.type === 'quadratic' ? '二階' : '三階';
-            csvContent += `"${name}","${typeText}",${t.coefficient.toFixed(6)}\n`;
+            const lc = (t.lasso_coef != null) ? t.lasso_coef.toFixed(6) : '';
+            csvContent += `"${name}","${typeText}",${t.coefficient.toFixed(6)},${lc}\n`;
         });
         
         const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -1506,11 +1549,15 @@
             _drawScatter(data, term);
             
             if (statsEl) {
+                const lcStatVal = term.lasso_coef != null ? term.lasso_coef : null;
+                const slopeHtml = lcStatVal != null
+                    ? `<span>Lasso β: <b style="color:${lcStatVal > 0 ? '#7c3aed' : lcStatVal < 0 ? '#db2777' : '#94a3b8'};">${lcStatVal === 0 ? '0 (pruned)' : _fmtSlope(lcStatVal)}</b></span>`
+                    : '';
                 statsEl.innerHTML = `
-                    <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:4px;">
                         <span>觀測數: <b>${data.n}</b></span>
-                        <span>係數: <b style="color:${term.coefficient >= 0 ? '#3b82f6' : '#f97316'};">${term.coefficient.toFixed(4)}</b></span>
-                        <span>相關係數: <b style="color:${Math.abs(term.correlation) > 0.5 ? '#dc2626' : '#64748b'};">${term.correlation.toFixed(4)}</b></span>
+                        <span>相關係數 r: <b style="color:${Math.abs(term.correlation) > 0.5 ? '#dc2626' : '#64748b'};">${term.correlation.toFixed(4)}</b></span>
+                        ${slopeHtml}
                     </div>
                 `;
             }

@@ -3,9 +3,9 @@
     "files": true,
     "charts": true,
     "data_analysis": true,
-    "model_training": true,
-    "dashboard": true,
-    "ai": true
+    "model_training": false,
+    "dashboard": false,
+    "ai": false
   },
   "data_analysis_tools": {
     "pivot": true,
@@ -14,9 +14,94 @@
     "gb": true,
     "maineffect": true,
     "rsm": true,
-    "association": true
+    "association": true,
+    "notebook": true
   },
   "advanced": {
-    "download": false
+    "download": true,
+    "llm_image_limit": 8
+  },
+  "llm": {
+    "_comment": "LLM 服務位址與模型名稱（改完重啟 server）",
+    "api_url": "http://10.10.20.118:8000/v1/chat/completions",
+    "model": "/models/Qwen3.5-27B-AWQ"
+  },
+  "storage": {
+    "base_dir": "workspace",
+    "dashboard_dir": "monitor_dashboard",
+    "api_port": 8001
+  },
+  "train": {
+    "_comment": "通用訓練停止準則",
+    "stable_threshold": 0.001,
+    "required_stable_count": 5,
+    "max_epochs": 50,
+    "n_steps": 500,
+    "n_steps_per_epoch": 500
+  },
+  "algo": {
+    "_comment": "強化學習演算法預設值",
+    "default": "IQL",
+    "IQL": {
+      "batch_size": 1024,
+      "actor_learning_rate": 0.0003,
+      "critic_learning_rate": 0.0003,
+      "expectile": 0.8,
+      "weight_temp": 0.5,
+      "gamma": 0.99,
+      "tau": 0.01,
+      "observation_scaler": "Standard"
+    },
+    "PPO": {
+      "batch_size": 64,
+      "learning_rate": 0.0003,
+      "clip_range": 0.2,
+      "ent_coef": 0.01,
+      "gamma": 0.99
+    }
+  },
+  "pred_algo": {
+    "_comment": "預測演算法預設值",
+    "default": "XGBoost",
+    "XGBoost": {
+      "max_depth": 6,
+      "learning_rate": 0.1,
+      "subsample": 0.8,
+      "colsample_bytree": 0.8,
+      "n_estimators": 100,
+      "early_stop": 10
+    },
+    "RandomForest": {
+      "n_estimators": 100,
+      "max_depth": 10,
+      "min_samples_split": 2
+    },
+    "LightGBM": {
+      "num_leaves": 31,
+      "learning_rate": 0.05,
+      "feature_fraction": 0.9
+    }
+  },
+  "shap_smoothing_window": 10,
+  "rag": {
+    "_comment_model": "可選模型（改完重啟 server，並重新上傳所有知識文件）",
+    "_comment_embedding_url": "外部 TEI embedding 服務位址（留空則使用本機 sentence-transformers）",
+    "embedding_url": "http://10.10.20.214:8080",
+    "_models": {
+      "cpu_fast": "paraphrase-multilingual-MiniLM-L12-v2",
+      "cpu_better": "intfloat/multilingual-e5-base",
+      "cpu_best": "BAAI/bge-m3",
+      "gpu_best": "BAAI/bge-m3"
+    },
+    "embedding_model": "intfloat/multilingual-e5-large",
+    "_comment_gpu": "有 GPU 時設 true，embedding 速度提升 10-50x",
+    "use_gpu": false,
+    "_comment_threshold": "相似度門檻 0~1，越高越嚴格（建議 0.60~0.70）",
+    "similarity_threshold": 0.65,
+    "_comment_top_k": "每次查詢最多回傳幾筆",
+    "top_k": 3,
+    "_comment_collection": "換模型時請同步更新 collection_prefix，避免舊向量混用",
+    "collection_prefix": "kbv4",
+    "chroma_path": "workspace/rag_index"
   }
 }

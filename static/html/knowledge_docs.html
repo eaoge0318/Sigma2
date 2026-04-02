@@ -1,0 +1,1673 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>知識文件庫</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f8fafc; color: #1e293b; }
+
+  /* ── Header ── */
+  .kd-header {
+    background: #fff;
+    border-bottom: 1px solid #e2e8f0;
+    padding: 14px 24px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  .kd-header-title { font-size: 16px; font-weight: 700; color: #1e293b; }
+  .kd-header-sub { font-size: 12px; color: #94a3b8; margin-top: 1px; }
+  .kd-header-right { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+
+  /* ── Search ── */
+  .kd-search-bar {
+    background: #fff;
+    border-bottom: 1px solid #e2e8f0;
+    padding: 12px 24px;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }
+  .kd-search-input {
+    flex: 1;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-size: 14px;
+    outline: none;
+    transition: border 0.15s;
+  }
+  .kd-search-input:focus { border-color: #6366f1; }
+  .kd-threshold-label { font-size: 12px; color: #64748b; white-space: nowrap; }
+  .kd-threshold-input {
+    width: 60px;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 6px 8px;
+    font-size: 13px;
+    text-align: center;
+  }
+
+  /* ── Buttons ── */
+  .btn {
+    border: none;
+    border-radius: 8px;
+    padding: 8px 16px;
+    font-size: 13px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: all 0.15s;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .btn-primary { background: #6366f1; color: #fff; }
+  .btn-primary:hover { background: #4f46e5; }
+  .btn-outline { background: #fff; color: #6366f1; border: 1px solid #c7d2fe; }
+  .btn-outline:hover { background: #eef2ff; }
+  .btn-danger { background: #fff; color: #ef4444; border: 1px solid #fecaca; }
+  .btn-danger:hover { background: #fef2f2; }
+  .btn-sm { padding: 5px 11px; font-size: 12px; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* ── Layout ── */
+  .kd-body { display: flex; height: calc(100vh - 113px); }
+  .kd-sidebar {
+    width: 280px;
+    border-right: 1px solid #e2e8f0;
+    background: #fff;
+    overflow-y: auto;
+    flex-shrink: 0;
+  }
+  .kd-main { flex: 1; min-width: 0; overflow: hidden; display: flex; flex-direction: column; }
+  #kd-main-content { flex: 1; overflow: hidden; display: flex; flex-direction: column; min-height: 0; }
+
+  /* ── Source list ── */
+  .kd-sidebar-header {
+    padding: 12px 16px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #94a3b8;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    border-bottom: 1px solid #f1f5f9;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .kd-sidebar-tools {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border-bottom: 1px solid #e2e8f0;
+    background: linear-gradient(180deg, #fafcff 0%, #f8fbff 100%);
+  }
+  .kd-sidebar-tools .btn {
+    padding: 7px 12px;
+    font-size: 12px;
+  }
+  .kd-source-item {
+    padding: 10px 16px;
+    border-bottom: 1px solid #f8fafc;
+    cursor: pointer;
+    transition: background 0.12s;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .kd-source-item:hover { background: #f8fafc; }
+  .kd-source-item.active { background: #eef2ff; }
+  .kd-source-icon { font-size: 16px; }
+  .kd-source-info { flex: 1; min-width: 0; }
+  .kd-source-name { font-size: 13px; font-weight: 500; color: #334155; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .kd-source-meta { font-size: 11px; color: #94a3b8; margin-top: 1px; }
+  .kd-source-del { color: #f87171; font-size: 14px; padding: 2px 4px; border-radius: 4px; opacity: 0; transition: opacity 0.12s; }
+  .kd-source-item:hover .kd-source-del { opacity: 1; }
+  .kd-folder-row {
+    padding: 6px 10px 5px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #4f46e5;
+    background: #f5f3ff;
+    border-bottom: 1px solid #ede9fe;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    user-select: none;
+  }
+  .kd-folder-row:hover { background: #ede9fe; }
+  .kd-folder-children.collapsed { display: none; }
+  .kd-fold-act {
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    border: 1px solid #c7d2fe;
+    background: #eef2ff;
+    color: #4f46e5;
+    cursor: pointer;
+    line-height: 1.6;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .kd-fold-act:hover { background: #e0e7ff; border-color: #a5b4fc; }
+  .kd-source-item { padding-left: 24px; }
+  .kd-move-btn {
+    font-size: 11px; color: #a5b4fc; padding: 1px 4px;
+    border-radius: 3px; opacity: 0; cursor: pointer;
+    border: none; background: none; margin-left: 2px;
+  }
+  .kd-source-item:hover .kd-move-btn { opacity: 1; }
+  /* 移動選單 */
+  .kd-move-menu {
+    position: fixed; background: #fff; border: 1px solid #e2e8f0;
+    border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+    z-index: 999; min-width: 160px; padding: 4px 0; font-size: 13px;
+  }
+  .kd-move-menu-item {
+    padding: 7px 14px; cursor: pointer; color: #334155;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .kd-move-menu-item:hover { background: #f1f5f9; }
+
+  /* ── Chunks ── */
+  .kd-chunk-card {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 16px;
+    margin-bottom: 12px;
+    transition: box-shadow 0.15s;
+  }
+  .kd-chunk-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+  .kd-chunk-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+  .kd-chunk-badge {
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+  }
+  .badge-notebook { background: #e0e7ff; color: #4338ca; }
+  .badge-document { background: #dcfce7; color: #16a34a; }
+  .kd-chunk-source { font-size: 12px; color: #64748b; }
+  .kd-chunk-score { margin-left: auto; font-size: 11px; color: #94a3b8; }
+  .kd-chunk-content {
+    font-size: 13px;
+    color: #334155;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    max-height: 150px;
+    overflow-y: auto;
+    background: #f8fafc;
+    border-radius: 6px;
+    padding: 10px 12px;
+  }
+  .kd-chunk-footer {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+    justify-content: flex-end;
+  }
+
+  /* ── PDF Detail: two-panel ── */
+  .kd-detail-wrap {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .kd-text-panel {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    border-right: 1px solid #e2e8f0;
+    display: flex;
+    flex-direction: column;
+  }
+  .kd-image-panel {
+    width: 320px;
+    flex-shrink: 0;
+    overflow-y: auto;
+    min-height: 0;
+    padding: 12px;
+    background: #f8fafc;
+  }
+  .kd-image-panel-header {
+    font-size: 11px;
+    font-weight: 600;
+    color: #94a3b8;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+  .kd-image-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .kd-image-item {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: box-shadow 0.15s;
+  }
+  .kd-image-item:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.10); }
+  .kd-image-item img {
+    width: 100%;
+    display: block;
+    object-fit: contain;
+    max-height: 200px;
+    background: #f1f5f9;
+  }
+  .kd-image-item-label {
+    font-size: 10px;
+    color: #94a3b8;
+    padding: 4px 8px;
+  }
+  .kd-image-no-data {
+    text-align: center;
+    padding: 30px 10px;
+    color: #94a3b8;
+    font-size: 12px;
+  }
+  /* 圖片燈箱 */
+  .kd-lightbox {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.82);
+    z-index: 300;
+    align-items: center;
+    justify-content: center;
+  }
+  .kd-lightbox.open { display: flex; }
+  .kd-lightbox img { max-width: 90vw; max-height: 90vh; border-radius: 8px; }
+  .kd-lightbox-close {
+    position: fixed; top: 16px; right: 20px;
+    color: #fff; font-size: 28px; cursor: pointer;
+    background: none; border: none; line-height: 1;
+  }
+
+  /* ── Edit modal ── */
+  .kd-modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.4);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+  }
+  .kd-modal-overlay.open { display: flex; }
+  .kd-modal {
+    background: #fff;
+    border-radius: 12px;
+    padding: 24px;
+    width: 820px;
+    max-width: 95vw;
+    max-height: 88vh;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+  }
+  .kd-modal-title { font-size: 15px; font-weight: 700; }
+  .kd-modal-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .kd-modal-head-main {
+    min-width: 0;
+    flex: 1;
+  }
+  .kd-modal-textarea {
+    flex: 1;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 12px;
+    font-size: 13px;
+    font-family: inherit;
+    resize: vertical;
+    min-height: 200px;
+    outline: none;
+  }
+  .kd-modal-textarea:focus { border-color: #6366f1; }
+  .kd-modal-footer { display: flex; gap: 8px; justify-content: flex-end; }
+  .kd-modal-subtitle { font-size: 12px; color: #94a3b8; margin-top: 3px; line-height: 1.5; }
+  .kd-modal-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #64748b;
+    margin-bottom: -6px;
+  }
+  .kd-settings-box {
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    background: #fafcff;
+    padding: 14px;
+    display: grid;
+    gap: 12px;
+  }
+  .kd-settings-pop {
+    position: absolute;
+    top: 52px;
+    right: 24px;
+    width: 320px;
+    max-width: calc(100% - 48px);
+    z-index: 5;
+    box-shadow: 0 14px 34px rgba(15, 23, 42, 0.16);
+  }
+  .kd-settings-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #334155;
+  }
+  .kd-settings-body {
+    display: grid;
+    gap: 12px;
+  }
+  .kd-setting-row {
+    display: grid;
+    gap: 6px;
+  }
+  .kd-modal-number {
+    width: 140px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 13px;
+    outline: none;
+  }
+  .kd-modal-number:focus { border-color: #6366f1; }
+  .kd-gear-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+    background: #f8fafc;
+    color: #64748b;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background .15s, border-color .15s, color .15s;
+  }
+  .kd-gear-btn:hover { background: #eef2ff; border-color: #c7d2fe; color: #6366f1; }
+  .kd-gear-btn.active { background: #eef2ff; border-color: #a5b4fc; color: #6366f1; }
+  .kd-search-results {
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    background: #f8fafc;
+    max-height: 240px;
+    overflow-y: auto;
+  }
+  .kd-search-result {
+    padding: 12px 14px;
+    border-bottom: 1px solid #e2e8f0;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .kd-search-result:last-child { border-bottom: none; }
+  .kd-search-result:hover { background: #eef2ff; }
+  .kd-search-result.active { background: #eef2ff; box-shadow: inset 0 0 0 1px #c7d2fe; }
+  .kd-search-result-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #334155;
+    word-break: break-word;
+  }
+  .kd-search-result-meta {
+    margin-top: 6px;
+    font-size: 11px;
+    color: #64748b;
+    word-break: break-all;
+  }
+  .kd-search-result-badge {
+    display: inline-block;
+    margin-right: 8px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: #e0e7ff;
+    color: #4338ca;
+    font-weight: 600;
+  }
+  .kd-search-result-host {
+    margin-top: 6px;
+    font-size: 11px;
+    color: #94a3b8;
+  }
+  .kd-preview-box {
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    background: #fff;
+    min-height: 220px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .kd-preview-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px;
+    border-bottom: 1px solid #e2e8f0;
+    background: #fafcff;
+  }
+  .kd-preview-title {
+    flex: 1;
+    min-width: 0;
+    font-size: 13px;
+    font-weight: 600;
+    color: #334155;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .kd-preview-frame {
+    width: 100%;
+    min-height: 280px;
+    border: none;
+    background: #fff;
+    display: block;
+  }
+  .kd-preview-fallback {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 32px 24px;
+    color: #94a3b8;
+    font-size: 13px;
+    text-align: center;
+    background: #f8fafc;
+    min-height: 200px;
+  }
+  .kd-preview-fallback svg { color: #cbd5e1; }
+  .kd-preview-empty {
+    padding: 28px;
+    color: #94a3b8;
+    text-align: center;
+    font-size: 13px;
+  }
+
+  /* ── States ── */
+  .kd-empty {
+    text-align: center;
+    padding: 60px 20px;
+    color: #94a3b8;
+  }
+  .kd-empty-icon { font-size: 40px; margin-bottom: 12px; }
+  .kd-empty-text { font-size: 14px; }
+  .kd-loading { text-align: center; padding: 40px; color: #94a3b8; font-size: 14px; }
+  .kd-toast {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    background: #1e293b;
+    color: #fff;
+    padding: 10px 18px;
+    border-radius: 8px;
+    font-size: 13px;
+    opacity: 0;
+    transform: translateY(8px);
+    transition: all 0.2s;
+    z-index: 200;
+    pointer-events: none;
+  }
+  .kd-toast.show { opacity: 1; transform: translateY(0); }
+
+  /* ── Upload queue (sidebar inline) ── */
+  .kd-file-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 12px;
+    border-bottom: 1px solid #f1f5f9;
+    font-size: 12px;
+    position: relative;
+    overflow: hidden;
+  }
+  .kd-file-row:last-child { border-bottom: none; }
+  .kd-file-icon { font-size: 14px; flex-shrink: 0; }
+  .kd-file-info { flex: 1; min-width: 0; }
+  .kd-file-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #334155; font-size: 12px; }
+  .kd-file-size { font-size: 10px; color: #94a3b8; }
+  .kd-file-status { font-size: 11px; white-space: nowrap; }
+  .kd-file-cancel { cursor: pointer; color: #cbd5e1; font-size: 13px; padding: 2px 3px; border-radius: 3px; flex-shrink: 0; line-height: 1; border: none; background: none; }
+  .kd-file-cancel:hover { color: #ef4444; background: #fef2f2; }
+  @keyframes kd-progress { 0%{left:-40%} 100%{left:110%} }
+  .kd-progress-anim { position:absolute;bottom:0;left:0;right:0;height:2px;overflow:hidden;background:#e0e7ff; }
+  .kd-progress-anim::after { content:'';position:absolute;top:0;bottom:0;width:40%;background:linear-gradient(90deg,transparent,#6366f1,transparent);animation:kd-progress 1.4s ease-in-out infinite; }
+  @keyframes kd-spin-anim { 0%{opacity:1} 50%{opacity:0.3} 100%{opacity:1} }
+  .kd-spin { display:inline-block;animation:kd-spin-anim 1.2s ease-in-out infinite; }
+  /* Drag over sidebar */
+  .kd-drag-over { background: #eef2ff !important; outline: 2px dashed #6366f1; outline-offset: -4px; }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="kd-header">
+  <span style="font-size:22px;">📚</span>
+  <div>
+    <div class="kd-header-title">知識文件庫</div>
+    <div class="kd-header-sub">歷史案例、筆記本、研究資料</div>
+  </div>
+  <div class="kd-header-right"></div>
+</div>
+
+<!-- Hidden file input -->
+<input type="file" id="kd-file-input" multiple accept=".txt,.pdf,.docx,.md,.pptx,.ppt,.xlsx,.xls,.csv" style="display:none" onchange="kdHandleFiles(this.files)">
+
+<!-- Search Bar (full width, below header) -->
+<div class="kd-search-bar">
+  <input class="kd-search-input" id="kd-search-input" placeholder="輸入關鍵字搜尋歷史資料…" onkeydown="if(event.key==='Enter') kdSearch()">
+  <span class="kd-threshold-label">相似度 ≥</span>
+  <input class="kd-threshold-input" id="kd-threshold" type="number" value="0.4" min="0.1" max="1" step="0.05">
+  <button class="btn btn-primary" onclick="kdSearch()">🔍 搜尋</button>
+  <button class="btn btn-outline" onclick="kdShowAll()">全部顯示</button>
+</div>
+
+<!-- Body -->
+<div class="kd-body">
+
+  <!-- Sidebar: Source list -->
+  <div class="kd-sidebar"
+    ondragover="event.preventDefault(); this.classList.add('kd-drag-over')"
+    ondragleave="this.classList.remove('kd-drag-over')"
+    ondrop="this.classList.remove('kd-drag-over'); kdHandleDrop(event)">
+    <div class="kd-sidebar-header">
+      <span>來源清單</span>
+      <span id="kd-source-count" style="font-size:11px;font-weight:400;color:#94a3b8;margin-left:4px;"></span>
+      <span style="flex:1;"></span>
+      <button onclick="kdOpenUpload()" style="border:1px solid #e2e8f0;background:#f8fafc;cursor:pointer;color:#64748b;font-size:11px;padding:2px 8px;border-radius:5px;line-height:1.6;" onmouseover="this.style.borderColor='#6366f1';this.style.color='#6366f1'" onmouseout="this.style.borderColor='#e2e8f0';this.style.color='#64748b'">上傳</button>
+      <button onclick="kdNewFolder()" title="新增資料夾" style="border:1px solid #e2e8f0;background:#f8fafc;cursor:pointer;color:#64748b;font-size:11px;padding:2px 8px;border-radius:5px;line-height:1.6;" onmouseover="this.style.borderColor='#6366f1';this.style.color='#6366f1'" onmouseout="this.style.borderColor='#e2e8f0';this.style.color='#64748b'">📁+</button>
+      <button onclick="kdLoadSources()" title="重新整理" style="border:none;background:none;cursor:pointer;color:#94a3b8;font-size:14px;padding:2px 4px;border-radius:4px;line-height:1;" onmouseover="this.style.color='#6366f1'" onmouseout="this.style.color='#94a3b8'">↺</button>
+    </div>
+
+    <div class="kd-sidebar-tools">
+      <button class="btn btn-outline" onclick="kdOpenImportWeb()">外部資料搜尋</button>
+    </div>
+
+    <!-- Upload Queue (inline, only visible when uploading) -->
+    <div id="kd-upload-queue" style="display:none;border-bottom:1px solid #e2e8f0;">
+      <div style="padding:8px 12px 4px;font-size:11px;font-weight:600;color:#6366f1;letter-spacing:0.04em;">⬆ 上傳佇列</div>
+      <div style="padding:4px 12px 6px;display:flex;align-items:center;gap:6px;">
+        <span style="font-size:11px;color:#64748b;white-space:nowrap;">📁 資料夾</span>
+        <select id="kd-folder-input" style="flex:1;border:1px solid #e2e8f0;border-radius:6px;padding:4px 8px;font-size:12px;outline:none;color:#334155;background:#fff;cursor:pointer;">
+          <option value="">未分類</option>
+        </select>
+      </div>
+      <div id="kd-file-queue" style="display:flex;flex-direction:column;gap:0;"></div>
+    </div>
+
+    <div id="kd-source-list">
+      <div class="kd-loading">載入中…</div>
+    </div>
+  </div>
+
+  <!-- Main: Chunks -->
+  <div class="kd-main" id="kd-main">
+    <div id="kd-main-content">
+      <div class="kd-empty">
+        <div class="kd-empty-icon">📋</div>
+        <div class="kd-empty-text">從左側選擇來源，或輸入關鍵字搜尋</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Lightbox -->
+<div class="kd-lightbox" id="kd-lightbox" onclick="kdCloseLightbox()">
+  <button class="kd-lightbox-close" onclick="kdCloseLightbox()">✕</button>
+  <img id="kd-lightbox-img" src="" alt="">
+</div>
+
+<!-- Edit Modal -->
+<div class="kd-modal-overlay" id="kd-edit-modal">
+  <div class="kd-modal">
+    <div class="kd-modal-title">✏️ 編輯內容</div>
+    <textarea class="kd-modal-textarea" id="kd-edit-textarea"></textarea>
+    <div style="font-size:11px;color:#94a3b8;" id="kd-edit-meta"></div>
+    <div class="kd-modal-footer">
+      <button class="btn btn-outline" onclick="kdCloseEdit()">取消</button>
+      <button class="btn btn-primary" onclick="kdSaveEdit()">儲存</button>
+    </div>
+  </div>
+</div>
+
+<!-- External Search Modal -->
+<div class="kd-modal-overlay" id="kd-web-search-modal">
+  <div class="kd-modal">
+    <div class="kd-modal-head">
+      <div class="kd-modal-head-main">
+        <div class="kd-modal-title">外部資料搜尋</div>
+        <div class="kd-modal-subtitle">輸入主題描述，系統會優先搜尋指定網址，必要時再放寬到公開網頁。</div>
+      </div>
+      <button class="kd-gear-btn" id="kd-gear-btn" onclick="kdToggleWebSettings()" title="搜尋設定">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+      </button>
+    </div>
+    <div class="kd-modal-label">搜尋主題</div>
+    <textarea class="kd-modal-textarea" id="kd-web-query" style="min-height:160px;"></textarea>
+    <div class="kd-settings-box kd-settings-pop" id="kd-web-settings" style="display:none;">
+      <div class="kd-settings-title">設定</div>
+      <div class="kd-settings-body">
+        <div class="kd-setting-row">
+          <div class="kd-modal-label">優先網址</div>
+          <textarea class="kd-modal-textarea" id="kd-web-domains" style="min-height:100px;" placeholder="每行一個網域，例如：arxiv.org&#10;nature.com&#10;sciencedirect.com"></textarea>
+        </div>
+        <div class="kd-setting-row">
+          <div class="kd-modal-label">下載數量</div>
+          <input class="kd-modal-number" id="kd-web-max-results" type="number" min="1" max="10" step="1" value="5">
+        </div>
+      </div>
+    </div>
+    <div class="kd-modal-label">搜尋結果</div>
+    <div class="kd-search-results" id="kd-web-results">
+      <div class="kd-loading" style="padding:24px;">尚未搜尋</div>
+    </div>
+    <div class="kd-modal-label">預覽</div>
+    <div class="kd-preview-box" id="kd-web-preview">
+      <div class="kd-preview-empty">點擊搜尋結果後可在這裡預覽；若網站禁止嵌入，可改用新分頁開啟。</div>
+    </div>
+    <div class="kd-modal-footer">
+      <button class="btn btn-outline" onclick="kdCloseImportWeb()">取消</button>
+      <button class="btn btn-primary" onclick="kdImportWeb()">搜尋</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="kd-toast" id="kd-toast"></div>
+
+<script>
+let _sources = [];
+let _currentChunks = [];
+let _editingChunkId = null;
+let _activeSource = null;
+let _kdWebResults = [];
+let _kdSelectedWebResult = null;
+let _kdWebSettingsOpen = false;
+const _kdWebSearchDraftKey = 'kd_web_search_query';
+const _kdWebDomainDraftKey = 'kd_web_search_domains';
+const _kdWebMaxResultsKey = 'kd_web_max_results';
+const _kdDefaultWebDomains = [
+  'arxiv.org',
+  'nature.com',
+  'sciencedirect.com',
+].join('\n');
+
+// ── User ID ──
+const _kdUserId = new URLSearchParams(location.search).get('user_id') || 'default';
+
+// ── Init ──
+window.addEventListener('DOMContentLoaded', () => {
+  kdLoadSources();
+});
+
+// ── Toast ──
+function kdToast(msg, duration = 2500) {
+  const el = document.getElementById('kd-toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), duration);
+}
+
+
+// ── 危險區開關 ──
+window._kdDangerOn = false;
+function kdToggleDanger() {
+  window._kdDangerOn = !window._kdDangerOn;
+  const btn = document.getElementById('kd-clear-all-btn');
+  const toggle = document.getElementById('kd-danger-toggle');
+  if (btn) btn.style.display = window._kdDangerOn ? '' : 'none';
+  if (toggle) toggle.style.color = window._kdDangerOn ? '#ef4444' : '#cbd5e1';
+}
+
+async function kdClearAll() {
+  const uid = new URLSearchParams(window.location.search).get('user_id') || 'default';
+  const confirmed = confirm(`⚠️ 確定要清除全部知識庫資料嗎？\n\nuser: ${uid}\n\n此操作無法復原，所有文件與筆記紀錄都會被刪除。`);
+  if (!confirmed) return;
+  try {
+    const resp = await fetch(`/api/rag/all?user_id=${encodeURIComponent(uid)}`, { method: 'DELETE' });
+    const data = await resp.json();
+    if (data.ok) {
+      alert(`✓ 已清除 ${data.deleted} 筆資料`);
+      kdLoadSources();
+    } else {
+      alert('清除失敗：' + (data.detail || JSON.stringify(data)));
+    }
+  } catch (e) {
+    alert('清除失敗：' + e.message);
+  }
+}
+
+// ── Load sources ──
+async function kdLoadSources() {
+  document.getElementById('kd-source-list').innerHTML = '<div class="kd-loading">載入中…</div>';
+  try {
+    const resp = await fetch(`/api/rag/documents?user_id=${encodeURIComponent(_kdUserId)}`);
+    const data = await resp.json();
+    _sources = data.items || [];
+    renderSourceList();
+    document.getElementById('kd-source-count').textContent = `${_sources.length} 個來源`;
+  } catch (e) {
+    document.getElementById('kd-source-list').innerHTML = '<div class="kd-loading" style="color:#ef4444;">載入失敗</div>';
+  }
+}
+
+let _collapsedFolders = new Set();
+
+function _getFolderList() {
+  try { return JSON.parse(localStorage.getItem('kd_folders') || '[]'); } catch { return []; }
+}
+function _saveFolderList(list) {
+  localStorage.setItem('kd_folders', JSON.stringify([...new Set(list.filter(f => f))]));
+}
+function _allFolderPaths() {
+  const s = new Set(_getFolderList());
+  for (const src of _sources) s.add(src.folder || '');
+  return [...s];
+}
+
+// ── 資料夾操作按鈕 HTML ──
+function _folderActionBtns(folderPath, fileCount) {
+  const fp = escHtml(folderPath);
+  const delBtn = folderPath !== ''
+    ? `<button class="kd-fold-act" title="刪除資料夾" style="color:#ef4444;border-color:#fecaca;background:#fff5f5;" onclick="event.stopPropagation();kdDeleteFolder('${fp}',${fileCount})">🗑</button>`
+    : '';
+  return `
+    <button class="kd-fold-act" title="上傳到此資料夾" onclick="event.stopPropagation();kdUploadTo('${fp}')">上傳</button>
+    <button class="kd-fold-act" title="新增子資料夾" onclick="event.stopPropagation();kdNewFolder('${fp}')">📁+</button>
+    ${delBtn}`;
+}
+
+// ── 文件列 ──
+function _sourceItemHtml(s, indent) {
+  const icon = s.source_type === 'notebook' ? '📓' : (s.source_type === 'web' ? '🌐' : '📄');
+  const isActive = _activeSource === s.label;
+  const displayName = s.source_name || s.label;
+  const metaLabel = s.source_type === 'notebook' ? '筆記本' : (s.source_type === 'web' ? '網頁' : '文件');
+  const metaDetail = s.source_url ? ` · ${escHtml(s.source_url)}` : ` · ${s.count} 筆`;
+  return `
+    <div class="kd-source-item ${isActive ? 'active' : ''}" style="padding-left:${indent}px" onclick="kdSelectSource('${escHtml(s.label)}')">
+      <span class="kd-source-icon">${icon}</span>
+      <div class="kd-source-info">
+        <div class="kd-source-name" title="${escHtml(displayName)}">${escHtml(displayName)}</div>
+        <div class="kd-source-meta">${metaLabel}${metaDetail}</div>
+      </div>
+      <button class="kd-move-btn" title="移至資料夾" onclick="event.stopPropagation();kdShowMoveMenu(event,'${escHtml(s.label)}')">移至</button>
+      <span class="kd-source-del" title="刪除" onclick="event.stopPropagation();kdDeleteSource('${escHtml(s.label)}')">🗑</span>
+    </div>`;
+}
+
+// ── 建立兩層樹狀結構 ──
+function _buildTree() {
+  // tree: { 'L1名': { files:[], children:{ 'L2名': { files:[] } } } }
+  const tree = { '__root__': { files: [], children: {} } };
+  const allFolders = _allFolderPaths();
+
+  // 先建空資料夾節點
+  for (const f of allFolders) {
+    if (!f) continue;
+    const parts = f.split('/');
+    const l1 = parts[0];
+    if (!tree[l1]) tree[l1] = { files: [], children: {} };
+    if (parts[1] && !tree[l1].children[parts[1]])
+      tree[l1].children[parts[1]] = { files: [] };
+  }
+
+  // 放入文件
+  for (const s of _sources) {
+    const f = s.folder || '';
+    if (!f) { tree['__root__'].files.push(s); continue; }
+    const parts = f.split('/');
+    const l1 = parts[0];
+    if (!tree[l1]) tree[l1] = { files: [], children: {} };
+    if (parts[1]) {
+      if (!tree[l1].children[parts[1]]) tree[l1].children[parts[1]] = { files: [] };
+      tree[l1].children[parts[1]].files.push(s);
+    } else {
+      tree[l1].files.push(s);
+    }
+  }
+  return tree;
+}
+
+function renderSourceList() {
+  const el = document.getElementById('kd-source-list');
+  const tree = _buildTree();
+  const l1Keys = Object.keys(tree).filter(k => k !== '__root__').sort((a,b) => a.localeCompare(b,'zh-TW'));
+  const rootFiles = tree['__root__'].files;
+
+  const hasAnything = rootFiles.length || l1Keys.length;
+  if (!hasAnything) {
+    el.innerHTML = '<div class="kd-empty" style="padding:30px 16px;"><div class="kd-empty-icon" style="font-size:28px;">📭</div><div class="kd-empty-text">尚無資料</div></div>';
+    _syncFolderDropdown(); return;
+  }
+
+  let html = '';
+
+  // L1 資料夾
+  for (const l1 of l1Keys) {
+    const node = tree[l1];
+    const collapsed = _collapsedFolders.has(l1);
+    const arrow = collapsed ? '▸' : '▾';
+    const totalCount = node.files.length + Object.values(node.children).reduce((s,c)=>s+c.files.length,0);
+    html += `
+      <div class="kd-folder-row" onclick="kdToggleFolder('${escHtml(l1)}')">
+        <span style="font-size:10px;margin-right:2px;">${arrow}</span>
+        <span style="flex:1;">📁 ${escHtml(l1)}</span>
+        <span style="font-size:10px;color:#a5b4fc;margin-right:4px;">${totalCount}</span>
+        ${_folderActionBtns(l1, totalCount)}
+      </div>
+      <div class="kd-folder-children${collapsed ? ' collapsed' : ''}">`;
+
+    // 直屬文件
+    for (const s of node.files) html += _sourceItemHtml(s, 28);
+
+    // L2 子資料夾
+    const l2Keys = Object.keys(node.children).sort((a,b) => a.localeCompare(b,'zh-TW'));
+    for (const l2 of l2Keys) {
+      const l2path = `${l1}/${l2}`;
+      const l2node = node.children[l2];
+      const l2collapsed = _collapsedFolders.has(l2path);
+      const l2arrow = l2collapsed ? '▸' : '▾';
+      html += `
+        <div class="kd-folder-row" style="padding-left:20px;background:#faf9ff;" onclick="kdToggleFolder('${escHtml(l2path)}')">
+          <span style="font-size:10px;margin-right:2px;">${l2arrow}</span>
+          <span style="flex:1;">📁 ${escHtml(l2)}</span>
+          <span style="font-size:10px;color:#a5b4fc;margin-right:4px;">${l2node.files.length}</span>
+          ${_folderActionBtns(l2path, l2node.files.length)}
+        </div>
+        <div class="kd-folder-children${l2collapsed ? ' collapsed' : ''}">`;
+      for (const s of l2node.files) html += _sourceItemHtml(s, 40);
+      html += `</div>`;
+    }
+    html += `</div>`;
+  }
+
+  // 未分類（根目錄文件）
+  if (rootFiles.length || l1Keys.length) {
+    const collapsed = _collapsedFolders.has('__root__');
+    const arrow = collapsed ? '▸' : '▾';
+    html += `
+      <div class="kd-folder-row" onclick="kdToggleFolder('__root__')">
+        <span style="font-size:10px;margin-right:2px;">${arrow}</span>
+        <span style="flex:1;">📁 未分類</span>
+        <span style="font-size:10px;color:#a5b4fc;margin-right:4px;">${rootFiles.length}</span>
+        ${_folderActionBtns('')}
+      </div>
+      <div class="kd-folder-children${collapsed ? ' collapsed' : ''}">`;
+    for (const s of rootFiles) html += _sourceItemHtml(s, 28);
+    html += `</div>`;
+  }
+
+  el.innerHTML = html;
+  _syncFolderDropdown();
+}
+
+function _syncFolderDropdown() {
+  const sel = document.getElementById('kd-folder-input');
+  if (!sel) return;
+  const cur = sel.value;
+  const folders = _allFolderPaths().filter(f => f).sort();
+  sel.innerHTML = '<option value="">未分類</option>' +
+    folders.map(f => `<option value="${escHtml(f)}" ${cur===f?'selected':''}>${escHtml(f)}</option>`).join('');
+}
+
+function kdToggleFolder(folder) {
+  if (_collapsedFolders.has(folder)) _collapsedFolders.delete(folder);
+  else _collapsedFolders.add(folder);
+  renderSourceList();
+}
+
+// 新增資料夾（parentPath='' 表示根層，否則建子資料夾）
+function kdNewFolder(parentPath) {
+  const label = parentPath ? '請輸入子資料夾名稱：' : '請輸入資料夾名稱：';
+  const name = prompt(label);
+  if (!name || !name.trim()) return;
+  const fullPath = parentPath ? `${parentPath}/${name.trim()}` : name.trim();
+  const list = _getFolderList();
+  list.push(fullPath);
+  _saveFolderList(list);
+  renderSourceList();
+  kdToast(`✓ 資料夾「${fullPath}」已建立`);
+}
+
+// 刪除資料夾
+function kdDeleteFolder(folderPath, fileCount) {
+  if (fileCount > 0) {
+    kdToast(`⚠ 請先移動或刪除資料夾內的 ${fileCount} 個檔案`);
+    return;
+  }
+  // 從 localStorage 移除（包含所有以此為前綴的子資料夾）
+  const list = _getFolderList().filter(f => f !== folderPath && !f.startsWith(folderPath + '/'));
+  _saveFolderList(list);
+  _collapsedFolders.delete(folderPath);
+  renderSourceList();
+  kdToast(`✓ 資料夾「${folderPath}」已刪除`);
+}
+
+// 點資料夾旁的上傳按鈕 → 開檔案選擇器並預設資料夾
+function kdUploadTo(folderPath) {
+  const sel = document.getElementById('kd-folder-input');
+  if (sel) {
+    // 確保 option 存在
+    if (![...sel.options].find(o => o.value === folderPath)) {
+      const opt = document.createElement('option');
+      opt.value = folderPath; opt.textContent = folderPath || '未分類';
+      sel.appendChild(opt);
+    }
+    sel.value = folderPath;
+  }
+  kdOpenUpload();
+}
+
+// 移動文件
+let _moveMenu = null;
+function kdShowMoveMenu(event, label) {
+  if (_moveMenu) { _moveMenu.remove(); _moveMenu = null; }
+  const folders = _allFolderPaths().filter(f=>f).sort();
+  const currentFolder = (_sources.find(s => s.label === label) || {}).folder || '';
+  const menu = document.createElement('div');
+  menu.className = 'kd-move-menu';
+  menu.innerHTML = `
+    <div style="padding:5px 14px 4px;font-size:10px;color:#94a3b8;font-weight:600;letter-spacing:0.05em;">移至資料夾</div>
+    <div class="kd-move-menu-item" onclick="kdMoveDocument('${escHtml(label)}','')">
+      ${currentFolder===''?'✓ ':''}📁 未分類</div>
+    ${folders.map(f=>`<div class="kd-move-menu-item" onclick="kdMoveDocument('${escHtml(label)}','${escHtml(f)}')">
+      ${currentFolder===f?'✓ ':''}${'　'.repeat(f.split('/').length-1)}📁 ${escHtml(f.split('/').pop())}</div>`).join('')}`;
+  menu.style.left = event.clientX + 'px';
+  menu.style.top  = event.clientY + 'px';
+  document.body.appendChild(menu);
+  _moveMenu = menu;
+  setTimeout(() => document.addEventListener('click', () => {
+    if (_moveMenu) { _moveMenu.remove(); _moveMenu = null; }
+  }, { once: true }), 0);
+}
+
+async function kdMoveDocument(label, folder) {
+  if (_moveMenu) { _moveMenu.remove(); _moveMenu = null; }
+  try {
+    const resp = await fetch(`/api/rag/document/folder?label=${encodeURIComponent(label)}&folder=${encodeURIComponent(folder)}&user_id=${encodeURIComponent(_kdUserId)}`, { method: 'PATCH' });
+    if (resp.ok) {
+      const data = await resp.json();
+      const src = _sources.find(s => s.label === label);
+      if (src) {
+        src.folder = folder;
+        src.label = data.new_label || src.label;  // 同步更新 label（含資料夾路徑）
+      }
+      if (_activeSource === label) _activeSource = data.new_label || label;
+      await kdLoadSources();  // 重新整理確保 label 一致
+      kdToast(`✓ 已移至「${folder || '未分類'}」`);
+    }
+  } catch(e) { kdToast('移動失敗'); }
+}
+
+// ── Select source → document detail (two-panel for PDF, directory for notebook) ──
+async function kdSelectSource(label) {
+  _activeSource = label;
+  renderSourceList();
+  document.getElementById('kd-search-input').value = '';
+  document.getElementById('kd-main-content').innerHTML = '<div class="kd-loading">載入中…</div>';
+
+  const src = _sources.find(s => s.label === label);
+  const ext = label.includes('.') ? label.rsplit ? label.split('.').pop().toLowerCase() : label.split('.').pop().toLowerCase() : '';
+  const isNotebook = src && src.source_type === 'notebook';
+  const isPdf = !isNotebook && ext === 'pdf';
+
+  try {
+    const resp = await fetch(`/api/rag/document-detail?label=${encodeURIComponent(label)}&user_id=${encodeURIComponent(_kdUserId)}`);
+    const detail = await resp.json();
+
+    if (isPdf) {
+      _currentChunks = detail.text_chunks || [];
+      renderPdfDetail(detail);
+    } else {
+      // notebook / pptx / docx / txt → 文字段落模式
+      const locLabel = (ext === 'pptx') ? '第 {n} 張投影片' : '第 {n} 頁';
+      const detailName = detail.source_name || (src && src.source_name) || label;
+      const detailUrl = detail.source_url || (src && src.source_url) || '';
+      _currentChunks = (detail.text_chunks || []).map(c => ({
+        content: c.content,
+        source_type: src ? src.source_type : 'document',
+        source_name: detailName,
+        location: detailUrl || (c.page ? `第 ${c.page} ${ext === 'pptx' ? '張投影片' : isNotebook ? '' : '頁'}` : ''),
+        score: 0,
+      }));
+      renderDirectory(_currentChunks, detailName);
+    }
+  } catch (e) {
+    document.getElementById('kd-main-content').innerHTML = '<div class="kd-loading" style="color:#ef4444;">載入失敗</div>';
+  }
+}
+
+// ── PDF 兩欄 Detail 視圖 ──
+function renderPdfDetail(detail) {
+  const main = document.getElementById('kd-main-content');
+  const images = detail.images || [];
+
+  // PDF 原檔 URL：workspace/{user_id}/docs/{folder}/{filename}
+  // file_path 可能含 "/" 分隔符，需逐段 encode 才能正確定位子目錄
+  const filePath = (detail.file_path || detail.label).split('/').map(encodeURIComponent).join('/');
+  const pdfUrl = `/workspace/${encodeURIComponent(_kdUserId)}/docs/${filePath}`;
+
+  const imgHtml = images.length ? images.map(img => `
+    <div class="kd-image-item">
+      <img src="${escHtml(img.url)}" alt="第${img.page}頁" loading="lazy" onerror="this.parentElement.style.display='none'">
+      <div class="kd-image-item-label">第 ${img.page} 頁 · ${escHtml(img.filename)}</div>
+    </div>`).join('') : '<div class="kd-image-no-data">無圖片</div>';
+
+  main.innerHTML = `
+    <div class="kd-detail-wrap">
+      <div class="kd-text-panel" style="padding:0;">
+        <iframe src="${escHtml(pdfUrl)}" style="width:100%;height:100%;border:none;" title="${escHtml(detail.label)}"></iframe>
+      </div>
+      <div class="kd-image-panel">
+        <div class="kd-image-panel-header">圖片 · ${images.length} 張</div>
+        <div class="kd-image-grid">${imgHtml}</div>
+      </div>
+    </div>`;
+}
+
+function kdToggleChunk(i) {
+  const body = document.getElementById(`kd-body-${i}`);
+  const arrow = document.getElementById(`kd-toggle-${i}`);
+  if (!body) return;
+  const open = body.style.display === 'block';
+  body.style.display = open ? 'none' : 'block';
+  if (arrow) arrow.textContent = open ? '▸' : '▾';
+}
+
+function kdExpandAll() {
+  document.querySelectorAll('[id^="kd-body-"]').forEach(el => { el.style.display = 'block'; });
+  document.querySelectorAll('[id^="kd-toggle-"]').forEach(el => { el.textContent = '▾'; });
+}
+
+function kdCollapseAll() {
+  document.querySelectorAll('[id^="kd-body-"]').forEach(el => { el.style.display = 'none'; });
+  document.querySelectorAll('[id^="kd-toggle-"]').forEach(el => { el.textContent = '▸'; });
+}
+
+// ── Lightbox ──
+function kdOpenLightbox(url) {
+  document.getElementById('kd-lightbox-img').src = url;
+  document.getElementById('kd-lightbox').classList.add('open');
+}
+function kdCloseLightbox() {
+  document.getElementById('kd-lightbox').classList.remove('open');
+  document.getElementById('kd-lightbox-img').src = '';
+}
+
+// ── Search ──
+async function kdSearch() {
+  const q = document.getElementById('kd-search-input').value.trim();
+  if (!q) return;
+  const threshold = parseFloat(document.getElementById('kd-threshold').value) || 0.4;
+  _activeSource = null;
+  renderSourceList();
+  document.getElementById('kd-main-content').innerHTML = '<div class="kd-loading">搜尋中…</div>';
+  try {
+    const resp = await fetch('/api/rag/query', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: q, top_k: 20, threshold, user_id: _kdUserId }),
+    });
+    const data = await resp.json();
+    _currentChunks = data.results || [];
+    renderChunks(_currentChunks, `搜尋：「${q}」（相似度 ≥ ${threshold}）`);
+  } catch (e) {
+    document.getElementById('kd-main-content').innerHTML = '<div class="kd-loading" style="color:#ef4444;">搜尋失敗</div>';
+  }
+}
+
+// ── Show all ──
+async function kdShowAll() {
+  _activeSource = null;
+  renderSourceList();
+  document.getElementById('kd-search-input').value = '';
+  document.getElementById('kd-main-content').innerHTML = '<div class="kd-loading">載入中…</div>';
+  try {
+    const resp = await fetch('/api/rag/query', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: '製程 分析 異常 參數', top_k: 100, threshold: 0.0, user_id: _kdUserId }),
+    });
+    const data = await resp.json();
+    _currentChunks = data.results || [];
+    renderChunks(_currentChunks, `全部資料（${_currentChunks.length} 筆）`);
+  } catch (e) {
+    document.getElementById('kd-main-content').innerHTML = '<div class="kd-loading" style="color:#ef4444;">載入失敗</div>';
+  }
+}
+
+// ── Directory mode (點來源後的目錄檢視) ──
+let _expandedIdx = new Set();
+
+function renderDirectory(chunks, label) {
+  const main = document.getElementById('kd-main-content');
+  if (!chunks.length) {
+    main.innerHTML = `<div class="kd-empty"><div class="kd-empty-icon">📭</div><div class="kd-empty-text">此來源尚無資料</div></div>`;
+    return;
+  }
+  const header = `
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+      <div style="font-size:13px;font-weight:600;color:#334155;flex:1;">${escHtml(label)}</div>
+      <span style="font-size:12px;color:#94a3b8;">${chunks.length} 則</span>
+      <button onclick="kdExpandAll()" style="border:1px solid #e2e8f0;background:#f8fafc;border-radius:6px;padding:3px 8px;font-size:11px;color:#64748b;cursor:pointer;">全展開</button>
+      <button onclick="kdCollapseAll()" style="border:1px solid #e2e8f0;background:#f8fafc;border-radius:6px;padding:3px 8px;font-size:11px;color:#64748b;cursor:pointer;">全收合</button>
+    </div>`;
+  main.innerHTML = `<div style="flex:1;overflow-y:auto;padding:16px 20px;min-height:0;">${header}<div id="kd-dir-list"></div></div>`;
+  renderDirectoryRows();
+}
+
+function renderDirectoryRows() {
+  const el = document.getElementById('kd-dir-list');
+  if (!el) return;
+  el.innerHTML = _currentChunks.map((c, i) => {
+    const badgeClass = c.source_type === 'notebook' ? 'badge-notebook' : 'badge-document';
+    const badgeLabel = c.source_type === 'notebook' ? '筆記本' : '文件';
+    const preview = (c.content || '').replace(/\n/g, ' ').slice(0, 80);
+    return `
+      <div class="kd-chunk-card" style="margin-bottom:6px;cursor:pointer;" onclick="kdToggleChunk(${i})">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:11px;color:#cbd5e1;width:20px;flex-shrink:0;">${i + 1}</span>
+          <span class="kd-chunk-badge ${badgeClass}" style="flex-shrink:0;">${badgeLabel}</span>
+          ${c.location ? `<span style="font-size:11px;color:#64748b;flex-shrink:0;">${escHtml(c.location)}</span>` : ''}
+          <span style="margin-left:auto;font-size:13px;color:#94a3b8;" id="kd-toggle-${i}">▸</span>
+        </div>
+        <div style="font-size:12px;color:#64748b;margin-top:4px;padding-left:28px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(preview)}…</div>
+        <div id="kd-body-${i}" style="display:none;margin-top:8px;border-top:1px solid #f1f5f9;padding-top:8px;">
+          <div class="kd-chunk-content">${escHtml(c.content)}</div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+// ── Search results: full expanded view ──
+function renderChunks(chunks, title) {
+  _expandedIdx.clear();
+  const main = document.getElementById('kd-main-content');
+  if (!chunks.length) {
+    main.innerHTML = `<div class="kd-empty"><div class="kd-empty-icon">🔍</div><div class="kd-empty-text">沒有找到相關資料</div></div>`;
+    return;
+  }
+  const header = `<div style="font-size:13px;color:#64748b;margin-bottom:14px;font-weight:500;">${escHtml(title)} · 共 ${chunks.length} 筆</div>`;
+  const cards = chunks.map((c, i) => {
+    const badgeClass = c.source_type === 'notebook' ? 'badge-notebook' : 'badge-document';
+    const badgeLabel = c.source_type === 'notebook' ? '筆記本' : '文件';
+    const score = c.score !== undefined ? `相似度 ${(c.score * 100).toFixed(0)}%` : '';
+    return `
+      <div class="kd-chunk-card">
+        <div class="kd-chunk-header">
+          <span class="kd-chunk-badge ${badgeClass}">${badgeLabel}</span>
+          <span class="kd-chunk-source">${escHtml(c.source_name)}${c.location ? ' · ' + escHtml(c.location) : ''}</span>
+          ${score ? `<span class="kd-chunk-score">${score}</span>` : ''}
+        </div>
+        <div class="kd-chunk-content">${escHtml(c.content)}</div>
+        <div class="kd-chunk-footer">
+          <button class="btn btn-outline btn-sm" onclick="kdOpenEdit(${i})">✏️ 編輯</button>
+          <button class="btn btn-danger btn-sm" onclick="kdDeleteChunk(${i})">🗑 刪除</button>
+        </div>
+      </div>`;
+  }).join('');
+  main.innerHTML = header + cards;
+}
+
+// ── Delete source ──
+async function kdDeleteSource(label) {
+  if (!confirm(`確定要刪除來源「${label}」的所有資料嗎？`)) return;
+  try {
+    const resp = await fetch(`/api/rag/document?label=${encodeURIComponent(label)}&user_id=${encodeURIComponent(_kdUserId)}`, { method: 'DELETE' });
+    const data = await resp.json();
+    kdToast(`✓ 已刪除 ${data.deleted} 筆`);
+    if (_activeSource === label) {
+      _activeSource = null;
+      document.getElementById('kd-main-content').innerHTML = '<div class="kd-empty"><div class="kd-empty-icon">📋</div><div class="kd-empty-text">從左側選擇來源，或輸入關鍵字搜尋</div></div>';
+    }
+    await kdLoadSources();
+  } catch (e) {
+    kdToast('刪除失敗');
+  }
+}
+
+// ── Delete single chunk ──
+async function kdDeleteChunk(idx) {
+  const chunk = _currentChunks[idx];
+  if (!chunk) return;
+  if (!confirm('確定要刪除這則資料嗎？')) return;
+  // Delete by source label then re-index remaining (simple approach: delete whole source for now)
+  // For MVP: just delete the source label
+  kdToast('⚠️ 目前僅支援刪除整個來源，請使用左側來源列表的刪除按鈕');
+}
+
+// ── Edit ──
+function kdOpenEdit(idx) {
+  const chunk = _currentChunks[idx];
+  if (!chunk) return;
+  _editingChunkId = idx;
+  document.getElementById('kd-edit-textarea').value = chunk.content;
+  document.getElementById('kd-edit-meta').textContent = `來源：${chunk.source_name}${chunk.location ? ' · ' + chunk.location : ''}`;
+  document.getElementById('kd-edit-modal').classList.add('open');
+}
+
+function kdCloseEdit() {
+  document.getElementById('kd-edit-modal').classList.remove('open');
+  _editingChunkId = null;
+}
+
+async function kdSaveEdit() {
+  kdToast('⚠️ 編輯功能需要重新索引，目前版本請刪除後重新存入');
+  kdCloseEdit();
+}
+
+// ── Upload ──
+let _uploadFiles = [];  // { file, status, text_chunks, image_chunks, reason, ctrl }
+
+function kdOpenUpload() {
+  // 直接打開選檔視窗，不開 modal
+  document.getElementById('kd-file-input').value = '';
+  document.getElementById('kd-file-input').click();
+}
+
+function kdOpenImportWeb() {
+  const queryEl = document.getElementById('kd-web-query');
+  const domainsEl = document.getElementById('kd-web-domains');
+  const maxEl = document.getElementById('kd-web-max-results');
+  if (queryEl) queryEl.value = localStorage.getItem(_kdWebSearchDraftKey) || '';
+  if (domainsEl) domainsEl.value = localStorage.getItem(_kdWebDomainDraftKey) || _kdDefaultWebDomains;
+  if (maxEl) maxEl.value = localStorage.getItem(_kdWebMaxResultsKey) || '5';
+  _kdWebSettingsOpen = false;
+  kdRenderWebSettings();
+  renderWebSearchResults();
+  renderWebPreview();
+  document.getElementById('kd-web-search-modal').classList.add('open');
+}
+
+function kdCloseImportWeb() {
+  const queryEl = document.getElementById('kd-web-query');
+  const domainsEl = document.getElementById('kd-web-domains');
+  const maxEl = document.getElementById('kd-web-max-results');
+  if (queryEl) localStorage.setItem(_kdWebSearchDraftKey, queryEl.value || '');
+  if (domainsEl) localStorage.setItem(_kdWebDomainDraftKey, domainsEl.value || '');
+  if (maxEl) localStorage.setItem(_kdWebMaxResultsKey, maxEl.value || '5');
+  _kdWebSettingsOpen = false;
+  kdRenderWebSettings();
+  document.getElementById('kd-web-search-modal').classList.remove('open');
+}
+
+function kdRenderWebSettings() {
+  const el = document.getElementById('kd-web-settings');
+  if (!el) return;
+  el.style.display = _kdWebSettingsOpen ? 'grid' : 'none';
+}
+
+function kdToggleWebSettings() {
+  _kdWebSettingsOpen = !_kdWebSettingsOpen;
+  kdRenderWebSettings();
+  const btn = document.getElementById('kd-gear-btn');
+  if (btn) btn.classList.toggle('active', _kdWebSettingsOpen);
+}
+
+function kdResultHost(url) {
+  try {
+    return new URL(url).hostname || '';
+  } catch {
+    return '';
+  }
+}
+
+function kdSelectWebResult(index) {
+  _kdSelectedWebResult = _kdWebResults[index] || null;
+  renderWebSearchResults();
+  renderWebPreview();
+}
+
+function renderWebSearchResults() {
+  const el = document.getElementById('kd-web-results');
+  if (!el) return;
+  if (!_kdWebResults.length) {
+    el.innerHTML = '<div class="kd-loading" style="padding:24px;">尚未搜尋</div>';
+    return;
+  }
+  el.innerHTML = _kdWebResults.map((item, index) => `
+    <div class="kd-search-result ${_kdSelectedWebResult === item ? 'active' : ''}" onclick="kdSelectWebResult(${index})">
+      <div class="kd-search-result-title">${escHtml(item.title || item.url || '未命名結果')}</div>
+      <div class="kd-search-result-host">${escHtml(kdResultHost(item.url || ''))}</div>
+      <div class="kd-search-result-meta">
+        <span class="kd-search-result-badge">${escHtml((item.result_type || 'web').toUpperCase())}</span>
+        ${escHtml(item.url || '')}
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderWebPreview() {
+  const el = document.getElementById('kd-web-preview');
+  if (!el) return;
+  const item = _kdSelectedWebResult;
+  if (!item) {
+    el.innerHTML = '<div class="kd-preview-empty">點擊搜尋結果後可在這裡預覽；若網站禁止嵌入，可改用新分頁開啟。</div>';
+    return;
+  }
+  const rawUrl = item.url || '#';
+  const safeUrl = escHtml(item.url || '#');          // display only
+  const safeTitle = escHtml(item.title || item.url || '未命名結果');
+  // href / src must use the raw URL (escHtml turns & into &amp; which breaks navigation)
+  const attrUrl = rawUrl.replace(/"/g, '%22');
+  el.innerHTML = `
+    <div class="kd-preview-header">
+      <div class="kd-preview-title" title="${safeTitle}">${safeTitle}</div>
+      <a class="btn btn-outline btn-sm" href="${attrUrl}" target="_blank" rel="noopener noreferrer">新分頁開啟</a>
+    </div>
+    <div style="position:relative;">
+      <div id="kd-iframe-fallback" class="kd-preview-fallback" style="display:none;">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 9h18"/><circle cx="7.5" cy="6" r=".5" fill="currentColor"/><circle cx="10.5" cy="6" r=".5" fill="currentColor"/></svg>
+        <span>此網站禁止嵌入預覽</span>
+        <a class="btn btn-primary btn-sm" href="${attrUrl}" target="_blank" rel="noopener noreferrer">在新分頁開啟</a>
+      </div>
+      <iframe class="kd-preview-frame" id="kd-preview-iframe"
+        src="${attrUrl}"
+        title="${safeTitle}"
+        sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+        onload="_kdIframeLoaded(this)"
+        onerror="_kdIframeFailed()">
+      </iframe>
+    </div>
+  `;
+}
+
+function _kdIframeLoaded(iframe) {
+  // 若 iframe 載入後 contentDocument 為 null 或 body 為空，視為被 block
+  try {
+    const doc = iframe.contentDocument || iframe.contentWindow?.document;
+    if (!doc || !doc.body || doc.body.innerHTML.trim() === '') {
+      _kdIframeFailed();
+    }
+  } catch (e) {
+    // cross-origin → 無法存取，但網頁有載入（不算失敗），不顯示 fallback
+  }
+}
+
+function _kdIframeFailed() {
+  const fallback = document.getElementById('kd-iframe-fallback');
+  const iframe = document.getElementById('kd-preview-iframe');
+  if (fallback) fallback.style.display = 'flex';
+  if (iframe) iframe.style.display = 'none';
+}
+
+async function kdImportWeb() {
+  const query = (document.getElementById('kd-web-query')?.value || '').trim();
+  if (!query) {
+    kdToast('請先輸入搜尋主題');
+    return;
+  }
+  const domainsText = (document.getElementById('kd-web-domains')?.value || '').trim();
+  const domains = domainsText
+    ? domainsText.split(/\r?\n/).map(v => v.trim()).filter(Boolean)
+    : [];
+  const maxResults = Math.max(1, Math.min(10, parseInt(document.getElementById('kd-web-max-results')?.value || '5', 10) || 5));
+  kdToast('正在搜尋外部資料...');
+  const resultsEl = document.getElementById('kd-web-results');
+  if (resultsEl) resultsEl.innerHTML = '<div class="kd-loading" style="padding:24px;">搜尋中…</div>';
+  try {
+    const resp = await fetch('/api/rag/search-web', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query: query.trim(),
+        user_id: _kdUserId,
+        max_results: maxResults,
+        domains,
+      }),
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.ok) {
+      throw new Error(data.detail || data.reason || `匯入失敗 (${resp.status})`);
+    }
+    localStorage.setItem(_kdWebSearchDraftKey, query);
+    localStorage.setItem(_kdWebDomainDraftKey, domainsText);
+    localStorage.setItem(_kdWebMaxResultsKey, String(maxResults));
+    _kdWebResults = data.results || [];
+    _kdSelectedWebResult = _kdWebResults[0] || null;
+    renderWebSearchResults();
+    renderWebPreview();
+    const translatedNote = data.translated_query ? `（也以「${data.translated_query}」搜尋）` : '';
+    kdToast(
+      data.fallback_used
+        ? `優先網址無結果，已改用全網搜尋，找到 ${data.count || 0} 筆${translatedNote}`
+        : `找到 ${data.count || 0} 筆搜尋結果${translatedNote}`
+    , 4000);
+  } catch (e) {
+    _kdWebResults = [];
+    _kdSelectedWebResult = null;
+    renderWebSearchResults();
+    renderWebPreview();
+    kdToast(`搜尋失敗：${e.message}`);
+  }
+}
+
+function kdHandleDrop(e) {
+  e.preventDefault();
+  kdAddFiles(e.dataTransfer.files);
+}
+
+function kdHandleFiles(fileList) {
+  kdAddFiles(fileList);
+}
+
+function kdAddFiles(fileList) {
+  const allowed = ['txt', 'pdf', 'docx', 'md', 'pptx', 'ppt', 'xlsx', 'xls', 'csv'];
+  let added = 0;
+  Array.from(fileList).forEach(f => {
+    const ext = f.name.split('.').pop().toLowerCase();
+    if (!allowed.includes(ext)) { kdToast(`⚠️ 不支援 .${ext}`); return; }
+    if (ext === 'ppt') { kdToast(`⚠️ ${f.name}：不支援舊版 .ppt，請另存為 .pptx 或 .pdf`); return; }
+    if (ext === 'xls') { kdToast(`⚠️ ${f.name}：不支援舊版 .xls，請另存為 .xlsx 或 .csv`); return; }
+    if (ext === 'pptx') { kdToast(`ℹ️ ${f.name}：將逐張解析投影片文字後索引`); }
+    if (_uploadFiles.find(u => u.file.name === f.name && u.status !== 'ok')) return;
+    _uploadFiles.push({ file: f, status: 'pending', ctrl: null });
+    added++;
+  });
+  if (added > 0) {
+    renderFileQueue();
+    kdStartUpload();
+  }
+}
+
+function kdCancelFile(idx) {
+  const item = _uploadFiles[idx];
+  if (!item) return;
+  if (item.status === 'uploading' && item.ctrl) {
+    item.ctrl.abort();
+  }
+  _uploadFiles.splice(idx, 1);
+  renderFileQueue();
+}
+
+function kdClearDone() {
+  _uploadFiles = _uploadFiles.filter(u => u.status === 'pending' || u.status === 'uploading');
+  renderFileQueue();
+}
+
+function renderFileQueue() {
+  const queueSection = document.getElementById('kd-upload-queue');
+  const el = document.getElementById('kd-file-queue');
+
+  if (!_uploadFiles.length) {
+    queueSection.style.display = 'none';
+    el.innerHTML = '';
+    return;
+  }
+  queueSection.style.display = 'block';
+
+  const hasDone = _uploadFiles.some(u => u.status === 'ok' || u.status === 'warn' || u.status === 'error');
+  const queueHeader = queueSection.querySelector('div');
+  if (hasDone) {
+    queueHeader.innerHTML = `⬆ 上傳佇列 <button onclick="kdClearDone()" style="margin-left:6px;border:none;background:none;font-size:10px;color:#94a3b8;cursor:pointer;padding:0;" onmouseover="this.style.color='#ef4444'" onmouseout="this.style.color='#94a3b8'">清除完成</button>`;
+  } else {
+    queueHeader.innerHTML = '⬆ 上傳佇列';
+  }
+
+  el.innerHTML = _uploadFiles.map((u, i) => {
+    const size = u.file.size < 1024 * 1024
+      ? `${(u.file.size / 1024).toFixed(0)} KB`
+      : `${(u.file.size / 1024 / 1024).toFixed(1)} MB`;
+    const statusHtml = {
+      pending:   `<span class="kd-file-status" style="color:#94a3b8;">待上傳</span>`,
+      uploading: `<span class="kd-file-status" style="color:#6366f1;"><span class="kd-spin">⏳</span></span>`,
+      ok:        `<span class="kd-file-status" style="color:#16a34a;">✓ ${u.text_chunks || 0}段${u.image_chunks ? ` 圖${u.image_chunks}` : ''}</span>`,
+      warn:      `<span class="kd-file-status" style="color:#d97706;" title="檔案已上傳但無法擷取文字，可能是掃描圖片 PDF，需要 OCR 才能索引">⚠ 無文字內容</span>`,
+      error:     `<span class="kd-file-status" style="color:#ef4444;" title="${escHtml(u.reason || '')}">✗</span>`,
+    }[u.status] || '';
+    const progress = u.status === 'uploading' ? `<div class="kd-progress-anim"></div>` : '';
+    const canCancel = u.status === 'pending' || u.status === 'uploading' || u.status === 'warn' || u.status === 'error';
+    return `<div class="kd-file-row">
+      <span class="kd-file-icon">${fileIcon(u.file.name)}</span>
+      <div class="kd-file-info">
+        <div class="kd-file-name" title="${escHtml(u.file.name)}">${escHtml(u.file.name)}</div>
+        <div class="kd-file-size">${size}</div>
+      </div>
+      ${statusHtml}
+      ${canCancel ? `<button class="kd-file-cancel" onclick="kdCancelFile(${i})" title="取消">✕</button>` : ''}
+      ${progress}
+    </div>`;
+  }).join('');
+}
+
+function fileIcon(name) {
+  const ext = name.split('.').pop().toLowerCase();
+  return { pdf: '📄', docx: '📝', txt: '📃', md: '📋' }[ext] || '📁';
+}
+
+async function kdStartUpload() {
+  const pending = _uploadFiles.filter(u => u.status === 'pending');
+  if (!pending.length) return;
+
+  // 維持 pending 狀態，讓佇列顯示「待上傳」，上傳時才改 uploading
+  renderFileQueue();
+
+  async function _uploadOne(item) {
+    const ctrl = new AbortController();
+    item.ctrl = ctrl;
+    const formData = new FormData();
+    formData.append('files', item.file);
+    formData.append('user_id', _kdUserId);
+    formData.append('folder', (document.getElementById('kd-folder-input')?.value || '').trim());
+    const timer = setTimeout(() => ctrl.abort(), 600000);
+    try {
+      const resp = await fetch('/api/rag/upload', { method: 'POST', body: formData, signal: ctrl.signal });
+      clearTimeout(timer);
+      if (!resp.ok) {
+        item.status = 'error';
+        item.reason = `伺服器錯誤 (${resp.status})`;
+      } else {
+        const data = await resp.json();
+        const result = (data.results || [])[0];
+        if (result && result.ok) {
+          item.text_chunks = result.text_chunks;
+          item.image_chunks = result.image_chunks;
+          item.status = (result.text_chunks === 0 && result.image_chunks === 0) ? 'warn' : 'ok';
+        } else {
+          item.status = 'error';
+          item.reason = result?.reason || '未知錯誤';
+        }
+      }
+    } catch (e) {
+      clearTimeout(timer);
+      if (e.name !== 'AbortError') {
+        item.status = 'error';
+        item.reason = e.message;
+      }
+      // AbortError = 使用者主動取消，item 已被 splice 移除，不更新
+    }
+    renderFileQueue();
+  }
+
+  // 限流並發：同時最多 2 個，完成一個補一個
+  const CONCURRENCY = 2;
+  const queue = [...pending];
+  async function _worker() {
+    while (queue.length) {
+      const item = queue.shift();
+      item.status = 'uploading';
+      renderFileQueue();
+      await _uploadOne(item);
+    }
+  }
+  await Promise.all(Array.from({ length: CONCURRENCY }, _worker));
+
+  const ok = _uploadFiles.filter(u => u.status === 'ok').length;
+  if (ok > 0) {
+    kdToast(`✓ 已完成 ${ok} 個檔案索引`);
+    await kdLoadSources();
+    // 全部完成後自動清除已完成項目，避免和來源清單重複顯示
+    const stillPending = _uploadFiles.some(u => u.status === 'pending' || u.status === 'uploading');
+    if (!stillPending) {
+      setTimeout(() => { kdClearDone(); }, 1500);
+    }
+  }
+}
+
+// ── Utils ──
+function renderPdfDetail(detail) {
+  const main = document.getElementById('kd-main-content');
+  const images = detail.images || [];
+  const filePath = (detail.file_path || detail.label).split('/').map(encodeURIComponent).join('/');
+  const pdfUrl = `/workspace/${encodeURIComponent(_kdUserId)}/docs/${filePath}`;
+
+  const imgHtml = images.length ? images.map(img => `
+    <div class="kd-image-item">
+      <img src="${escHtml(img.url)}" alt="第${img.page}頁" loading="lazy" onerror="this.parentElement.style.display='none'">
+      <div class="kd-image-item-label">第${img.page}頁 · ${escHtml(img.filename)}</div>
+    </div>`).join('') : '<div class="kd-image-no-data">沒有擷取到圖片</div>';
+
+  main.innerHTML = `
+    <div class="kd-detail-wrap">
+      <div class="kd-text-panel" style="padding:0;">
+        <iframe src="${escHtml(pdfUrl)}" style="width:100%;height:100%;border:none;" title="${escHtml(detail.label)}"></iframe>
+      </div>
+      <div class="kd-image-panel">
+        <div class="kd-image-panel-header">圖片 · ${images.length} 張</div>
+        <div class="kd-image-grid">${imgHtml}</div>
+      </div>
+    </div>`;
+}
+
+function escHtml(str) {
+  return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// Close modals on overlay click
+document.getElementById('kd-edit-modal').addEventListener('click', function(e) {
+  if (e.target === this) kdCloseEdit();
+});
+document.getElementById('kd-web-search-modal').addEventListener('click', function(e) {
+  if (e.target === this) kdCloseImportWeb();
+});
+</script>
+</body>
+</html>

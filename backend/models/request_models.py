@@ -57,3 +57,11 @@ class QuickAnalysisRequest(BaseModel):
     rows: List[List[Any]]
     filters: Optional[List[Dict[str, Any]]] = None
     session_id: str = "default"
+
+
+class ScatterGridRequest(BaseModel):
+    """散佈圖九宮格摘要請求"""
+    x_axis: str
+    y_axis: str
+    grid_groups: Dict[str, List[str]]
+    session_id: str = "default"

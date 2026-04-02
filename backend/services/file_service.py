@@ -180,8 +180,39 @@ class FileService:
 
                 except Exception as e:
                     raise HTTPException(500, detail=f"Excel 轉換失敗: {str(e)}")
+            elif ext == ".csv":
+                # Auto-detect encoding and re-save as UTF-8-sig so all downstream
+                # pd.read_csv(..., encoding="utf-8-sig") calls work correctly.
+                file_path = raw_path
+                try:
+                    raw_bytes = open(raw_path, "rb").read()
+                    # Try chardet first, fall back to common CJK encodings
+                    detected_enc = None
+                    try:
+                        import chardet
+                        det = chardet.detect(raw_bytes[:65536])
+                        if det and det.get("confidence", 0) >= 0.7:
+                            detected_enc = det["encoding"]
+                    except ImportError:
+                        pass
+                    # If chardet not available or confidence too low, try candidates
+                    if not detected_enc:
+                        for candidate in ("utf-8-sig", "utf-8", "big5", "gb2312", "gbk", "cp950"):
+                            try:
+                                raw_bytes.decode(candidate)
+                                detected_enc = candidate
+                                break
+                            except (UnicodeDecodeError, LookupError):
+                                continue
+                    if detected_enc and detected_enc.lower().replace("-", "") not in ("utf8sig", "utf8"):
+                        text = raw_bytes.decode(detected_enc, errors="replace")
+                        with open(raw_path, "w", encoding="utf-8-sig", newline="") as f_out:
+                            f_out.write(text)
+                        logger.info(f"[Upload] Re-encoded CSV from {detected_enc} → utf-8-sig")
+                except Exception as enc_err:
+                    logger.warning(f"[Upload] Encoding re-save skipped: {enc_err}")
             else:
-                # If not an Excel file, it's already saved down as raw_path
+                # If not an Excel file or CSV, it's already saved down as raw_path
                 file_path = raw_path
 
             logger.info(f"[Upload] Processing finished: {file_path}")

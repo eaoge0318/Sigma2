@@ -65,6 +65,7 @@ from backend.routers import (
 from backend.routers import association_router
 from backend.routers import notebook_router
 from backend.routers import dataset_router
+from backend.routers import rag_router
 
 
 from contextlib import asynccontextmanager
@@ -129,6 +130,11 @@ class NoCacheStaticFiles(StaticFiles):
 
 
 app.mount("/static", NoCacheStaticFiles(directory="static"), name="static")
+
+# workspace 靜態服務（上傳文件、圖片預覽等）
+import os as _os
+_os.makedirs("workspace", exist_ok=True)
+app.mount("/workspace", StaticFiles(directory="workspace"), name="workspace")
 
 
 # --- Favicon（防止瀏覽器 404 log 噪音）---
@@ -203,6 +209,12 @@ app.include_router(
     dataset_router.router,
     prefix="/api/data-prep/subset",
     tags=["DataPrep - 子資料集管理"],
+)
+
+app.include_router(
+    rag_router.router,
+    prefix="/api/rag",
+    tags=["RAG - 歷史知識庫"],
 )
 
 
@@ -390,7 +402,6 @@ async def view_file_legacy(
 @app.post("/api/save_filtered_file")
 async def save_filtered_file_legacy(request: dict, session_id: str = "default"):
     """向後相容"""
-    from backend.routers.analysis_router import save_filtered_file
     from backend.models.request_models import SaveFileRequest
     from backend.dependencies import get_analysis_service
 

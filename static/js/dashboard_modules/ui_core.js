@@ -59,14 +59,15 @@ export function initAutoSidebar() {
 }
 
 export function switchView(viewName) {
-    const navItems = ['dashboard', 'files', 'analysis', 'data-preparation', 'training', 'intelligent-analysis'];
+    const navItems = ['dashboard', 'files', 'analysis', 'data-preparation', 'training', 'intelligent-analysis', 'knowledge-docs'];
     const views = {
         'dashboard': 'view-dashboard',
         'files': 'view-files',
         'analysis': 'view-analysis',
         'data-preparation': 'view-data-preparation',
         'training': 'view-training',
-        'intelligent-analysis': 'view-intelligent-analysis'
+        'intelligent-analysis': 'view-intelligent-analysis',
+        'knowledge-docs': 'view-knowledge-docs'
     };
 
     // Update Nav State
@@ -83,6 +84,16 @@ export function switchView(viewName) {
         if (name === viewName) DOM.show(id);
         else DOM.hide(id);
     });
+
+    // Inject user_id into knowledge-docs iframe on first show
+    if (viewName === 'knowledge-docs') {
+        const iframe = document.getElementById('knowledge-docs-iframe');
+        if (iframe && !iframe.dataset.loaded) {
+            const uid = localStorage.getItem('sigma2_session_id') || 'default';
+            iframe.src = `/static/html/knowledge_docs.html?user_id=${encodeURIComponent(uid)}`;
+            iframe.dataset.loaded = '1';
+        }
+    }
 }
 
 /* --- Internal Helpers for Training Tabs --- */

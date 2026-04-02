@@ -1076,7 +1076,7 @@ function _showBrushPreviewDialog(initialCols) {
     dlg.querySelector('#_hm_br_close').addEventListener('click', close);
     dlg.querySelector('#_hm_br_cancel').addEventListener('click', close);
     dlg.querySelector('#_hm_br_ok').addEventListener('click', confirm);
-    overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+    // Do NOT close on overlay click — brush mouseup outside window triggers spurious clicks
     const _escHandler = ev => { if (ev.key === 'Escape') { close(); document.removeEventListener('keydown', _escHandler); } };
     document.addEventListener('keydown', _escHandler);
 }

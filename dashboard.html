@@ -1048,6 +1048,9 @@
                 <div class="nav-item" onclick="switchView('intelligent-analysis')" id="nav-intelligent-analysis" data-feature="ai">
                     <span>💡</span> <span class="nav-text">智能分析</span>
                 </div>
+                <div class="nav-item" onclick="switchView('knowledge-docs')" id="nav-knowledge-docs">
+                    <span>📚</span> <span class="nav-text">知識文件</span>
+                </div>
 
                 <!-- Bottom bar: Settings + User -->
                 <!-- User Profile — 連點 3 下開啟系統管理員 -->
@@ -1136,6 +1139,12 @@
                                     style="width:60px;padding:3px 6px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;text-align:center;">
                             </label>
                         </div>
+                    </div>
+                    <!-- Section 4: Danger Zone -->
+                    <div style="margin-bottom:4px;border-top:1px solid #fee2e2;padding-top:16px;">
+                        <div style="font-size:13px;font-weight:700;color:#ef4444;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:4px;">危險區</div>
+                        <div style="font-size:11px;color:#94a3b8;margin-bottom:12px;">操作無法復原</div>
+                        <button onclick="adminClearAllRAG()" style="border:1px solid #fecaca;background:#fff5f5;color:#ef4444;border-radius:8px;padding:8px 16px;font-size:13px;cursor:pointer;font-weight:500;width:100%;">🗑 清除全部知識文件庫</button>
                     </div>
                     <!-- Actions -->
                     <div style="display:flex;gap:10px;justify-content:flex-end;padding-top:12px;border-top:1px solid #e2e8f0;">
@@ -2185,6 +2194,13 @@
                     </iframe>
                 </div>
 
+                <!-- VIEW: Knowledge Docs (iframe) -->
+                <div id="view-knowledge-docs" style="display: none;">
+                    <iframe id="knowledge-docs-iframe" frameborder="0"
+                        style="width: 100%; height: calc(100vh - 60px); border: none; background: #f8fafc;">
+                    </iframe>
+                </div>
+
             </div> <!-- End Main Content Area -->
         </div> <!-- End App Content -->
     </div> <!-- End Container -->
@@ -2285,6 +2301,18 @@
                 document.getElementById('admin-panel-overlay').style.display = 'block';
                 document.getElementById('admin-save-btn').textContent = '儲存';
             });
+        }
+
+        function adminClearAllRAG() {
+            const uid = localStorage.getItem('sigma2_session_id') || 'default';
+            if (!window.confirm('⚠️ 確定要清除全部知識文件庫嗎？\n\nuser: ' + uid + '\n\n此操作無法復原。')) return;
+            fetch('/api/rag/all?user_id=' + encodeURIComponent(uid), { method: 'DELETE' })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.ok) window.alert('✓ 已清除 ' + data.deleted + ' 筆資料');
+                    else window.alert('清除失敗：' + (data.detail || JSON.stringify(data)));
+                })
+                .catch(e => window.alert('清除失敗：' + e.message));
         }
 
         function adminPanelClose() {

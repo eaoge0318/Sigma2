@@ -4,12 +4,13 @@
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 from typing import List, Dict, Optional
 import asyncio
 import logging
 import io
+import json
 
 from backend.services.analysis.analysis_service import AnalysisService
 from backend.dependencies import get_intelligent_analysis_service
@@ -17,6 +18,203 @@ from backend.dependencies import get_intelligent_analysis_service
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+# ========== 相關性矩陣（進階參數篩選用）==========
+
+class CorrelationRequest(BaseModel):
+    y_cols: List[str]
+    x_cols: Optional[List[str]] = None   # None = 全部數值欄
+
+@router.post("/correlations/{file_id}")
+async def compute_correlations(
+    file_id: str,
+    req: CorrelationRequest,
+    session_id: str = Query("default"),
+    analysis_service: AnalysisService = Depends(get_intelligent_analysis_service),
+):
+    """計算所有 X 欄位對每個 Y 的 Pearson 相關係數，供前端散佈圖篩選用"""
+    import numpy as np
+    import pandas as pd
+
+    def _compute():
+        uploads_dir = analysis_service.base_dir / session_id / "uploads"
+        csv_path = _find_csv(uploads_dir, file_id, analysis_service)
+        df = pd.read_csv(csv_path, encoding="utf-8-sig")
+        df.columns = [str(c).strip() for c in df.columns]
+
+        y_cols = [c for c in req.y_cols if c in df.columns]
+        if not y_cols:
+            return {"correlations": {}}
+
+        num_cols = df.select_dtypes(include=["number"]).columns.tolist()
+        if req.x_cols:
+            x_cols = [c for c in req.x_cols if c in df.columns and c not in y_cols]
+        else:
+            x_cols = [c for c in num_cols if c not in y_cols]
+
+        result = {}
+        for x_col in x_cols:
+            x_s = df[x_col].dropna()
+            if len(x_s) < 3 or x_s.std() == 0:
+                continue
+            row = {}
+            for y_col in y_cols:
+                try:
+                    r = df[x_col].corr(df[y_col])
+                    row[y_col] = round(float(r), 3) if not np.isnan(r) else 0.0
+                except Exception:
+                    row[y_col] = 0.0
+            result[x_col] = row
+
+        return {"correlations": result}
+
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, _compute)
+
+
+@router.get("/xy-data/{file_id}")
+async def get_xy_data(
+    file_id: str,
+    x_col: str,
+    y_cols: str,
+    session_id: str = Query("default"),
+    analysis_service: AnalysisService = Depends(get_intelligent_analysis_service),
+):
+    """回傳指定 X 欄位與多個 Y 欄位的採樣資料，供前端繪製多目標散佈圖"""
+    import numpy as np
+    import pandas as pd
+
+    def _compute():
+        uploads_dir = analysis_service.base_dir / session_id / "uploads"
+        csv_path = _find_csv(uploads_dir, file_id, analysis_service)
+        df = pd.read_csv(csv_path, encoding="utf-8-sig")
+        df.columns = [str(c).strip() for c in df.columns]
+        y_list = [c.strip() for c in y_cols.split(",") if c.strip() in df.columns]
+        # Deduplicate while preserving order to avoid pandas returning DataFrame on duplicate cols
+        seen = set()
+        use_cols = []
+        for c in ([x_col] if x_col in df.columns else []) + y_list:
+            if c not in seen:
+                seen.add(c)
+                use_cols.append(c)
+        if not use_cols:
+            return {"x_col": x_col, "y_cols": y_list, "data": {}}
+        sub = df[use_cols].dropna()
+        MAX_PTS = 400
+        if len(sub) > MAX_PTS:
+            sub = sub.sample(MAX_PTS, random_state=42)
+        return {"x_col": x_col, "y_cols": y_list, "data": {c: sub[c].tolist() for c in use_cols}}
+
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, _compute)
+
+
+# ========== SHAP 重要性散佈（SSE 串流，每個 target 完成後推送一次）==========
+
+class ShapScatterRequest(BaseModel):
+    y_cols: List[str]
+    x_cols: Optional[List[str]] = None
+
+@router.post("/shap-scatter/{file_id}")
+async def compute_shap_scatter(
+    file_id: str,
+    req: ShapScatterRequest,
+    session_id: str = Query("default"),
+    analysis_service: AnalysisService = Depends(get_intelligent_analysis_service),
+):
+    """
+    以 XGBoost + SHAP 計算每個 X 欄位對每個 Y target 的有方向性平均 SHAP 值。
+    採用 SSE 串流：每完成一個 target 就推送一筆 JSON，前端可顯示進度條。
+    """
+    import numpy as np
+    import pandas as pd
+
+    def _load_df():
+        uploads_dir = analysis_service.base_dir / session_id / "uploads"
+        csv_path = _find_csv(uploads_dir, file_id, analysis_service)
+        df = pd.read_csv(csv_path, encoding="utf-8-sig")
+        df.columns = [str(c).strip() for c in df.columns]
+        return df
+
+    async def _event_stream():
+        loop = asyncio.get_event_loop()
+        df = await loop.run_in_executor(None, _load_df)
+
+        y_cols = [c for c in req.y_cols if c in df.columns]
+        num_cols = df.select_dtypes(include=["number"]).columns.tolist()
+
+        if req.x_cols:
+            x_cols = [c for c in req.x_cols if c in df.columns and c not in y_cols]
+        else:
+            x_cols = [c for c in num_cols if c not in y_cols]
+
+        total = len(y_cols)
+        if total == 0:
+            yield f"data: {json.dumps({'error': 'no valid y_cols'})}\n\n"
+            return
+
+        # Accumulated result: { x_col: { y_col: signed_mean_shap } }
+        accumulated = {}
+
+        def _compute_one(y_col):
+            import xgboost as xgb
+            import shap as shap_lib
+
+            use_x = [c for c in x_cols if c != y_col]
+            sub = df[[y_col] + use_x].dropna()
+            if len(sub) < 10 or not use_x:
+                return {}
+
+            X = sub[use_x]
+            y = sub[y_col]
+
+            # Drop zero-variance cols
+            good = X.columns[X.std() > 0].tolist()
+            if not good:
+                return {}
+            X = X[good]
+
+            model = xgb.XGBRegressor(
+                n_estimators=80, max_depth=4, learning_rate=0.1,
+                subsample=0.8, colsample_bytree=0.8,
+                random_state=42, verbosity=0,
+            )
+            model.fit(X, y)
+
+            explainer = shap_lib.TreeExplainer(model)
+            shap_values = explainer.shap_values(X)
+            if isinstance(shap_values, list):
+                shap_values = shap_values[0]
+
+            # Signed mean SHAP (direction matters)
+            mean_shap = pd.Series(shap_values.mean(axis=0), index=X.columns)
+            return mean_shap.to_dict()
+
+        for i, y_col in enumerate(y_cols):
+            try:
+                shap_dict = await loop.run_in_executor(None, _compute_one, y_col)
+                # Merge into accumulated: accumulated[x_col][y_col] = value
+                for x_col, val in shap_dict.items():
+                    if x_col not in accumulated:
+                        accumulated[x_col] = {}
+                    accumulated[x_col][y_col] = round(float(val), 6)
+            except Exception as e:
+                logger.warning(f"SHAP failed for {y_col}: {e}")
+
+            payload = {
+                "done": i + 1,
+                "total": total,
+                "y_col": y_col,
+                "shap": accumulated,
+            }
+            yield f"data: {json.dumps(payload)}\n\n"
+
+    return StreamingResponse(
+        _event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 # ========== 欄位讀取 ==========
@@ -2268,9 +2466,11 @@ async def gb_test(
 
         box_data = {}
         values_data = {}
+        indices_data = {}
         for gi, g in enumerate(group_names):
             box_data[g] = _box_stats(group_arrs[gi])
             values_data[g] = [round(float(v), 4) for v in group_arrs[gi]]
+            indices_data[g] = group_indices[g]
 
         results.append(
             {
@@ -2279,12 +2479,22 @@ async def gb_test(
                 "p_value": round(float(pval), 6),
                 "box_data": box_data,
                 "values": values_data,
+                "indices": indices_data,
             }
         )
 
     # Sort by p_value ascending, take top_n
     results.sort(key=lambda x: x["p_value"])
     top_results = results[: min(req.top_n, len(results))]
+
+    import pandas as pd
+    for res in top_results:
+        c = res["parameter"]
+        c_data = df[c]
+        res["all_values"] = [
+            round(float(v), 4) if pd.notna(v) else None 
+            for v in c_data
+        ]
 
     return {
         "results": top_results,
@@ -2729,8 +2939,41 @@ async def rsm_analysis(
 
     n_total_terms = len(term_names)
 
+    # ── Lasso standardized coefficients ──
+    def _calc_lasso_coefs(y_arr):
+        """All terms compete simultaneously; return standardized Lasso coef per term index."""
+        try:
+            from sklearn.linear_model import LassoCV
+            from sklearn.preprocessing import StandardScaler
+            import warnings
+
+            if n_total_terms == 0:
+                return {}
+
+            valid_idx = [i for i in range(n_total_terms) if np.var(cols_list[i]) > 1e-10]
+            if not valid_idx:
+                return {}
+
+            X_raw = np.column_stack([cols_list[i] for i in valid_idx])
+            scaler = StandardScaler()
+            X_std = scaler.fit_transform(X_raw)
+
+            y_std_val = float(np.std(y_arr))
+            if y_std_val < 1e-10:
+                return {}
+            y_s = (y_arr - float(np.mean(y_arr))) / y_std_val
+
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                lasso = LassoCV(cv=3, max_iter=10000, tol=1e-3, n_jobs=1)
+                lasso.fit(X_std, y_s)
+
+            return {valid_idx[i]: round(float(c), 6) for i, c in enumerate(lasso.coef_)}
+        except Exception:
+            return {}
+
     # ── Per-target correlation calculation ──
-    def _calc_terms_for_y(y_arr):
+    def _calc_terms_for_y(y_arr, lasso_map=None):
         all_terms = []
         for i in range(n_total_terms):
             col = cols_list[i]
@@ -2742,12 +2985,14 @@ async def rsm_analysis(
                 p_corr = _safe_float(p_corr, default=1.0)
             except Exception:
                 r_corr, p_corr = 0.0, 1.0
+            lasso_coef = lasso_map.get(i, 0.0) if lasso_map is not None else None
             all_terms.append({
                 "name": term_names[i],
                 "type": term_types[i],
                 "coefficient": round(r_corr, 6),
                 "correlation": round(r_corr, 4),
                 "p_value": round(p_corr, 4),
+                "lasso_coef": lasso_coef,
             })
         all_terms.sort(key=lambda t: abs(t["correlation"]), reverse=True)
         surviving, eliminated = [], []
@@ -2760,6 +3005,12 @@ async def rsm_analysis(
                 eliminated.append(t)
         best_r = max((abs(t["correlation"]) for t in all_terms), default=0.0)
         return surviving, eliminated, best_r ** 2
+
+    # Pre-compute Lasso maps for all targets
+    import asyncio as _asyncio
+    lasso_maps = {}
+    for _t in all_targets:
+        lasso_maps[_t] = await _asyncio.to_thread(_calc_lasso_coefs, all_y_arrays[_t])
 
     def _calc_factor_summary_for_y(y_arr):
         fs = []
@@ -2776,7 +3027,7 @@ async def rsm_analysis(
     # Single target: return backwards-compatible format
     if len(all_targets) == 1:
         t = all_targets[0]
-        surviving_terms, eliminated_terms, r_squared = _calc_terms_for_y(all_y_arrays[t])
+        surviving_terms, eliminated_terms, r_squared = _calc_terms_for_y(all_y_arrays[t], lasso_maps.get(t))
         factor_summary = _calc_factor_summary_for_y(all_y_arrays[t])
         return {
             "n_obs": int(n), "n_factors": k, "n_total_terms": n_total_terms,
@@ -2791,7 +3042,7 @@ async def rsm_analysis(
     # Multi-target: return per-target results + combined ranking
     per_target = {}
     for t in all_targets:
-        surviving, eliminated, r2 = _calc_terms_for_y(all_y_arrays[t])
+        surviving, eliminated, r2 = _calc_terms_for_y(all_y_arrays[t], lasso_maps.get(t))
         per_target[t] = {
             "surviving_terms": surviving,
             "eliminated_terms": eliminated[:20],
@@ -3086,22 +3337,28 @@ async def main_effect_analysis(
 
     df = _apply_filters_and_clean(df_raw, req.filters, req.exclude_indices, req.exclude_cols)
 
-    all_x_cols = req.control_factors + [c for c in req.background_factors if c not in req.control_factors]
+    all_x_cols_req = req.control_factors + [c for c in req.background_factors if c not in req.control_factors]
     target_cols = [t.col for t in req.targets]
 
-    missing_x = [c for c in all_x_cols if c not in df.columns]
+    # 過濾掉不存在的欄位（可能被資料清洗 exclude_cols 排除），改為警告不中斷
+    missing_x = [c for c in all_x_cols_req if c not in df.columns]
     missing_y = [c for c in target_cols if c not in df.columns]
-    if missing_x:
-        raise HTTPException(400, detail=f"X columns not found: {missing_x}")
     if missing_y:
         raise HTTPException(400, detail=f"Target columns not found: {missing_y}")
+
+    all_x_cols = [c for c in all_x_cols_req if c in df.columns]
+    control_factors_valid = [c for c in req.control_factors if c in df.columns]
+    if not control_factors_valid:
+        raise HTTPException(400, detail=f"所有控制因子欄位均不存在於清洗後資料中，請重新選擇特徵。缺少：{missing_x}")
+
+    skipped_warning = f"（注意：以下欄位已被資料清洗排除，分析時略過：{missing_x}）" if missing_x else ""
 
     df_x_raw = df[all_x_cols].copy()
     for col in df_x_raw.columns:
         df_x_raw[col] = pd.to_numeric(df_x_raw[col], errors="coerce")
 
     # Only require control factors to be non-null; fill background factor NaN with median
-    ctrl_cols_present = [c for c in req.control_factors if c in df_x_raw.columns]
+    ctrl_cols_present = [c for c in control_factors_valid if c in df_x_raw.columns]
     df_x_raw = df_x_raw.dropna(subset=ctrl_cols_present)
     for col in df_x_raw.columns:
         if df_x_raw[col].isna().any():
@@ -3113,7 +3370,7 @@ async def main_effect_analysis(
 
     hp = req.hyperparams or {}
     model_results = []
-    factor_effects = {f: [] for f in req.control_factors}
+    factor_effects = {f: [] for f in control_factors_valid}
     trained_models = {}
 
     for target_item in req.targets:
@@ -3272,6 +3529,8 @@ async def main_effect_analysis(
         "col_stats": col_stats,
         "target_stats": target_stats,
         "scatter_data": scatter_data,
+        "skipped_factors": missing_x,
+        "warning": skipped_warning if missing_x else None,
     }
 
 

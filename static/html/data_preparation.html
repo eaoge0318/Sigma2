@@ -1788,6 +1788,7 @@
             border: 1px solid #e2e8f0;
             display: flex;
             flex-direction: column;
+            position: relative;
             overflow: hidden;
         }
 
@@ -1808,6 +1809,7 @@
             align-items: center;
             gap: 6px;
         }
+
 
         .nb-sources-count {
             font-size: 11px;
@@ -2464,8 +2466,8 @@
             background: #fff;
             border-radius: 14px;
             padding: 20px;
-            max-width: 700px;
-            width: 90%;
+            max-width: 1040px;
+            width: 94%;
             box-shadow: 0 20px 60px rgba(0, 0, 0, .3);
             animation: modalIn .2s ease;
         }
@@ -2750,6 +2752,12 @@
                 <div class="cl-tab-page" id="cl-tab-result" style="display:none;">
                     <div class="cl-body">
                         <div class="cl-col-list" tabindex="0" id="cl-col-list">
+                            <div style="display:flex;align-items:center;gap:6px;padding:6px 10px;border-bottom:1px solid #e2e8f0;background:#f8fafc;position:sticky;top:0;z-index:2;">
+                                <input id="cl-col-search" type="text" placeholder="搜尋欄位..." oninput="renderCleaningColumns()" style="flex:1;padding:4px 8px;border:1px solid #e2e8f0;border-radius:5px;font-size:11px;outline:none;color:#334155;" onfocus="this.style.borderColor='#6366f1'" onblur="this.style.borderColor='#e2e8f0'">
+                                <button onclick="clSelectAllVisible(true)"  title="全選（目前篩選結果）" style="padding:3px 8px;font-size:11px;border:1px solid #e2e8f0;border-radius:5px;background:#fff;cursor:pointer;color:#334155;white-space:nowrap;" onmouseenter="this.style.background='#f1f5f9'" onmouseleave="this.style.background='#fff'">全選</button>
+                                <button onclick="clSelectAllVisible(false)" title="全部取消勾選（目前篩選結果）" style="padding:3px 8px;font-size:11px;border:1px solid #e2e8f0;border-radius:5px;background:#fff;cursor:pointer;color:#334155;white-space:nowrap;" onmouseenter="this.style.background='#f1f5f9'" onmouseleave="this.style.background='#fff'">取消全選</button>
+                                <button onclick="clInvertVisible()" title="反轉勾選（目前篩選結果）" style="padding:3px 8px;font-size:11px;border:1px solid #e2e8f0;border-radius:5px;background:#fff;cursor:pointer;color:#334155;white-space:nowrap;" onmouseenter="this.style.background='#f1f5f9'" onmouseleave="this.style.background='#fff'">反選</button>
+                            </div>
                             <div class="cl-col-header">
                                 <span onclick="clToggleCheckFilter()" style="cursor:pointer;font-size:16px;" title="無篩選" id="cl-check-filter-btn">≡</span>
                                 <span onclick="clSortBy('col')">欄位名稱 <span id="cl-sort-col"></span></span>
@@ -2950,11 +2958,12 @@
                         <div style="flex:1.4;display:flex;flex-direction:column;gap:10px;min-width:0;overflow:hidden;">
                             <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px;display:flex;flex-direction:column;flex:1;min-height:0;">
                                 <div style="font-size:12px;font-weight:600;color:#64748b;margin-bottom:8px;">🎯 新增目標欄位 (Goal Columns)</div>
-                                <div style="display:flex;gap:8px;">
-                                    <select id="me-target-select" onchange="meTargetChange()" style="flex:1;padding:8px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;color:#1e293b;outline:none;cursor:pointer;">
-                                        <option value="">— 選擇目標變數 —</option>
-                                    </select>
-                                    <button onclick="meAddTarget()" style="padding:8px 14px;background:#2563eb;color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;">+ 加入</button>
+                                <div style="display:flex;gap:8px;align-items:flex-start;">
+                                    <!-- hidden native select kept for backward-compat JS -->
+                                    <select id="me-target-select" style="display:none;"></select>
+                                    <!-- custom dropdown -->
+                                    <div id="me-target-dd-wrap" style="flex:1;position:relative;"></div>
+                                    <button onclick="meAddTarget()" style="padding:8px 14px;background:#2563eb;color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;flex-shrink:0;">+ 加入</button>
                                 </div>
                                 <div id="me-trend-area" style="flex:1;min-height:160px;margin-top:10px;overflow:hidden;position:relative;background:#f8fafc;border-radius:6px;border:1px dashed #e2e8f0;display:flex;align-items:center;justify-content:center;">
                                     <div style="color:#94a3b8;font-size:12px;text-align:center;">選擇目標後顯示數據趨勢</div>
@@ -2977,7 +2986,7 @@
                     </div>
 
                     <!-- Step 2: Feature Selection (3 sub-tabs) -->
-                    <div id="me-step2" style="display:none;flex:1;flex-direction:column;padding:20px;gap:14px;overflow:hidden;">
+                    <div id="me-step2" style="display:none;flex:1;min-width:0;flex-direction:column;padding:20px;gap:14px;overflow:hidden;">
                         <!-- Sub-tab buttons (seamless border-group) -->
                         <div style="display:flex;flex-shrink:0;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">
                             <button id="me-subtab-algo" onclick="meSwitchSubTab('algo')"
@@ -3037,9 +3046,17 @@
                         </div>
 
                         <!-- Pane ②: Control factors dual-list -->
-                        <div id="me-subtab-pane-control" style="flex:1;display:none;flex-direction:column;gap:10px;overflow:hidden;">
-                            <div style="font-size:12px;color:#64748b;flex-shrink:0;">選擇你想<b>觀察主效應圖</b>的因子（右側已選清單）</div>
-                            <div style="display:grid;grid-template-columns:1fr 44px 1fr 1.2fr;gap:8px;flex:1;min-height:0;">
+                        <div id="me-subtab-pane-control" style="flex:1;min-width:0;display:none;flex-direction:column;gap:10px;overflow:hidden;">
+                            <!-- Mode toggle -->
+                            <div style="display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
+                                <div style="font-size:12px;color:#64748b;">選擇你想<b>觀察主效應圖</b>的因子</div>
+                                <div style="display:flex;background:#f1f5f9;border-radius:8px;padding:2px;gap:2px;">
+                                    <button id="me-mode-btn-normal" onclick="meSetControlMode('normal')" style="padding:3px 12px;border:none;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;background:#2563eb;color:#fff;">一般</button>
+                                    <button id="me-mode-btn-advanced" onclick="meSetControlMode('advanced')" style="padding:3px 12px;border:none;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;background:transparent;color:#64748b;">進階篩選</button>
+                                </div>
+                            </div>
+                            <!-- Normal mode: dual list -->
+                            <div id="me-control-normal-pane" style="display:grid;grid-template-columns:1fr 44px 1fr 1.2fr;gap:8px;flex:1;min-height:0;">
                                 <div class="list-col">
                                     <div class="list-header" style="display:flex;justify-content:space-between;align-items:center;padding:8px 14px;">
                                         <span>可用參數</span>
@@ -3067,6 +3084,102 @@
                                     <div id="me-ctrl-preview" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;">
                                         <span style="font-size:11px;color:#94a3b8;">點擊參數查看分佈</span>
                                     </div>
+                                </div>
+                            </div>
+                            <!-- Advanced mode: scatter plot selector -->
+                            <div id="me-control-advanced-pane" style="display:none;flex-direction:row;gap:10px;flex:1;min-height:0;min-width:0;overflow:hidden;">
+                                <!-- 左側: 目標相關性篩選 + 操作按鈕 -->
+                                <div style="width:180px;flex-shrink:0;display:flex;flex-direction:column;gap:8px;min-height:0;">
+                                    <div style="flex-shrink:0;">
+                                        <div style="font-size:11px;font-weight:600;color:#475569;margin-bottom:5px;">目標相關性篩選範圍</div>
+                                        <div style="display:flex;gap:4px;">
+                                            <button onclick="meRangePreset('all')"  style="flex:1;padding:3px 0;border:1px solid #e2e8f0;border-radius:5px;font-size:10px;color:#64748b;background:#f8fafc;cursor:pointer;">全選</button>
+                                            <button onclick="meRangePreset('low')"  style="flex:1;padding:3px 0;border:1px solid #e2e8f0;border-radius:5px;font-size:10px;color:#64748b;background:#f8fafc;cursor:pointer;">低相關</button>
+                                            <button onclick="meRangePreset('high')" style="flex:1;padding:3px 0;border:1px solid #e2e8f0;border-radius:5px;font-size:10px;color:#64748b;background:#f8fafc;cursor:pointer;">高相關</button>
+                                        </div>
+                                    </div>
+                                    <div id="me-scatter-filters" style="flex:1;display:flex;flex-direction:column;gap:10px;overflow-y:auto;padding-right:2px;"></div>
+                                    <div style="flex-shrink:0;display:flex;flex-direction:column;gap:6px;padding-top:4px;border-top:1px solid #e2e8f0;">
+                                        <button onclick="meScatterAddSelected()" style="width:100%;padding:7px 10px;background:#2563eb;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">+ 加入控制參數 (<span id="me-scatter-sel-count">0</span>)</button>
+                                        <button onclick="meScatterAnalyzeSelected()" style="width:100%;padding:7px 10px;background:linear-gradient(135deg,#7c3aed,#a855f7);color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;margin-top:4px;">🔍 分析選取參數</button>
+                                        <button onclick="meScatterClearSelection()" style="width:100%;padding:5px 10px;background:#f1f5f9;color:#64748b;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;cursor:pointer;">清除選取</button>
+                                    </div>
+                                </div>
+                                <!-- 右側: 視圖切換 + 三層散佈圖 -->
+                                <div id="me-scatter-area" style="flex:1;min-width:0;display:flex;flex-direction:column;gap:6px;position:relative;">
+                                    <!-- View toggle (3 buttons) + metric toggle -->
+                                    <div style="display:flex;justify-content:flex-end;align-items:center;flex-shrink:0;gap:8px;">
+                                        <!-- Metric toggle: Correlation / SHAP -->
+                                        <div style="display:flex;background:#f1f5f9;border-radius:6px;padding:2px;gap:2px;" title="切換散佈圖指標">
+                                            <button id="me-metric-corr-btn" onclick="meSetScatterMetric('corr')" style="padding:3px 10px;border:none;border-radius:4px;font-size:11px;cursor:pointer;background:#6366f1;color:#fff;font-weight:600;">相關係數</button>
+                                            <button id="me-metric-shap-btn" onclick="meSetScatterMetric('shap')" style="padding:3px 10px;border:none;border-radius:4px;font-size:11px;cursor:pointer;background:transparent;color:#64748b;">SHAP</button>
+                                        </div>
+                                        <div style="width:1px;height:18px;background:#e2e8f0;flex-shrink:0;"></div>
+                                        <div style="display:flex;background:#f1f5f9;border-radius:6px;padding:2px;gap:2px;">
+                                            <button id="me-view-global-btn"  onclick="meSetScatterView('global')"  style="padding:3px 10px;border:none;border-radius:4px;font-size:11px;cursor:pointer;background:#2563eb;color:#fff;font-weight:600;">全域散佈圖</button>
+                                            <button id="me-view-scatter-btn" onclick="meSetScatterView('scatter')" style="padding:3px 10px;border:none;border-radius:4px;font-size:11px;cursor:pointer;background:transparent;color:#64748b;">雙因子散佈圖</button>
+                                            <button id="me-view-table-btn"   onclick="meSetScatterView('table')"   style="padding:3px 10px;border:none;border-radius:4px;font-size:11px;cursor:pointer;background:transparent;color:#64748b;">相關性表格</button>
+                                        </div>
+                                    </div>
+                                    <!-- 全域散佈圖 view (SPLOM of Y targets) -->
+                                    <div id="me-global-view" style="flex:1;min-height:0;min-width:0;position:relative;border:1px solid #e2e8f0;border-radius:8px;background:#fff;overflow:hidden;">
+                                        <span style="font-size:12px;color:#94a3b8;">請先計算相關性以顯示全域散佈圖</span>
+                                    </div>
+                                    <!-- 雙因子散佈圖 view -->
+                                    <div id="me-scatter-view" style="flex:1;min-height:0;display:none;flex-direction:column;gap:4px;">
+                                        <!-- 軸選擇器 (only shown in 細部 mode) -->
+                                        <div style="display:flex;gap:8px;flex-shrink:0;">
+                                            <div style="flex:1;min-width:0;">
+                                                <div style="font-size:10px;color:#94a3b8;margin-bottom:3px;">X 軸目標</div>
+                                                <select id="me-scatter-axis-x" onchange="meRenderScatterFilters();meRenderScatterPlot();" style="width:100%;padding:5px 8px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px;"></select>
+                                            </div>
+                                            <div style="flex:1;min-width:0;">
+                                                <div style="font-size:10px;color:#94a3b8;margin-bottom:3px;">Y 軸目標</div>
+                                                <select id="me-scatter-axis-y" onchange="meRenderScatterFilters();meRenderScatterPlot();" style="width:100%;padding:5px 8px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px;"></select>
+                                            </div>
+                                        </div>
+                                        <div style="flex:1;min-height:0;position:relative;border:1px solid #e2e8f0;border-radius:8px;background:#fff;display:flex;flex-direction:column;">
+                                            <div id="me-scatter-loading" style="display:none;position:absolute;inset:0;background:rgba(255,255,255,0.85);z-index:5;align-items:center;justify-content:center;font-size:13px;color:#6366f1;border-radius:8px;">計算相關性中...</div>
+                                            <!-- Mode toggle overlay -->
+                                            <div style="position:absolute;top:7px;right:8px;z-index:4;display:flex;gap:3px;align-items:center;">
+                                                <button id="me-plot-select-btn" onclick="meSetPlotMode('select')" title="單擊選取/取消參數" style="padding:3px 8px;border:none;border-radius:5px;font-size:11px;cursor:pointer;background:#2563eb;color:#fff;font-weight:600;">✓ 選取</button>
+                                                <button id="me-plot-zoom-btn"   onclick="meSetPlotMode('zoom')"   title="拖曳框選放大" style="padding:3px 8px;border:none;border-radius:5px;font-size:11px;cursor:pointer;background:#f1f5f9;color:#64748b;">⊕ 放大</button>
+                                                <button id="me-plot-pan-btn"    onclick="meSetPlotMode('pan')"    title="拖曳平移" style="padding:3px 8px;border:none;border-radius:5px;font-size:11px;cursor:pointer;background:#f1f5f9;color:#64748b;">✥ 移動</button>
+                                                <button id="me-plot-ai-btn"     onclick="meSummarizeScatterGrid()" title="AI 分析九宮格參數關鍵字" style="padding:3px 8px;border:none;border-radius:5px;font-size:11px;cursor:pointer;background:linear-gradient(135deg, #8b5cf6, #d946ef);color:#fff;font-weight:600;display:flex;align-items:center;gap:3px;"><span style="font-size:12px;">✨</span> 九宮格摘要</button>
+                                                <button id="me-zoom-reset-btn"  onclick="meScatterZoomReset()"    title="重置縮放" style="display:none;padding:3px 8px;border:none;border-radius:5px;font-size:11px;cursor:pointer;background:#f59e0b;color:#fff;">↺</button>
+                                                <!-- Overlay lines settings -->
+                                                <div style="position:relative;" id="me-overlay-settings-wrap">
+                                                    <button onclick="meToggleOverlaySettings(event)" title="輔助線設定" id="me-overlay-settings-btn"
+                                                        style="padding:3px 8px;border:none;border-radius:5px;font-size:11px;cursor:pointer;background:#f1f5f9;color:#64748b;">⚙</button>
+                                                    <div id="me-overlay-settings-panel" style="display:none;position:absolute;right:0;top:calc(100% + 6px);z-index:500;background:#fff;border:1px solid #e2e8f0;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,0.15);padding:12px 14px;width:190px;font-size:12px;color:#334155;">
+                                                        <div style="font-weight:700;font-size:11px;color:#64748b;margin-bottom:8px;letter-spacing:.04em;">輔助線顯示</div>
+                                                        <label style="display:flex;align-items:center;gap:8px;padding:5px 0;cursor:pointer;border-bottom:1px solid #f1f5f9;">
+                                                            <input type="checkbox" id="me-ol-zero" checked onchange="meOverlaySettingChange()" style="accent-color:#6366f1;width:14px;height:14px;">
+                                                            <span>零軸十字線</span>
+                                                        </label>
+                                                        <label style="display:flex;align-items:center;gap:8px;padding:5px 0;cursor:pointer;border-bottom:1px solid #f1f5f9;">
+                                                            <input type="checkbox" id="me-ol-03" checked onchange="meOverlaySettingChange()" style="accent-color:#6366f1;width:14px;height:14px;">
+                                                            <span>±0.3 門檻虛線</span>
+                                                        </label>
+                                                        <label style="display:flex;align-items:center;gap:8px;padding:5px 0;cursor:pointer;border-bottom:1px solid #f1f5f9;">
+                                                            <input type="checkbox" id="me-ol-05" checked onchange="meOverlaySettingChange()" style="accent-color:#6366f1;width:14px;height:14px;">
+                                                            <span>±0.5 門檻實線</span>
+                                                        </label>
+                                                        <label style="display:flex;align-items:center;gap:8px;padding:5px 0;cursor:pointer;">
+                                                            <input type="checkbox" id="me-ol-balance" onchange="meOverlaySettingChange()" style="accent-color:#7c3aed;width:14px;height:14px;">
+                                                            <span>均衡線 (y=±x)</span>
+                                                        </label>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <svg id="me-scatter-svg" style="width:100%;height:100%;display:block;" onmousedown="meScatterMouseDown(event)" onmousemove="meScatterMouseMove(event)" onmouseup="meScatterMouseUp(event)" ondblclick="meScatterZoomReset()"></svg>
+                                            <!-- AI 摘要疊加層 -->
+                                            <div id="me-scatter-grid-overlay" style="display:none;position:absolute;pointer-events:none;z-index:3;inset:0;"></div>
+                                        </div>
+                                    </div>
+                                    <!-- 相關性表格 view -->
+                                    <div id="me-table-view" style="flex:1;min-height:0;display:none;overflow:auto;border:1px solid #e2e8f0;border-radius:8px;background:#fff;"></div>
+                                    <div id="me-view-hint" style="font-size:10px;color:#94a3b8;flex-shrink:0;">點擊全域散佈圖格子 → 進入雙因子散佈圖　|　雙因子散佈圖：框選圓點選取 → 加入控制參數</div>
                                 </div>
                             </div>
                         </div>
@@ -3430,6 +3543,9 @@
                             onmouseover="this.style.borderColor='#7c3aed';this.style.color='#7c3aed'"
                             onmouseout="this.style.borderColor='#e2e8f0';this.style.color='#64748b'">全選</button>
                         <button onclick="nbLoadNotes()" title="重新整理筆記" style="font-size:13px;padding:3px 6px;border:1px solid #e2e8f0;border-radius:6px;background:#f8fafc;color:#94a3b8;cursor:pointer;" onmouseover="this.style.color='#7c3aed'" onmouseout="this.style.color='#94a3b8'">↺</button>
+                        <button id="nb-save-to-history-btn" onclick="nbSaveToHistory()" title="存入知識文件" style="font-size:13px;padding:3px 6px;border:1px solid #e2e8f0;border-radius:6px;background:#f8fafc;color:#94a3b8;cursor:pointer;" onmouseover="this.style.color='#6366f1';this.style.borderColor='#c7d2fe'" onmouseout="this.style.color='#94a3b8';this.style.borderColor='#e2e8f0'">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                        </button>
                     </div>
                 </div>
                 <div class="nb-sources-list custom-scroll" id="nb-notes-list">
@@ -3438,8 +3554,38 @@
                         <div class="nb-empty-text">尚無筆記<br>在各分析工具中按下「存入筆記」<br>即可在此查看紀錄</div>
                     </div>
                 </div>
+                <!-- 來源預覽 overlay（蓋在 .nb-sources 上） -->
+                <div id="nb-cite-overlay" style="display:none;position:absolute;inset:0;background:#fff;border-radius:12px;z-index:10;flex-direction:column;">
+                <!-- 拖曳把手 -->
+                <div id="nb-cite-resize-handle" style="position:absolute;right:-20px;top:0;bottom:0;width:40px;cursor:col-resize;z-index:30;display:flex;align-items:center;justify-content:center;" title="拖曳調整寬度"
+                    onmouseenter="this.querySelector('.rh-bar').style.background='#6366f1'"
+                    onmouseleave="this.querySelector('.rh-bar').style.background='#94a3b8'">
+                    <div class="rh-bar" style="width:6px;height:60px;background:#94a3b8;border-radius:3px;transition:background 0.15s;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;">
+                        <div style="width:3px;height:3px;background:#fff;border-radius:50%;opacity:0.8;"></div>
+                        <div style="width:3px;height:3px;background:#fff;border-radius:50%;opacity:0.8;"></div>
+                        <div style="width:3px;height:3px;background:#fff;border-radius:50%;opacity:0.8;"></div>
+                    </div>
+                </div>
+                    <div style="display:flex;align-items:center;gap:6px;padding:10px 12px;border-bottom:1px solid #e2e8f0;flex-shrink:0;">
+                        <button onclick="_nbCloseCiteOverlay()" style="border:none;background:none;cursor:pointer;color:#6366f1;font-size:13px;padding:0 4px 0 0;display:flex;align-items:center;gap:4px;">← 返回筆記</button>
+                        <span style="flex:1;font-size:11.5px;font-weight:600;color:#1e293b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" id="nb-cite-overlay-title"></span>
+                        <span style="font-size:11px;color:#94a3b8;" id="nb-cite-overlay-loc"></span>
+                    </div>
+                    <div id="nb-cite-overlay-pdfjs" style="display:none;flex:1;overflow-y:auto;background:#525659;padding:10px;box-sizing:border-box;"></div>
+                    <iframe id="nb-cite-overlay-iframe" src="" style="flex:1;border:none;width:100%;" title="來源預覽"></iframe>
+                    <div id="nb-cite-overlay-text" style="display:none;flex:1;overflow-y:auto;padding:14px 16px;font-size:12.5px;color:#374151;line-height:1.7;white-space:pre-wrap;"></div>
+                </div>
+
+                <!-- 參考知識文件 -->
+                <div style="padding:5px 10px;display:flex;align-items:center;gap:6px;border-top:1px solid #f1f5f9;">
+                    <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:11px;color:#6b7280;user-select:none;">
+                        <input type="checkbox" id="nb-use-historical" style="width:13px;height:13px;accent-color:#6366f1;">
+                        <span>參考知識文件</span>
+                    </label>
+                    <span id="nb-historical-status" style="font-size:10px;color:#9ca3af;"></span>
+                </div>
                 <!-- 快速提問捷徑 -->
-                <div style="padding:8px 10px;border-top:1px solid #f1f5f9;display:flex;flex-wrap:wrap;gap:5px;">
+                <div style="padding:6px 10px 8px;border-top:1px solid #f1f5f9;display:flex;flex-wrap:wrap;gap:5px;">
                     <div class="nb-suggestion-chip" style="font-size:10px;padding:4px 9px;" data-msg="幫我總結所有筆記的主要發現">📊 總結筆記</div>
                     <div class="nb-suggestion-chip" style="font-size:10px;padding:4px 9px;" data-msg="找出主要影響品質的因子">🔍 影響因子</div>
                     <div class="nb-suggestion-chip" style="font-size:10px;padding:4px 9px;" data-msg="根據筆記內容給我具體的改善建議">💡 改善建議</div>
@@ -3534,7 +3680,15 @@
                 <div class="gb-lb-pval" id="gb-lb-pval"></div>
                 <button class="gb-lb-close" onclick="gbCloseLb()">✕</button>
             </div>
-            <canvas id="gb-lb-canvas" width="650" height="320"></canvas>
+            <div style="display:flex;gap:12px;align-items:flex-start;">
+                <div style="flex:1;min-width:0;">
+                    <canvas id="gb-lb-canvas" width="480" height="280" style="width:100%;"></canvas>
+                </div>
+                <div style="flex:1;min-width:0;" id="gb-lb-cdf-wrap">
+                    <canvas id="gb-lb-cdf-canvas" width="480" height="280" style="width:100%;"></canvas>
+                </div>
+            </div>
+            <canvas id="gb-lb-trend-canvas" width="960" height="150" style="margin-top:12px;width:100%;display:none;"></canvas>
             <div class="gb-lb-nav">
                 <button onclick="gbNavLb(-1)">◀ 上一張</button>
                 <span class="gb-lb-counter" id="gb-lb-counter"></span>
@@ -4034,9 +4188,16 @@
                 _nbSaveNotesForDs(prevDs);
             }
             _activeDataset = ds;
-            // Load notebook notes for newly activated dataset
             if (prevDs && prevDs.id !== dsId) {
                 _dsLoadNotes(ds);
+                // 重置所有需要重新挑選 Target 的模組狀態，避免舊資料集的欄位殘留
+                // 只有在切換到不同檔案時才 Full Reset；同一檔案內切換子資料集不清空
+                const prevFileId = prevDs.fileId || prevDs.id;
+                const newFileId  = ds.fileId || ds.id;
+                if (prevFileId !== newFileId) {
+                    if (typeof window.meFullReset === 'function') window.meFullReset();
+                    if (typeof window.rsmReset === 'function') window.rsmReset();
+                }
             }
             _activeTool = tool || 'mva';
             _expandedDatasets.add(dsId);
@@ -4157,6 +4318,43 @@
             _clCheckFilter = cycle[_clCheckFilter] || 'all';
             const btn = document.getElementById('cl-check-filter-btn');
             if (btn) { btn.textContent = icons[_clCheckFilter]; btn.title = tips[_clCheckFilter]; }
+            renderCleaningColumns();
+        }
+
+        // 取得目前畫面可見的欄位名稱（搜尋 + check filter 雙重過濾後）
+        function _clVisibleColNames() {
+            return Array.from(document.querySelectorAll('#cl-col-body .cl-col-row'))
+                .map(r => r.dataset.colName).filter(Boolean);
+        }
+
+        function clSelectAllVisible(wantInclude) {
+            _clVisibleColNames().forEach(col => {
+                if (wantInclude) {
+                    if (_clExcludedCols.has(col)) {
+                        if (_clManualExcludedCols.has(col)) _clManualExcludedCols.delete(col);
+                        else _clKeepCols.add(col);
+                    }
+                } else {
+                    if (_clKeepCols.has(col)) _clKeepCols.delete(col);
+                    else if (!_clExcludedCols.has(col)) _clManualExcludedCols.add(col);
+                }
+            });
+            clSyncManualColRule();
+            renderCleaningColumns();
+        }
+
+        function clInvertVisible() {
+            _clVisibleColNames().forEach(col => {
+                const excluded = _clExcludedCols.has(col);
+                if (excluded) {
+                    if (_clManualExcludedCols.has(col)) _clManualExcludedCols.delete(col);
+                    else _clKeepCols.add(col);
+                } else {
+                    if (_clKeepCols.has(col)) _clKeepCols.delete(col);
+                    else _clManualExcludedCols.add(col);
+                }
+            });
+            clSyncManualColRule();
             renderCleaningColumns();
         }
 
@@ -4770,12 +4968,16 @@
                 }
             });
 
+            const searchKw = (document.getElementById('cl-col-search')?.value || '').trim().toLowerCase();
+
             cols.forEach((c, i) => {
                 const excluded = _clExcludedCols.has(c.col);
                 const kept = _clKeepCols.has(c.col);
                 // Filter by check state
                 if (_clCheckFilter === 'checked' && excluded) return;
                 if (_clCheckFilter === 'unchecked' && !excluded) return;
+                // Filter by search keyword
+                if (searchKw && !c.col.toLowerCase().includes(searchKw)) return;
                 const hasOutlier = (c.n_outlier || 0) > 0;
                 const selected = i === _clSelectedIdx;
                 const pctMissing = c.pct_missing != null ? c.pct_missing.toFixed(1) : '-';
@@ -6435,6 +6637,10 @@
             if (pcaCanvas) pcaCanvas.getContext('2d').clearRect(0, 0, pcaCanvas.width, pcaCanvas.height);
             document.getElementById('gb-info').textContent = '';
 
+            // 其他模組狀態全域重置
+            if (typeof window.meFullReset === 'function') window.meFullReset();
+            if (typeof window.rsmReset === 'function') window.rsmReset();
+
             // Pivot / analysis results
             const rb = document.getElementById('result-body');
             if (rb) rb.innerHTML = '<div class="result-empty"><div class="re-icon">📊</div><div class="re-text">拖曳欄位至上方區域開始分析</div></div>';
@@ -8027,7 +8233,7 @@
                 column: f.col, keyword: '==' + String(f.value || ''), exclude_empty: false
             }));
             const exclIdx = typeof _clOutlierIndices !== 'undefined' ? _clOutlierIndices : [];
-            const exclCols = typeof _clExcludedCols !== 'undefined' ? _clExcludedCols : [];
+            const exclCols = typeof _clExcludedCols !== 'undefined' ? [..._clExcludedCols] : [];
             try {
                 const url = `/api/data-prep/gb-column-values?session_id=${sid}&file_id=${currentFileId}&column=${encodeURIComponent(col)}&filters=${encodeURIComponent(JSON.stringify(dsFilters))}&exclude_indices=${encodeURIComponent(JSON.stringify(exclIdx))}&exclude_cols=${encodeURIComponent(JSON.stringify(exclCols))}`;
                 const resp = await fetch(url);
@@ -8284,6 +8490,9 @@
             const gnames = data.group_names;
             const isFZ = data.test_method === 'fisherz';
 
+            // FZ scatter cards are taller → use 3 cols to keep them compact
+            grid.style.gridTemplateColumns = isFZ ? 'repeat(3, 1fr)' : 'repeat(2, 1fr)';
+
             grid.innerHTML = data.results.map((item, idx) => {
                 const pBg = item.p_value < 0.001 ? '#ef4444' : item.p_value < 0.05 ? '#f59e0b' : '#94a3b8';
                 const pText = item.p_value < 0.001 ? 'p<.001' : `p=${item.p_value.toFixed(3)}`;
@@ -8342,7 +8551,8 @@
                     if (c) {
                         const pw = c.parentElement.clientWidth - 16;
                         c.width = Math.max(pw, 120);
-                        c.height = Math.round(c.width * 0.5);
+                        // FZ scatter: near-square aspect; boxplot: wider
+                        c.height = Math.round(c.width * (isFZ ? 0.72 : 0.5));
                     }
                     if (isFZ && item.scatter_data) {
                         gbDrawScatterPlot(`gb-bp-${idx}`, item.scatter_data, gnames, item.param_x, item.param_y, item.r_values);
@@ -8367,10 +8577,22 @@
             document.getElementById('gb-lb-counter').textContent = `${idx + 1} / ${data.results.length}`;
             document.getElementById('gb-lightbox').classList.add('show');
             const isFZ = data.test_method === 'fisherz';
+            const tc = document.getElementById('gb-lb-trend-canvas');
+            const cdfWrap = document.getElementById('gb-lb-cdf-wrap');
             if (isFZ && item.scatter_data) {
+                if (tc) tc.style.display = 'none';
+                if (cdfWrap) cdfWrap.style.display = 'none';
                 gbDrawScatterPlot('gb-lb-canvas', item.scatter_data, data.group_names, item.param_x, item.param_y, item.r_values);
             } else {
+                if (cdfWrap) cdfWrap.style.display = '';
                 gbDrawBoxPlot('gb-lb-canvas', item.box_data, data.group_names);
+                gbDrawCDF('gb-lb-cdf-canvas', item.values || item.box_data, data.group_names);
+                if (item.values && item.indices) {
+                    if (tc) tc.style.display = 'block';
+                    gbDrawLBTrendChart('gb-lb-trend-canvas', item.values, item.indices, data.group_names, item.all_values);
+                } else {
+                    if (tc) tc.style.display = 'none';
+                }
             }
         }
 
@@ -8599,6 +8821,228 @@
             });
         }
 
+        function gbDrawCDF(canvasId, valuesData, groupNames) {
+            const canvas = document.getElementById(canvasId);
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            const w = canvas.width, h = canvas.height;
+            ctx.clearRect(0, 0, w, h);
+            ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h);
+
+            const pad = { t: 15, b: 32, l: 52, r: 16 };
+            const cw = w - pad.l - pad.r, ch = h - pad.t - pad.b;
+
+            // Collect raw values per group; fallback to box_data synthetic points
+            const groupVals = {};
+            groupNames.forEach(g => {
+                const d = valuesData[g];
+                if (Array.isArray(d) && d.length > 0) {
+                    groupVals[g] = [...d].filter(v => v != null).sort((a, b) => a - b);
+                } else if (d && typeof d === 'object' && d.median != null) {
+                    // Reconstruct from box stats (fallback)
+                    groupVals[g] = [d.whisker_lo, d.q1, d.median, d.q3, d.whisker_hi].filter(v => v != null).sort((a, b) => a - b);
+                }
+            });
+
+            const allVals = Object.values(groupVals).flat();
+            if (!allVals.length) return;
+
+            let xMin = Math.min(...allVals), xMax = Math.max(...allVals);
+            const xRange = xMax - xMin || 1;
+            xMin -= xRange * 0.04; xMax += xRange * 0.04;
+            const totalXR = xMax - xMin;
+
+            const sx = v => pad.l + (v - xMin) / totalXR * cw;
+            const sy = p => pad.t + (1 - p) * ch;
+
+            // Grid lines
+            ctx.strokeStyle = '#dde3ea'; ctx.lineWidth = 0.5;
+            const decimals = totalXR < 0.1 ? 4 : totalXR < 1 ? 3 : totalXR < 10 ? 2 : totalXR < 100 ? 1 : 0;
+            for (let i = 0; i <= 4; i++) {
+                const y = pad.t + (ch / 4) * i;
+                ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(pad.l + cw, y); ctx.stroke();
+                // Y label (0%, 25%, 50%, 75%, 100%)
+                ctx.fillStyle = '#94a3b8'; ctx.font = '10px sans-serif'; ctx.textAlign = 'right';
+                ctx.fillText(`${100 - i * 25}%`, pad.l - 4, y + 3.5);
+            }
+            for (let i = 0; i <= 4; i++) {
+                const x = pad.l + (cw / 4) * i;
+                ctx.beginPath(); ctx.moveTo(x, pad.t); ctx.lineTo(x, pad.t + ch); ctx.stroke();
+                const v = xMin + (totalXR / 4) * i;
+                ctx.fillStyle = '#94a3b8'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center';
+                ctx.fillText(v.toFixed(decimals), x, pad.t + ch + 12);
+            }
+
+            // Axis border
+            ctx.strokeStyle = '#cbd5e1'; ctx.lineWidth = 0.8;
+            ctx.strokeRect(pad.l, pad.t, cw, ch);
+
+            // Draw CDF per group
+            groupNames.forEach((g, gi) => {
+                const vals = groupVals[g];
+                if (!vals || vals.length === 0) return;
+                const color = _gbColors[gi % _gbColors.length];
+                const n = vals.length;
+                ctx.beginPath();
+                ctx.strokeStyle = color; ctx.lineWidth = 2;
+                vals.forEach((v, i) => {
+                    const px = sx(v), py = sy((i + 1) / n);
+                    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+                });
+                ctx.stroke();
+
+                // Group label at end of line
+                const lastX = sx(vals[n - 1]);
+                const lastY = sy(1);
+                ctx.fillStyle = color; ctx.font = `bold 10px sans-serif`; ctx.textAlign = 'left';
+                const lx = Math.min(lastX + 4, pad.l + cw - 20);
+                ctx.fillText(g, lx, lastY + 4);
+            });
+
+            // Legend (same row as title inside chart area)
+            const legendY = pad.t - 2;
+            let lx = pad.l;
+            ctx.font = 'bold 10px sans-serif';
+            groupNames.forEach((g, gi) => {
+                if (!groupVals[g]) return;
+                const color = _gbColors[gi % _gbColors.length];
+                ctx.fillStyle = color;
+                ctx.fillRect(lx, legendY - 7, 14, 4);
+                ctx.fillStyle = '#475569';
+                ctx.textAlign = 'left';
+                ctx.fillText(g, lx + 17, legendY);
+                lx += ctx.measureText(g).width + 34;
+            });
+
+            // Chart title
+            ctx.fillStyle = '#64748b'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center';
+            ctx.fillText('累積分布 (CDF)', pad.l + cw / 2, h - 2);
+        }
+
+        function gbDrawLBTrendChart(canvasId, valuesData, indicesData, groupNames, allValues) {
+            const canvas = document.getElementById(canvasId);
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            const w = canvas.width, h = canvas.height;
+            const pt = 20, pb = 25, pl = 45, pr = 20;
+            const cw = w - pl - pr, ch = h - pt - pb;
+
+            // Clear
+            ctx.clearRect(0, 0, w, h);
+
+            // Find global min/max for X (indices) and Y (values)
+            let minX = Infinity, maxX = -Infinity;
+            let minY = Infinity, maxY = -Infinity;
+
+            if (allValues && allValues.length > 0) {
+                minX = 0;
+                maxX = allValues.length - 1;
+                allValues.forEach(y => {
+                    if (y == null) return;
+                    if (y < minY) minY = y;
+                    if (y > maxY) maxY = y;
+                });
+            }
+
+            groupNames.forEach(g => {
+                if (!valuesData[g] || !indicesData[g]) return;
+                const vals = valuesData[g];
+                const idxs = indicesData[g];
+                for (let i = 0; i < vals.length; i++) {
+                    const x = idxs[i], y = vals[i];
+                    if (x < minX) minX = x;
+                    if (x > maxX) maxX = x;
+                    if (y < minY) minY = y;
+                    if (y > maxY) maxY = y;
+                }
+            });
+
+            if (minX === Infinity) return;
+
+            // Padding for Y range
+            const yRange = maxY - minY || 1;
+            minY -= yRange * 0.1;
+            maxY += yRange * 0.1;
+            const totalYRange = maxY - minY || 1;
+            const totalXRange = Math.max(maxX - minX, 1);
+
+            const sx = x => pl + ((x - minX) / totalXRange) * cw;
+            const sy = y => pt + ((maxY - y) / totalYRange) * ch;
+
+            // Grid and axes
+            ctx.strokeStyle = '#e2e8f0'; ctx.lineWidth = 1;
+            for (let i = 0; i <= 4; i++) {
+                const yv = maxY - (totalYRange / 4) * i;
+                const py = pt + (ch / 4) * i;
+                ctx.beginPath(); ctx.moveTo(pl, py); ctx.lineTo(w - pr, py); ctx.stroke();
+                ctx.fillStyle = '#64748b'; ctx.font = '10px sans-serif'; ctx.textAlign = 'right';
+                const _absYv = Math.abs(yv);
+                const _decY = _absYv >= 1000 ? 0 : _absYv >= 100 ? 0 : _absYv >= 10 ? 1 : _absYv >= 1 ? 2 : 3;
+                const yLabel = yv.toFixed(_decY);
+                ctx.fillText(yLabel, pl - 6, py + 3);
+
+                const xv = minX + (totalXRange / 4) * i;
+                const px = pl + (cw / 4) * i;
+                ctx.beginPath(); ctx.moveTo(px, pt); ctx.lineTo(px, h - pb); ctx.stroke();
+                ctx.textAlign = 'center';
+                ctx.fillText(Math.round(xv), px, h - pb + 14);
+            }
+            ctx.fillText('Index', pl + cw / 2, h - 4);
+
+            // Draw all values gray background line
+            if (allValues && allValues.length > 0) {
+                ctx.strokeStyle = '#e2e8f0';
+                ctx.lineWidth = 1.0;
+                ctx.beginPath();
+                let started = false;
+                allValues.forEach((y, x) => {
+                    if (y == null) { started = false; return; }
+                    if (!started) {
+                        ctx.moveTo(sx(x), sy(y));
+                        started = true;
+                    } else {
+                        ctx.lineTo(sx(x), sy(y));
+                    }
+                });
+                ctx.stroke();
+
+                ctx.fillStyle = '#cbd5e1';
+                allValues.forEach((y, x) => {
+                    if (y == null) return;
+                    ctx.beginPath();
+                    ctx.arc(sx(x), sy(y), 1.5, 0, Math.PI * 2);
+                    ctx.fill();
+                });
+            }
+
+            // Draw line and points for each group
+            groupNames.forEach((g, gi) => {
+                const color = _gbColors[gi % _gbColors.length];
+                const vals = valuesData[g];
+                const idxs = indicesData[g];
+                if (!vals || !idxs || vals.length === 0) return;
+
+                // Sort by index to draw line properly
+                const pairs = vals.map((v, i) => ({ x: idxs[i], y: v })).sort((a, b) => a.x - b.x);
+
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                pairs.forEach((p, i) => {
+                    if (i === 0) ctx.moveTo(sx(p.x), sy(p.y));
+                    else ctx.lineTo(sx(p.x), sy(p.y));
+                });
+                ctx.stroke();
+
+                ctx.fillStyle = color;
+                pairs.forEach(p => {
+                    ctx.beginPath();
+                    ctx.arc(sx(p.x), sy(p.y), 2.5, 0, Math.PI * 2);
+                    ctx.fill();
+                });
+            });
+        }
+
         // ================================================================
         // GB Tooltips (PCA scatter + Target trend)
         // ================================================================
@@ -8738,7 +9182,7 @@
     <script src="/static/js/lib/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/markmap-autoloader@0.16"></script>
     <script src="/static/js/rsm_manager.js?v=3"></script>
-    <script src="/static/js/me_manager.js?v=50"></script>
+    <script src="/static/js/me_manager.js?v=57"></script>
     <script src="/static/js/association_manager.js?v=1"></script>
 
     <!-- RSM Smart Filter Modal -->
@@ -9364,15 +9808,21 @@
                 '分析筆記內容中…',
                 'AI 思考中…',
                 '資料量較大，請耐心等待…',
+                '仍在執行中，感謝耐心等候…',
             ];
             let _statusIdx = 0;
             let _firstToken = false;
+            let _waitSecs = 0;
+            const _secTimer = setInterval(() => {
+                if (_firstToken) { clearInterval(_secTimer); return; }
+                _waitSecs++;
+                _nbSetStatusBubble(assistantEl, _statusMsgs[_statusIdx], _waitSecs);
+            }, 1000);
             const _statusTimer = setInterval(() => {
                 if (_firstToken) { clearInterval(_statusTimer); return; }
-                _statusIdx = Math.min(_statusIdx + 1, _statusMsgs.length - 1);
-                if (!_firstToken) _nbSetStatusBubble(assistantEl, _statusMsgs[_statusIdx]);
-            }, 4000);
-            _nbSetStatusBubble(assistantEl, _statusMsgs[0]);
+                _statusIdx = (_statusIdx + 1) % _statusMsgs.length;
+            }, 5000);
+            _nbSetStatusBubble(assistantEl, _statusMsgs[0], 0);
 
             try {
                 const resp = await fetch('/api/notebook/chat', {
@@ -9392,6 +9842,9 @@
                         process_context: _nbGetProcDesc() || null,
                         column_names: (allFields || []).map(f => f.name),
                         column_stats: _nbColStats || {},
+                        use_historical: document.getElementById('nb-use-historical')?.checked || false,
+                        notebook_enabled: true,
+                        user_id: localStorage.getItem('sigma2_session_id') || 'default',
                     }),
                 });
 
@@ -9409,6 +9862,7 @@
                 let renderPending = false;
                 let renderRafId = null;
                 let streamingDone = false;
+                let ragSources = [];
 
                 // rAF-throttled markdown render — smooth typewriter feel + live markdown
                 const scheduleRender = () => {
@@ -9435,21 +9889,21 @@
                     const lines = buffer.split('\n');
                     buffer = lines.pop(); // last potentially incomplete line
 
+                    let currentEvent = '';
                     for (const line of lines) {
-                        if (line.startsWith('event: text')) continue;
-                        if (line.startsWith('event: error')) continue;
-                        if (line.startsWith('event: done')) continue;
+                        if (line.startsWith('event: ')) { currentEvent = line.slice(7).trim(); continue; }
                         if (line.startsWith('data: ')) {
                             const dataStr = line.slice(6).trim();
                             if (!dataStr || dataStr === '{}') continue;
                             try {
                                 const parsed = JSON.parse(dataStr);
-                                if (parsed.error) {
+                                if (currentEvent === 'sources' && parsed.sources) {
+                                    ragSources = parsed.sources;
+                                } else if (currentEvent === 'error' || parsed.error) {
                                     _nbSetBubbleText(assistantEl, `⚠️ ${parsed.error}`);
                                     break;
-                                }
-                                if (parsed.content) {
-                                    if (!_firstToken) { _firstToken = true; clearInterval(_statusTimer); }
+                                } else if (parsed.content) {
+                                    if (!_firstToken) { _firstToken = true; clearInterval(_statusTimer); clearInterval(_secTimer); }
                                     accumulated += parsed.content;
                                     scheduleRender();
                                 }
@@ -9461,11 +9915,15 @@
                 // 停止串流渲染，取消任何待執行的 rAF，避免游標殘留
                 streamingDone = true;
                 clearInterval(_statusTimer);
+                clearInterval(_secTimer);
                 if (renderRafId) cancelAnimationFrame(renderRafId);
 
                 // Render final markdown (tables, code blocks, etc.)
                 if (accumulated) {
                     _nbFinalizeBubble(assistantEl, accumulated);
+                    if (ragSources.length > 0) {
+                        _nbAttachCiteHandlers(assistantEl, ragSources);
+                    }
                     _nbHistory.push({ role: 'assistant', content: accumulated });
                     // Keep history to last 20 messages
                     if (_nbHistory.length > 20) _nbHistory = _nbHistory.slice(-20);
@@ -9476,6 +9934,7 @@
 
             } catch (err) {
                 clearInterval(_statusTimer);
+                clearInterval(_secTimer);
                 if (err.name !== 'AbortError') {
                     _nbSetBubbleText(assistantEl, `⚠️ 連線錯誤: ${err.message}`);
                     // Roll back user message on error to avoid broken history
@@ -9573,6 +10032,17 @@
             document.body.appendChild(lb);
         }
 
+        function _nbFallbackCopy(text, onSuccess) {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0;';
+            document.body.appendChild(ta);
+            ta.focus();
+            ta.select();
+            try { document.execCommand('copy'); if (onSuccess) onSuccess(); } catch(e) {}
+            document.body.removeChild(ta);
+        }
+
         function _nbShowTextModal(tool, text, timestamp) {
             let modal = document.getElementById('nb-text-modal');
             if (modal) modal.remove();
@@ -9580,14 +10050,36 @@
             modal.id = 'nb-text-modal';
             modal.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;cursor:default;';
             modal.innerHTML = `
-                <div style="background:#fff;border-radius:14px;padding:24px 28px;max-width:520px;width:90vw;max-height:80vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.3);position:relative;">
-                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+                <div style="background:#fff;border-radius:14px;padding:24px 28px;max-width:560px;width:90vw;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.3);position:relative;">
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-shrink:0;">
                         <span style="font-size:13px;font-weight:700;color:#7c3aed;">${tool}</span>
-                        <span style="font-size:11px;color:#94a3b8;">${timestamp || ''}</span>
+                        <div style="display:flex;align-items:center;gap:8px;">
+                            <span style="font-size:11px;color:#94a3b8;">${timestamp || ''}</span>
+                            <button id="nb-text-copy-btn" style="padding:3px 10px;font-size:11px;background:#f1f5f9;color:#475569;border:1px solid #e2e8f0;border-radius:6px;cursor:pointer;">複製文字</button>
+                        </div>
                     </div>
-                    <div class="nb-md-body" style="font-size:13px;color:#334155;line-height:1.7;">${typeof marked !== 'undefined' ? marked.parse(text) : text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/\n/g,'<br>')}</div>
-                    <button onclick="document.getElementById('nb-text-modal').remove()" style="margin-top:18px;padding:6px 18px;background:#7c3aed;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px;">關閉</button>
+                    <div class="nb-md-body" style="font-size:13px;color:#334155;line-height:1.7;overflow-y:auto;flex:1;user-select:text;">${typeof marked !== 'undefined' ? marked.parse(text) : text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/\n/g,'<br>')}</div>
+                    <div style="display:flex;justify-content:flex-end;margin-top:14px;flex-shrink:0;">
+                        <button onclick="document.getElementById('nb-text-modal').remove()" style="padding:6px 18px;background:#7c3aed;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px;">關閉</button>
+                    </div>
                 </div>`;
+            // Bind copy button after innerHTML is set (avoids HTML attribute escaping issues)
+            const copyBtn = modal.querySelector('#nb-text-copy-btn');
+            if (copyBtn) {
+                copyBtn.onclick = () => {
+                    const ok = () => {
+                        copyBtn.textContent = '已複製 ✓';
+                        copyBtn.style.background = '#10b981';
+                        copyBtn.style.color = '#fff';
+                        setTimeout(() => { copyBtn.textContent = '複製文字'; copyBtn.style.background = '#f1f5f9'; copyBtn.style.color = '#475569'; }, 1800);
+                    };
+                    if (navigator.clipboard && navigator.clipboard.writeText) {
+                        navigator.clipboard.writeText(text).then(ok).catch(() => _nbFallbackCopy(text, ok));
+                    } else {
+                        _nbFallbackCopy(text, ok);
+                    }
+                };
+            }
             modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
             const escHandler = (e) => { if (e.key === 'Escape') { modal.remove(); document.removeEventListener('keydown', escHandler); } };
             document.addEventListener('keydown', escHandler);
@@ -9659,10 +10151,11 @@
             if (container) container.scrollTop = container.scrollHeight;
         }
 
-        function _nbSetStatusBubble(el, msg) {
+        function _nbSetStatusBubble(el, msg, secs) {
             if (!el) return;
             el.style.whiteSpace = 'normal';
-            el.innerHTML = `<span style="color:#94a3b8;font-style:italic;font-size:12px;">${msg} <span class="nb-stream-cursor">▌</span></span>`;
+            const secStr = (secs > 0) ? `<span style="color:#cbd5e1;font-size:10px;margin-left:6px;">${secs}s</span>` : '';
+            el.innerHTML = `<span style="color:#94a3b8;font-style:italic;font-size:12px;">${msg}${secStr} <span class="nb-stream-cursor">▌</span></span>`;
             const c = document.getElementById('nb-chat-messages');
             if (c) c.scrollTop = c.scrollHeight;
         }
@@ -9670,13 +10163,372 @@
         function _nbFinalizeBubble(el, text) {
             if (!el || !text) return;
             el.style.whiteSpace = '';
-            el.innerHTML = typeof marked !== 'undefined'
+            let html = typeof marked !== 'undefined'
                 ? marked.parse(text)
                 : text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/\n/g,'<br>');
+            // Style inline citations [1] [2] [3] — clickable superscript
+            // 先把 [1, 2] / [1,2] 展開成 [1][2]
+            html = html.replace(/\[(\d+(?:\s*,\s*\d+)+)\]/g, (_, inner) =>
+                inner.split(',').map(n => `[${n.trim()}]`).join(''));
+            html = html.replace(/\[(\d+)\]/g, '<sup class="nb-cite" data-idx="$1" style="color:#6366f1;font-size:10px;font-weight:600;margin:0 1px;opacity:0.75;cursor:pointer;user-select:none;">[$1]</sup>');
+            el.innerHTML = html;
             // Append collapsible mind map below text
             _nbAppendMindMapSection(el, text);
             const container = document.getElementById('nb-chat-messages');
             if (container) container.scrollTop = container.scrollHeight;
+        }
+
+        // ---- 引用來源加入筆記 ----
+        function _nbAddCiteToNote(src) {
+            const loc = src.location ? ` ${src.location}` : '';
+            const snippet = src.snippet ? `\n摘錄：${src.snippet.slice(0, 200)}` : '';
+            const text = `【知識來源】${src.source_name}${loc}${snippet}`;
+            const note = {
+                tool: '知識文件',
+                text: text,
+                timestamp: new Date().toISOString(),
+                selected: true,
+            };
+            if (!_nbNotes) _nbNotes = [];
+            _nbNotes.push(note);
+            _nbRenderNotes();
+            document.getElementById('nb-cite-panel').style.display = 'none';
+        }
+
+        function _escHtmlTip(s) {
+            return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+        }
+
+        // ---- 引用浮窗（click → overlay）----
+        function _nbAttachCiteHandlers(el, sources) {
+            el.querySelectorAll('.nb-cite').forEach(sup => {
+                sup.onclick = (e) => {
+                    e.stopPropagation();
+                    const idx = parseInt(sup.dataset.idx, 10) - 1;
+                    const src = sources[idx];
+                    if (!src) return;
+                    _nbShowCitePopover(sup, src);
+                };
+            });
+        }
+
+        // ── PDF.js 渲染 ──────────────────────────────────────────────────
+        let _pdfCache = {};
+        let _pdfjsLoaded = false;
+
+        async function _ensurePdfjs() {
+            if (_pdfjsLoaded) return;
+            await new Promise((resolve, reject) => {
+                const s = document.createElement('script');
+                s.src = '/static/lib/pdfjs/pdf.min.js';
+                s.onload = resolve; s.onerror = reject;
+                document.head.appendChild(s);
+            });
+            pdfjsLib.GlobalWorkerOptions.workerSrc = '/static/lib/pdfjs/pdf.worker.min.js';
+            _pdfjsLoaded = true;
+        }
+
+        async function _nbRenderPdfPage(container, pdfUrl, pageNum, snippet) {
+            container.innerHTML = '<div style="color:#ccc;padding:24px;text-align:center;font-size:13px;">載入中…</div>';
+            try {
+                await _ensurePdfjs();
+
+                // 載入 PDF（快取）
+                if (!_pdfCache[pdfUrl]) {
+                    _pdfCache[pdfUrl] = await pdfjsLib.getDocument(pdfUrl).promise;
+                }
+                const pdf = _pdfCache[pdfUrl];
+                const total = pdf.numPages;
+                pageNum = Math.max(1, Math.min(pageNum, total));
+
+                const page = await pdf.getPage(pageNum);
+                const containerW = container.clientWidth || 460;
+                const baseVp = page.getViewport({ scale: 1 });
+                const scale = (containerW - 20) / baseVp.width;
+                const vp = page.getViewport({ scale });
+
+                container.innerHTML = '';
+
+                // 主畫布
+                const canvas = document.createElement('canvas');
+                canvas.width = vp.width; canvas.height = vp.height;
+                canvas.style.cssText = 'display:block;border-radius:4px;box-shadow:0 2px 8px rgba(0,0,0,0.4);';
+
+                // Highlight 覆蓋畫布
+                const hlCanvas = document.createElement('canvas');
+                hlCanvas.width = vp.width; hlCanvas.height = vp.height;
+                hlCanvas.style.cssText = 'position:absolute;top:0;left:0;pointer-events:none;border-radius:4px;';
+
+                const wrap = document.createElement('div');
+                wrap.style.cssText = 'position:relative;margin:0 auto 8px;width:fit-content;';
+                wrap.appendChild(canvas); wrap.appendChild(hlCanvas);
+                container.appendChild(wrap);
+
+                // 渲染頁面
+                await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+
+                // Highlight 引用文字
+                if (snippet) {
+                    const textContent = await page.getTextContent();
+                    _drawPdfHighlight(hlCanvas, textContent, vp, snippet);
+                }
+
+                // 頁碼 + 翻頁
+                const nav = document.createElement('div');
+                nav.style.cssText = 'text-align:center;font-size:12px;color:#ccc;padding:4px 0 8px;display:flex;align-items:center;justify-content:center;gap:10px;';
+                const prevBtn = _navBtn('◀', pageNum > 1, () => _nbRenderPdfPage(container, pdfUrl, pageNum - 1, snippet));
+                const nextBtn = _navBtn('▶', pageNum < total, () => _nbRenderPdfPage(container, pdfUrl, pageNum + 1, snippet));
+                nav.appendChild(prevBtn);
+                nav.appendChild(document.createTextNode(`第 ${pageNum} 頁 / 共 ${total} 頁`));
+                nav.appendChild(nextBtn);
+                container.appendChild(nav);
+
+            } catch (err) {
+                container.innerHTML = `<div style="color:#fca5a5;padding:20px;text-align:center;font-size:12px;">PDF 載入失敗：${err.message}</div>`;
+            }
+        }
+
+        function _navBtn(label, enabled, fn) {
+            const b = document.createElement('button');
+            b.textContent = label;
+            b.disabled = !enabled;
+            b.style.cssText = 'border:1px solid #666;background:#444;color:#ddd;border-radius:5px;padding:2px 10px;font-size:12px;cursor:pointer;';
+            if (!enabled) b.style.opacity = '0.3';
+            else b.onclick = fn;
+            return b;
+        }
+
+        function _drawPdfHighlight(hlCanvas, textContent, vp, snippet) {
+            const ctx = hlCanvas.getContext('2d');
+            ctx.clearRect(0, 0, hlCanvas.width, hlCanvas.height);
+            ctx.fillStyle = 'rgba(255, 220, 0, 0.42)';
+
+            // 去除空白後做子字串比對（中文無空格）
+            const norm = s => s.replace(/\s+/g, '').toLowerCase();
+            const normSnippet = norm(snippet);
+
+            for (const item of textContent.items) {
+                if (!item.str || !item.str.trim()) continue;
+                const normItem = norm(item.str);
+                if (normItem.length < 3) continue;
+
+                // 只要 item 文字在 snippet 中出現（子字串），就 highlight
+                const minLen = Math.min(normItem.length, 8);
+                if (!normSnippet.includes(normItem.slice(0, minLen))) continue;
+
+                // 座標轉換
+                const tx = item.transform; // [a,b,c,d,e,f]
+                const [x, y] = vp.convertToViewportPoint(tx[4], tx[5]);
+                const h = Math.abs(tx[3]) * vp.scale || 14;
+                const w = item.width * vp.scale;
+                ctx.fillRect(x, y - h * 0.85, w, h * 1.05);
+            }
+        }
+
+        function _nbShowCitePopover(anchor, src) {
+            const overlay = document.getElementById('nb-cite-overlay');
+            if (!overlay) return;
+            document.getElementById('nb-cite-overlay-title').textContent = src.source_name;
+            const locEl = document.getElementById('nb-cite-overlay-loc');
+            const score = src.score || 0;
+            locEl.innerHTML = (src.location ? `${src.location} &nbsp;` : '') +
+                `<span style="font-size:10px;color:#94a3b8;">相似度 ${(score*100).toFixed(0)}%</span>`;
+
+            const iframe = document.getElementById('nb-cite-overlay-iframe');
+            const textBox = document.getElementById('nb-cite-overlay-text');
+
+            // 引用摘要條（高亮顯示 AI 引用的原文）
+            let snippetBar = document.getElementById('nb-cite-snippet-bar');
+            if (!snippetBar) {
+                snippetBar = document.createElement('div');
+                snippetBar.id = 'nb-cite-snippet-bar';
+                snippetBar.style.cssText = [
+                    'flex-shrink:0',
+                    'padding:8px 14px',
+                    'background:#fef9c3',
+                    'border-bottom:2px solid #fde047',
+                    'font-size:12px',
+                    'line-height:1.6',
+                    'color:#713f12',
+                    'display:none',
+                    'max-height:110px',
+                    'overflow-y:auto',
+                ].join(';');
+                // 插在 header 之後、iframe 之前
+                const header = overlay.querySelector('div[style*="border-bottom"]');
+                if (header && header.nextSibling) {
+                    overlay.insertBefore(snippetBar, header.nextSibling);
+                } else {
+                    overlay.appendChild(snippetBar);
+                }
+            }
+
+            const snippet = (src.content || src.snippet || '').trim();
+            if (snippet) {
+                snippetBar.innerHTML = `<span style="font-size:10px;font-weight:700;color:#a16207;letter-spacing:0.04em;margin-right:6px;">📌 引用段落</span>${_escHtmlTip(snippet)}`;
+                snippetBar.style.display = 'block';
+            } else {
+                snippetBar.style.display = 'none';
+            }
+
+            const srcExt = (src.source_name || '').split('.').pop().toLowerCase();
+            const canIframe = srcExt === 'pdf';
+
+            if (src.source_type === 'document' && canIframe) {
+                // PDF：iframe 顯示
+                const uid = localStorage.getItem('sigma2_session_id') || 'default';
+                const pageMatch = (src.location || '').match(/\d+/);
+                const pageNum = pageMatch ? parseInt(pageMatch[0], 10) : 1;
+                const filePath = (src.file_path || src.source_name).split('/').map(encodeURIComponent).join('/');
+                const pdfUrl = `/workspace/${encodeURIComponent(uid)}/docs/${filePath}#page=${pageNum}`;
+                iframe.src = 'about:blank';
+                setTimeout(() => { iframe.src = pdfUrl; }, 30);
+                iframe.style.display = 'block';
+                const pdfjsContainer = document.getElementById('nb-cite-overlay-pdfjs');
+                if (pdfjsContainer) pdfjsContainer.style.display = 'none';
+                if (textBox) textBox.style.display = 'none';
+            } else {
+                // 非 PDF 文件（pptx / xlsx / docx / csv 等）或筆記本：顯示文字內容
+                iframe.style.display = 'none';
+                iframe.src = '';
+                if (textBox) {
+                    textBox.textContent = snippet || '（無摘要）';
+                    textBox.style.display = 'block';
+                    snippetBar.style.display = 'none';  // 非 PDF 直接顯示全文，不需重複摘要條
+                }
+            }
+            overlay.style.display = 'flex';
+        }
+
+        function _nbCloseCiteOverlay() {
+            const overlay = document.getElementById('nb-cite-overlay');
+            if (overlay) overlay.style.display = 'none';
+            const iframe = document.getElementById('nb-cite-overlay-iframe');
+            if (iframe) { iframe.src = ''; iframe.style.display = 'none'; }
+            const pdfjsContainer = document.getElementById('nb-cite-overlay-pdfjs');
+            if (pdfjsContainer) { pdfjsContainer.innerHTML = ''; pdfjsContainer.style.display = 'none'; }
+            const bar = document.getElementById('nb-cite-snippet-bar');
+            if (bar) bar.style.display = 'none';
+            // 恢復固定寬度
+            const sources = document.querySelector('.nb-sources');
+            if (sources) { sources.style.width = ''; sources.style.flexShrink = ''; }
+        }
+
+        // ---- 拖曳 resize ----
+        (function () {
+            let _dragging = false, _startX = 0, _startW = 0;
+
+            // 拖曳時遮住 iframe，防止 iframe 吸收滑鼠事件
+            function _addIframeMask() {
+                if (document.getElementById('nb-iframe-mask')) return;
+                const mask = document.createElement('div');
+                mask.id = 'nb-iframe-mask';
+                mask.style.cssText = 'position:fixed;inset:0;z-index:9999;cursor:col-resize;';
+                document.body.appendChild(mask);
+            }
+            function _removeIframeMask() {
+                const m = document.getElementById('nb-iframe-mask');
+                if (m) m.remove();
+            }
+
+            document.addEventListener('mousedown', (e) => {
+                const handle = document.getElementById('nb-cite-resize-handle');
+                if (!handle || !handle.contains(e.target)) return;
+                const sources = document.querySelector('.nb-sources');
+                if (!sources) return;
+                _dragging = true;
+                _startX = e.clientX;
+                _startW = sources.offsetWidth;
+                document.body.style.cursor = 'col-resize';
+                document.body.style.userSelect = 'none';
+                _addIframeMask();
+                e.preventDefault();
+            });
+
+            document.addEventListener('mousemove', (e) => {
+                if (!_dragging) return;
+                if (e.buttons === 0) { _dragging = false; document.body.style.cursor = ''; document.body.style.userSelect = ''; _removeIframeMask(); return; }
+                const sources = document.querySelector('.nb-sources');
+                if (!sources) return;
+                const newW = Math.max(220, Math.min(700, _startW + (e.clientX - _startX)));
+                sources.style.width = newW + 'px';
+                sources.style.flexShrink = '0';
+            });
+
+            document.addEventListener('mouseup', () => {
+                if (!_dragging) return;
+                _dragging = false;
+                _removeIframeMask();
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+            });
+        })();
+
+        // ---- 存入歷史區 ----
+        async function nbSaveToHistory() {
+            const sid = getSessionId();
+            const ds = _activeDataset;
+            const notes = (_nbNotes || []).filter(n => n.selected !== false && (n.text || '').trim());
+            if (!notes.length) {
+                alert('目前沒有可存入的筆記');
+                return;
+            }
+            const fileStem = ds ? (ds.datasetPath || ds.name || '').replace(/\//g, '_').replace(/\.[^.]+$/, '') : 'notebook';
+            const defaultLabel = fileStem + '_' + new Date().toISOString().slice(0, 10);
+
+            // 彈出自訂確認 modal
+            const label = await new Promise(resolve => {
+                const overlay = document.createElement('div');
+                overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:9999;display:flex;align-items:center;justify-content:center;';
+                overlay.innerHTML = `
+                    <div style="background:white;border-radius:12px;padding:24px;width:360px;box-shadow:0 8px 32px rgba(0,0,0,0.18);">
+                        <div style="font-size:14px;font-weight:700;color:#1e293b;margin-bottom:4px;">存入知識文件</div>
+                        <div style="font-size:12px;color:#64748b;margin-bottom:16px;">共 <b>${notes.length}</b> 則筆記將被存入，請確認名稱</div>
+                        <div style="font-size:11px;color:#6b7280;margin-bottom:6px;">名稱</div>
+                        <input id="_nb_save_label_input" type="text" value="${defaultLabel}"
+                            style="width:100%;padding:8px 10px;border:1px solid #c7d2fe;border-radius:8px;font-size:12px;color:#1e293b;outline:none;box-sizing:border-box;"
+                            onfocus="this.style.borderColor='#6366f1'" onblur="this.style.borderColor='#c7d2fe'">
+                        <div style="font-size:10px;color:#94a3b8;margin-top:6px;margin-bottom:20px;">若已有同名資料，將會覆蓋</div>
+                        <div style="display:flex;gap:8px;justify-content:flex-end;">
+                            <button id="_nb_save_cancel" style="padding:7px 16px;border-radius:8px;border:1px solid #e2e8f0;background:#f8fafc;color:#64748b;font-size:12px;cursor:pointer;">取消</button>
+                            <button id="_nb_save_confirm" style="padding:7px 16px;border-radius:8px;border:none;background:#6366f1;color:white;font-size:12px;font-weight:600;cursor:pointer;">確定存入</button>
+                        </div>
+                    </div>`;
+                document.body.appendChild(overlay);
+                const inp = overlay.querySelector('#_nb_save_label_input');
+                inp.select();
+                overlay.querySelector('#_nb_save_cancel').onclick = () => { overlay.remove(); resolve(null); };
+                overlay.querySelector('#_nb_save_confirm').onclick = () => { const v = inp.value.trim(); overlay.remove(); resolve(v || defaultLabel); };
+                overlay.addEventListener('keydown', e => { if (e.key === 'Enter') { const v = inp.value.trim(); overlay.remove(); resolve(v || defaultLabel); } if (e.key === 'Escape') { overlay.remove(); resolve(null); } });
+            });
+            if (!label) return;
+            const btn = document.getElementById('nb-save-to-history-btn');
+            const statusEl = document.getElementById('nb-historical-status');
+            if (btn) { btn.style.opacity = '0.5'; btn.style.pointerEvents = 'none'; }
+            if (statusEl) statusEl.textContent = '存入中…';
+            try {
+                const resp = await fetch('/api/rag/index-notebook', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        session_id: sid,
+                        file_stem: fileStem,
+                        label: label,
+                        notes: notes.map(n => ({ tool: n.tool, text: n.text, timestamp: n.timestamp || '' })),
+                        user_id: localStorage.getItem('sigma2_session_id') || 'default',
+                    }),
+                });
+                const data = await resp.json();
+                if (data.ok) {
+                    if (statusEl) { statusEl.textContent = `✓ 已存入 ${data.indexed} 則`; setTimeout(() => { if (statusEl) statusEl.textContent = ''; }, 3000); }
+                } else {
+                    if (statusEl) statusEl.textContent = '存入失敗';
+                }
+            } catch (e) {
+                if (statusEl) statusEl.textContent = '存入失敗';
+            } finally {
+                if (btn) { btn.style.opacity = '1'; btn.style.pointerEvents = ''; }
+            }
         }
 
         // ---- Global mind map (all chat history) ----

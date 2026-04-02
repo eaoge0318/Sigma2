@@ -48,6 +48,1923 @@
         '#eab308', '#06b6d4', '#ec4899',
     ];
 
+    // ============ ADVANCED MODE: Correlation Scatter ============
+    let _meCorrelations = {};       // { x_col: { y_col: corr } }
+    let _meShapData     = {};       // { x_col: { y_col: signed_mean_shap } }
+    let _meScatterMetric = 'corr';  // 'corr' | 'shap'
+    let _meShowBalanceLine = false;
+    const _meOverlaySettings = { zero: true, ol03: true, ol05: true, balance: false };
+    // Returns active scatter data based on current metric mode
+    function _meActiveData() { return _meScatterMetric === 'shap' ? _meShapData : _meCorrelations; }
+    let _meScatterSelected = new Set();
+    let _meScatterBox = null;       // { x0,y0,x1,y1 } in SVG coords during drag
+    let _meScatterDragging = false;
+    let _meScatterDragStart = null;
+    let _meControlMode = 'normal';  // 'normal' | 'advanced'
+    let _meRangeState = {};         // { col: { low, high } }  -100~100
+    let _meRangeDrag = null;        // { col, handle, trackEl }
+    let _meScatterMode = 'select';  // 'select' | 'zoom' | 'pan'
+    let _meScatterZoom = { xMin: -1, xMax: 1, yMin: -1, yMax: 1 };
+    let _mePanDrag = null; // { startX, startY, startZoom }
+
+    window.meSetControlMode = function (mode) {
+        _meControlMode = mode;
+        const normalPane = document.getElementById('me-control-normal-pane');
+        const advPane    = document.getElementById('me-control-advanced-pane');
+        const btnN = document.getElementById('me-mode-btn-normal');
+        const btnA = document.getElementById('me-mode-btn-advanced');
+        if (!normalPane || !advPane) return;
+        if (mode === 'advanced') {
+            normalPane.style.display = 'none';
+            advPane.style.display = 'flex';
+            btnN.style.background = 'transparent'; btnN.style.color = '#64748b';
+            btnA.style.background = '#2563eb';     btnA.style.color = '#fff';
+            meFetchAndRenderScatter();
+        } else {
+            normalPane.style.display = 'grid';
+            advPane.style.display = 'none';
+            btnN.style.background = '#2563eb'; btnN.style.color = '#fff';
+            btnA.style.background = 'transparent'; btnA.style.color = '#64748b';
+        }
+    };
+
+    async function meFetchAndRenderScatter() {
+        if (!_meTargets.length) return;
+        const loadEl = document.getElementById('me-scatter-loading');
+        if (loadEl) loadEl.style.display = 'flex';
+        try {
+            const sid    = typeof getSessionId === 'function' ? getSessionId() : (localStorage.getItem('sigma2_session_id') || 'default');
+            const fileId = typeof currentFileId !== 'undefined' ? currentFileId : '';
+            const yCols  = _meTargets.map(t => t.col);
+            // 傳入 x_cols 讓後端只計算清洗後的欄位，排除被規則移除的欄位
+            const xCols  = _meAllCols.filter(c => !yCols.includes(c));
+            const resp   = await fetch(`/api/data-prep/correlations/${fileId}?session_id=${encodeURIComponent(sid)}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ y_cols: yCols, x_cols: xCols })
+            });
+            const data = await resp.json();
+            _meCorrelations = data.correlations || {};
+        } catch (e) {
+            console.error('[ME] correlations fetch error:', e);
+        }
+        if (loadEl) loadEl.style.display = 'none';
+        meSetupScatterAxes();
+        meRenderScatterFilters();
+        meSetScatterView('global');
+    }
+
+    // ── SHAP fetch with SSE progress ──────────────────────────────
+    window.meFetchShap = async function () {
+        if (!_meTargets.length) return;
+        const sid    = typeof getSessionId === 'function' ? getSessionId() : (localStorage.getItem('sigma2_session_id') || 'default');
+        const fileId = typeof currentFileId !== 'undefined' ? currentFileId : '';
+        const yCols  = _meTargets.map(t => t.col);
+        const xCols  = _meAllCols.filter(c => !yCols.includes(c));
+
+        // Show progress overlay — 掛在整個散佈區塊 (me-scatter-area)，不管目前顯示哪個 view 都看得到
+        let progressEl = document.getElementById('me-shap-progress');
+        if (!progressEl) {
+            progressEl = document.createElement('div');
+            progressEl.id = 'me-shap-progress';
+            progressEl.style.cssText = 'position:absolute;inset:0;background:rgba(255,255,255,.92);z-index:200;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;border-radius:8px;';
+            const scatterArea = document.getElementById('me-scatter-area');
+            if (scatterArea) scatterArea.appendChild(progressEl);
+        }
+        progressEl.style.display = 'flex';
+        progressEl.innerHTML = `
+            <div style="font-size:13px;font-weight:600;color:#1e293b;">計算 SHAP 值中…</div>
+            <div style="width:260px;background:#e2e8f0;border-radius:99px;height:8px;overflow:hidden;">
+                <div id="me-shap-bar" style="height:100%;background:#6366f1;border-radius:99px;width:0%;transition:width .3s;"></div>
+            </div>
+            <div id="me-shap-prog-text" style="font-size:11px;color:#64748b;">0 / ${yCols.length}</div>`;
+
+        _meShapData = {};
+        try {
+            const resp = await fetch(`/api/data-prep/shap-scatter/${fileId}?session_id=${encodeURIComponent(sid)}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ y_cols: yCols, x_cols: xCols }),
+            });
+            const reader = resp.body.getReader();
+            const decoder = new TextDecoder();
+            let buf = '';
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                buf += decoder.decode(value, { stream: true });
+                const lines = buf.split('\n');
+                buf = lines.pop();
+                for (const line of lines) {
+                    if (!line.startsWith('data: ')) continue;
+                    try {
+                        const msg = JSON.parse(line.slice(6));
+                        if (msg.shap) _meShapData = msg.shap;
+                        const pct = Math.round((msg.done / msg.total) * 100);
+                        const bar = document.getElementById('me-shap-bar');
+                        const txt = document.getElementById('me-shap-prog-text');
+                        if (bar) bar.style.width = pct + '%';
+                        if (txt) txt.textContent = `${msg.done} / ${msg.total}`;
+                    } catch {}
+                }
+            }
+        } catch (e) {
+            console.error('[ME] SHAP fetch error:', e);
+        }
+
+        progressEl.style.display = 'none';
+
+        // 正規化：每個 target 的 SHAP 值縮放到 [-1, 1]（保留方向，讓量綱一致）
+        const yCols2 = _meTargets.map(t => t.col);
+        yCols2.forEach(yCol => {
+            const vals = Object.values(_meShapData).map(d => Math.abs(d[yCol] ?? 0)).filter(v => v > 0);
+            if (!vals.length) return;
+            const maxAbs = Math.max(...vals);
+            if (maxAbs === 0) return;
+            Object.keys(_meShapData).forEach(xCol => {
+                if (_meShapData[xCol][yCol] != null)
+                    _meShapData[xCol][yCol] = _meShapData[xCol][yCol] / maxAbs;
+            });
+        });
+
+        // Switch to SHAP mode and re-render
+        _meScatterMetric = 'shap';
+        _meUpdateMetricToggle();
+        meSetupScatterAxes();
+        meRenderScatterFilters();
+        _meRefreshPlot();
+        if (document.getElementById('me-table-view')?.style.display !== 'none') meRenderCorrelationTable();
+    };
+
+    window.meToggleOverlaySettings = function (e) {
+        e && e.stopPropagation();
+        const panel = document.getElementById('me-overlay-settings-panel');
+        if (!panel) return;
+        panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+    };
+    // Close on outside click
+    document.addEventListener('click', function(e) {
+        const wrap = document.getElementById('me-overlay-settings-wrap');
+        const panel = document.getElementById('me-overlay-settings-panel');
+        if (panel && wrap && !wrap.contains(e.target)) panel.style.display = 'none';
+    });
+    window.meOverlaySettingChange = function () {
+        _meOverlaySettings.zero    = document.getElementById('me-ol-zero')?.checked ?? true;
+        _meOverlaySettings.ol03    = document.getElementById('me-ol-03')?.checked   ?? true;
+        _meOverlaySettings.ol05    = document.getElementById('me-ol-05')?.checked   ?? true;
+        _meOverlaySettings.balance = document.getElementById('me-ol-balance')?.checked ?? false;
+        _meShowBalanceLine = _meOverlaySettings.balance;
+        // Update button style to indicate any non-default state
+        const btn = document.getElementById('me-overlay-settings-btn');
+        const hasCustom = !_meOverlaySettings.zero || !_meOverlaySettings.ol03 || !_meOverlaySettings.ol05 || _meOverlaySettings.balance;
+        if (btn) {
+            btn.style.background = hasCustom ? '#ede9fe' : '#f1f5f9';
+            btn.style.color      = hasCustom ? '#7c3aed' : '#64748b';
+        }
+        _meRefreshPlot();
+    };
+
+    window.meSetScatterMetric = function (mode) {
+        if (mode === 'shap' && !Object.keys(_meShapData).length) {
+            meFetchShap();
+            return;
+        }
+        _meScatterMetric = mode;
+        _meUpdateMetricToggle();
+        _meRefreshPlot();
+        if (document.getElementById('me-table-view')?.style.display !== 'none') meRenderCorrelationTable();
+    };
+
+    function _meUpdateMetricToggle() {
+        const btnCorr = document.getElementById('me-metric-corr-btn');
+        const btnShap = document.getElementById('me-metric-shap-btn');
+        if (!btnCorr || !btnShap) return;
+        const setActive   = btn => { btn.style.background = '#6366f1'; btn.style.color = '#fff';     btn.style.fontWeight = '600'; };
+        const setInactive = btn => { btn.style.background = 'transparent'; btn.style.color = '#64748b'; btn.style.fontWeight = '400'; };
+        if (_meScatterMetric === 'corr') { setActive(btnCorr); setInactive(btnShap); }
+        else                             { setInactive(btnCorr); setActive(btnShap); }
+        // Update table header label
+        const tableView = document.getElementById('me-table-view');
+        if (tableView) {
+            const label = _meScatterMetric === 'shap' ? 'SHAP（有方向性）' : 'Pearson r';
+            const existing = tableView.querySelector('.me-metric-label');
+            if (existing) existing.textContent = label;
+        }
+    }
+
+    function meSetupScatterAxes() {
+        const yCols = _meTargets.map(t => t.col);
+        ['x','y'].forEach(axis => {
+            const sel = document.getElementById(`me-scatter-axis-${axis}`);
+            if (!sel) return;
+            const prev = sel.value;
+            sel.innerHTML = yCols.map((c,i) => `<option value="${c}">${c}</option>`).join('');
+            // Default: X=first Y, Y=second Y (if exists)
+            if (axis === 'x') sel.value = yCols[0] || '';
+            if (axis === 'y') sel.value = yCols[1] || yCols[0] || '';
+            if (yCols.includes(prev)) sel.value = prev;
+        });
+    }
+
+    // ── Dual-handle range bar helpers ──────────────────────────────
+    function _meDualRangeUpdate(col, low, high) {
+        _meRangeState[col] = { low, high };
+        const esc = CSS.escape(col);
+        const lowPct  = (low  + 100) / 200 * 100;
+        const highPct = (high + 100) / 200 * 100;
+        const lowEl  = document.getElementById(`me-sf-low-${esc}`);
+        const highEl = document.getElementById(`me-sf-high-${esc}`);
+        const fillEl = document.getElementById(`me-sf-fill-${esc}`);
+        const minLbl = document.getElementById(`me-sf-min-lbl-${esc}`);
+        const maxLbl = document.getElementById(`me-sf-max-lbl-${esc}`);
+        if (lowEl)  { lowEl.style.left  = `${lowPct}%`;  lowEl.dataset.val  = low; }
+        if (highEl) { highEl.style.left = `${highPct}%`; highEl.dataset.val = high; }
+        if (fillEl) { fillEl.style.left = `${lowPct}%`;  fillEl.style.width = `${highPct - lowPct}%`; }
+        if (minLbl) minLbl.value = (low  / 100).toFixed(2);
+        if (maxLbl) maxLbl.value = (high / 100).toFixed(2);
+    }
+
+    window.meRangeMouseDown = function (e, handle, col) {
+        const trackEl = document.getElementById(`me-sf-track-${CSS.escape(col)}`);
+        if (!trackEl) return;
+        _meRangeDrag = { col, handle, trackEl };
+        e.preventDefault();
+        e.stopPropagation();
+    };
+
+    document.addEventListener('mousemove', function (e) {
+        if (!_meRangeDrag) return;
+        const { col, handle, trackEl } = _meRangeDrag;
+        const rect = trackEl.getBoundingClientRect();
+        const pct  = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+        const val  = Math.round(pct * 200 - 100);
+        const st   = _meRangeState[col] || { low: -100, high: 100 };
+        if (handle === 'low')  _meDualRangeUpdate(col, Math.min(val, st.high), st.high);
+        else                   _meDualRangeUpdate(col, st.low, Math.max(val, st.low));
+        _meRefreshPlot();
+    });
+
+    document.addEventListener('mouseup', function () { _meRangeDrag = null; });
+
+    window.meRenderScatterFilters = function () {
+        const container = document.getElementById('me-scatter-filters');
+        if (!container) return;
+        const filterCols = _meTargets.map(t => t.col);
+        const axX = (document.getElementById('me-scatter-axis-x') || {}).value;
+        const axY = (document.getElementById('me-scatter-axis-y') || {}).value;
+        // Initialise state for new cols
+        filterCols.forEach(col => { if (!_meRangeState[col]) _meRangeState[col] = { low: -100, high: 100 }; });
+        container.innerHTML = filterCols.map(col => {
+            const esc = CSS.escape(col);
+            const isAxisX = col === axX, isAxisY = col === axY;
+            const axisTag = isAxisX
+                ? `<span style="background:#dbeafe;color:#2563eb;font-size:9px;padding:1px 5px;border-radius:4px;margin-left:4px;">X軸</span>`
+                : isAxisY
+                ? `<span style="background:#ede9fe;color:#7c3aed;font-size:9px;padding:1px 5px;border-radius:4px;margin-left:4px;">Y軸</span>` : '';
+            const { low, high } = _meRangeState[col];
+            const lowPct  = (low  + 100) / 200 * 100;
+            const highPct = (high + 100) / 200 * 100;
+            const colSafe = col.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+            return `
+            <div style="flex-shrink:0;">
+                <div style="font-size:11px;color:#2563eb;margin-bottom:3px;font-weight:700;display:flex;align-items:center;">${col}${axisTag}</div>
+                <div style="display:flex;gap:3px;margin-bottom:4px;">
+                    <button onclick="meRangePresetOne('${colSafe}','all')"  style="flex:1;padding:3px 0;border:1px solid #e2e8f0;border-radius:4px;font-size:10px;color:#64748b;background:#f8fafc;cursor:pointer;">全選</button>
+                    <button onclick="meRangePresetOne('${colSafe}','low')"  style="flex:1;padding:3px 0;border:1px solid #e2e8f0;border-radius:4px;font-size:10px;color:#64748b;background:#f8fafc;cursor:pointer;">低相關</button>
+                    <button onclick="meRangePresetOne('${colSafe}','high')" style="flex:1;padding:3px 0;border:1px solid #e2e8f0;border-radius:4px;font-size:10px;color:#64748b;background:#f8fafc;cursor:pointer;">高相關</button>
+                </div>
+                <div id="me-sf-track-${esc}" style="position:relative;height:20px;margin:0 8px;overflow:visible;">
+                    <div style="position:absolute;top:50%;left:0;right:0;height:3px;background:#e2e8f0;border-radius:2px;transform:translateY(-50%);"></div>
+                    <div id="me-sf-fill-${esc}" style="position:absolute;top:50%;height:3px;background:#6366f1;border-radius:2px;transform:translateY(-50%);left:${lowPct}%;width:${highPct-lowPct}%;"></div>
+                    <div id="me-sf-low-${esc}" data-val="${low}" style="position:absolute;top:50%;left:${lowPct}%;width:14px;height:14px;background:#fff;border:2px solid #6366f1;border-radius:50%;transform:translate(-50%,-50%);cursor:ew-resize;z-index:2;box-shadow:0 1px 3px rgba(0,0,0,.2);" onmousedown="meRangeMouseDown(event,'low','${colSafe}')"></div>
+                    <div id="me-sf-high-${esc}" data-val="${high}" style="position:absolute;top:50%;left:${highPct}%;width:14px;height:14px;background:#fff;border:2px solid #6366f1;border-radius:50%;transform:translate(-50%,-50%);cursor:ew-resize;z-index:2;box-shadow:0 1px 3px rgba(0,0,0,.2);" onmousedown="meRangeMouseDown(event,'high','${colSafe}')"></div>
+                </div>
+                <div style="display:flex;justify-content:space-between;margin-top:2px;">
+                    <input id="me-sf-min-lbl-${esc}" type="number" min="-1" max="1" step="0.05" value="${(low/100).toFixed(2)}"
+                        style="width:46px;border:1px solid #e2e8f0;border-radius:4px;font-size:10px;padding:1px 3px;text-align:center;color:#475569;"
+                        onchange="meRangeSetFromInput('low','${colSafe}',this.value)">
+                    <input id="me-sf-max-lbl-${esc}" type="number" min="-1" max="1" step="0.05" value="${(high/100).toFixed(2)}"
+                        style="width:46px;border:1px solid #e2e8f0;border-radius:4px;font-size:10px;padding:1px 3px;text-align:center;color:#475569;"
+                        onchange="meRangeSetFromInput('high','${colSafe}',this.value)">
+                </div>
+            </div>`;
+        }).join('');
+    };
+
+    window.meScatterFilterChange = function () { _meRefreshPlot(); };
+
+    window.meRangeSetFromInput = function (handle, col, rawVal) {
+        const v    = Math.max(-1, Math.min(1, parseFloat(rawVal) || 0));
+        const intV = Math.round(v * 100);
+        const st   = _meRangeState[col] || { low: -100, high: 100 };
+        if (handle === 'low')  _meDualRangeUpdate(col, Math.min(intV, st.high), st.high);
+        else                   _meDualRangeUpdate(col, st.low, Math.max(intV, st.low));
+        _meRefreshPlot();
+    };
+
+    window.meRangePreset = function (preset) {
+        const map = { all: [-100, 100], low: [-30, 30], high: [30, 100] };
+        const [lo, hi] = map[preset] || [-100, 100];
+        _meTargets.map(t => t.col).forEach(col => _meDualRangeUpdate(col, lo, hi));
+        _meRefreshPlot();
+    };
+
+    window.meRangePresetOne = function (col, preset) {
+        const map = { all: [-100, 100], low: [-30, 30], high: [30, 100] };
+        const [lo, hi] = map[preset] || [-100, 100];
+        _meDualRangeUpdate(col, lo, hi);
+        _meRefreshPlot();
+    };
+
+    window.meSetPlotMode = function (mode) {
+        _meScatterMode = mode;
+        ['select','zoom','pan'].forEach(m => {
+            const btn = document.getElementById(`me-plot-${m}-btn`);
+            if (!btn) return;
+            btn.style.background = mode === m ? '#2563eb' : '#f1f5f9';
+            btn.style.color      = mode === m ? '#fff'    : '#64748b';
+        });
+    };
+
+    window.meScatterZoomReset = function () {
+        _meScatterZoom = { xMin: -1, xMax: 1, yMin: -1, yMax: 1 };
+        const btn = document.getElementById('me-zoom-reset-btn');
+        if (btn) btn.style.display = 'none';
+        meRenderScatterPlot();
+    };
+
+    // Refresh the currently visible view (global or detail scatter)
+    function _meRefreshPlot() {
+        const gv = document.getElementById('me-global-view');
+        if (gv && gv.style.display !== 'none') meRenderGlobalView();
+        else meRenderScatterPlot();
+    }
+
+    function meGetFilteredCols() {
+        const filterCols = _meTargets.map(t => t.col);
+        return Object.keys(_meActiveData()).filter(xCol => {
+            const row = _meActiveData()[xCol];
+            return filterCols.every(fc => {
+                const st   = _meRangeState[fc] || { low: -100, high: 100 };
+                const corr = row[fc] !== undefined ? row[fc] : 0;
+                return corr >= st.low / 100 && corr <= st.high / 100;
+            });
+        });
+    }
+
+    // ── View toggle: scatter ↔ table ───────────────────────────────
+    window.meSetScatterView = function (view) {
+        const gv  = document.getElementById('me-global-view');
+        const sv  = document.getElementById('me-scatter-view');
+        const tv  = document.getElementById('me-table-view');
+        const bG  = document.getElementById('me-view-global-btn');
+        const bS  = document.getElementById('me-view-scatter-btn');
+        const bT  = document.getElementById('me-view-table-btn');
+        if (!sv || !tv) return;
+        // Hide all
+        if (gv) gv.style.display = 'none';
+        sv.style.display = 'none';
+        tv.style.display = 'none';
+        // Reset button styles
+        const inactive = { background: 'transparent', color: '#64748b', fontWeight: 'normal' };
+        const active   = { background: '#2563eb',     color: '#fff',     fontWeight: '600' };
+        [bG, bS, bT].forEach(b => { if (b) Object.assign(b.style, inactive); });
+        if (view === 'global') {
+            if (gv) { gv.style.display = 'flex'; }
+            if (bG) Object.assign(bG.style, active);
+            meRenderGlobalView();
+        } else if (view === 'scatter') {
+            sv.style.display = 'flex';
+            if (bS) Object.assign(bS.style, active);
+            meRenderScatterPlot();
+        } else {
+            tv.style.display = 'block';
+            if (bT) Object.assign(bT.style, active);
+            meRenderCorrelationTable();
+        }
+    };
+
+    // ── Global SPLOM view ──────────────────────────────────────────
+    // Uses _meCorrelations (same data as 細部散佈圖): each dot = one X parameter,
+    // positioned at (corr vs xCol, corr vs yCol) — clicking a cell enters 細部 view.
+    let _meGlobalCellSize = 120; // px, user-adjustable
+
+    window.meGlobalZoom = function (dir) {
+        _meGlobalCellSize = Math.max(60, _meGlobalCellSize + dir * 30);
+        const lbl = document.getElementById('me-global-size-lbl');
+        if (lbl) lbl.textContent = _meGlobalCellSize + 'px';
+        const gv = document.getElementById('me-global-view');
+        if (gv) _meRenderSPLOMGrid(gv, _meTargets.map(t => t.col));
+    };
+
+    window.meRenderGlobalView = function () {
+        const gv = document.getElementById('me-global-view');
+        if (!gv) return;
+        const yCols = _meTargets.map(t => t.col);
+        const _emptyMsg = msg => {
+            gv.innerHTML = `<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;"><span style="font-size:12px;color:#94a3b8;">${msg}</span></div>`;
+        };
+        if (yCols.length < 2) { _emptyMsg('至少需要兩個目標參數才能顯示全域散佈圖'); return; }
+        if (!Object.keys(_meActiveData()).length) { _emptyMsg('請先計算後顯示全域散佈圖'); return; }
+        _meRenderSPLOM(gv, yCols);
+    };
+
+    function _meRenderSPLOM(container, yCols) {
+        container.style.position = 'relative';
+
+        const cs = _meGlobalCellSize;
+        // Use position:absolute so inner content NEVER affects outer flex layout
+        container.innerHTML = `
+        <div style="position:absolute;inset:0;display:flex;flex-direction:column;">
+            <div style="flex-shrink:0;display:flex;align-items:center;gap:6px;padding:7px 12px;border-bottom:1px solid #f1f5f9;">
+                <span style="font-size:10px;color:#94a3b8;">格子大小</span>
+                <button onclick="meGlobalZoom(-1)" style="width:24px;height:24px;border:1px solid #e2e8f0;border-radius:5px;background:#fff;color:#475569;font-size:15px;cursor:pointer;line-height:1;padding:0;">−</button>
+                <span id="me-global-size-lbl" style="font-size:10px;color:#64748b;min-width:34px;text-align:center;">${cs}px</span>
+                <button onclick="meGlobalZoom(+1)" style="width:24px;height:24px;border:1px solid #e2e8f0;border-radius:5px;background:#fff;color:#475569;font-size:15px;cursor:pointer;line-height:1;padding:0;">+</button>
+            </div>
+            <div style="flex:1;overflow:auto;padding:10px 12px;">
+                <div id="me-global-grid"></div>
+            </div>
+        </div>`;
+        _meRenderSPLOMGrid(container, yCols);
+    }
+
+    function _meRenderSPLOMGrid(container, yCols) {
+        const gridEl = container.querySelector
+            ? container.querySelector('#me-global-grid')
+            : document.getElementById('me-global-grid');
+        if (!gridEl) return;
+        const n = yCols.length;
+        const cs = _meGlobalCellSize;
+        const gap = 4;
+        const labelFontSize = cs < 100 ? 8 : cs < 150 ? 10 : 12;
+
+        let html = `<div style="display:grid;grid-template-columns:repeat(${n},${cs}px);gap:${gap}px;">`;
+        for (let r = 0; r < n; r++) {
+            for (let c = 0; c < n; c++) {
+                if (r === c) {
+                    html += `<div style="width:${cs}px;height:${cs}px;border:1px solid #e2e8f0;border-radius:6px;background:#f8fafc;display:flex;align-items:center;justify-content:center;padding:6px;box-sizing:border-box;">
+                        <span style="font-size:${labelFontSize}px;font-weight:700;color:#1e293b;text-align:center;word-break:break-all;line-height:1.4;">${yCols[r]}</span>
+                    </div>`;
+                } else {
+                    const xCol = yCols[c];
+                    const yCol = yCols[r];
+                    const miniSvg = _meGlobalMiniScatter(xCol, yCol, cs, cs);
+                    html += `<div onclick="meSetGlobalAxes('${xCol.replace(/'/g,"\\'")}','${yCol.replace(/'/g,"\\'")}');"
+                        style="width:${cs}px;height:${cs}px;border:1px solid #e2e8f0;border-radius:6px;background:#fff;overflow:hidden;cursor:pointer;box-sizing:border-box;"
+                        onmouseenter="this.style.borderColor='#6366f1';this.style.boxShadow='0 0 0 2px #e0e7ff'"
+                        onmouseleave="this.style.borderColor='#e2e8f0';this.style.boxShadow='none'">
+                        ${miniSvg}
+                    </div>`;
+                }
+            }
+        }
+        html += '</div>';
+        gridEl.innerHTML = html;
+    }
+
+    // Mini scatter using correlation coefficients (same axes as 細部散佈圖)
+    function _meGlobalMiniScatter(xTargetCol, yTargetCol, W, H) {
+        const rows = Object.entries(_meActiveData()).map(([col, corrs]) => ({
+            col,
+            cx: corrs[xTargetCol] ?? 0,
+            cy: corrs[yTargetCol] ?? 0,
+        }));
+
+        const PAD = { l: 20, r: 4, t: 6, b: 16 };
+        const pw = W - PAD.l - PAD.r, ph = H - PAD.t - PAD.b;
+        const toSvgX = v => PAD.l + (v + 1) / 2 * pw;
+        const toSvgY = v => PAD.t + (1 - (v + 1) / 2) * ph;
+
+        const passFilter = new Set(meGetFilteredCols());
+
+        // Tick values and reference lines
+        const ticks = [-1, -0.5, 0, 0.5, 1];
+        const refLines = [-0.3, 0.3]; // dashed ±0.3 guide
+
+        let gridLines = '';
+        ticks.forEach(v => {
+            const sx = toSvgX(v).toFixed(1), sy = toSvgY(v).toFixed(1);
+            // light grid lines at each tick
+            gridLines += `<line x1="${sx}" y1="${PAD.t}" x2="${sx}" y2="${PAD.t + ph}" stroke="#f1f5f9" stroke-width="1"/>`;
+            gridLines += `<line x1="${PAD.l}" y1="${sy}" x2="${PAD.l + pw}" y2="${sy}" stroke="#f1f5f9" stroke-width="1"/>`;
+        });
+        // zero lines (slightly darker)
+        const zx = toSvgX(0).toFixed(1), zy = toSvgY(0).toFixed(1);
+        gridLines += `<line x1="${PAD.l}" y1="${zy}" x2="${PAD.l + pw}" y2="${zy}" stroke="#cbd5e1" stroke-width="1"/>`;
+        gridLines += `<line x1="${zx}" y1="${PAD.t}" x2="${zx}" y2="${PAD.t + ph}" stroke="#cbd5e1" stroke-width="1"/>`;
+        // ±0.3 dashed reference lines
+        refLines.forEach(v => {
+            const sx = toSvgX(v).toFixed(1), sy = toSvgY(v).toFixed(1);
+            gridLines += `<line x1="${sx}" y1="${PAD.t}" x2="${sx}" y2="${PAD.t + ph}" stroke="#a5b4fc" stroke-width="0.8" stroke-dasharray="2,2"/>`;
+            gridLines += `<line x1="${PAD.l}" y1="${sy}" x2="${PAD.l + pw}" y2="${sy}" stroke="#a5b4fc" stroke-width="0.8" stroke-dasharray="2,2"/>`;
+        });
+
+        let dots = '';
+        rows.forEach(({ col, cx, cy }) => {
+            const isSelected = _meScatterSelected.has(col);
+            const inFilter   = passFilter.has(col);
+            const fill    = isSelected ? '#f97316' : inFilter ? '#a855f7' : '#cbd5e1';
+            const opacity = isSelected ? '0.9' : inFilter ? '0.7' : '0.4';
+            dots += `<circle cx="${toSvgX(cx).toFixed(1)}" cy="${toSvgY(cy).toFixed(1)}" r="${isSelected ? 3 : 2}" fill="${fill}" opacity="${opacity}"/>`;
+        });
+
+        // X-axis tick labels at -1, 0, 1
+        const xTickLabels = [-1, 0, 1].map(v =>
+            `<text x="${toSvgX(v).toFixed(1)}" y="${H - 2}" text-anchor="middle" fill="#94a3b8" font-size="7">${v}</text>`
+        ).join('');
+        // Y-axis tick labels at -1, 0, 1
+        const yTickLabels = [-1, 0, 1].map(v =>
+            `<text x="${PAD.l - 2}" y="${(toSvgY(v) + 2.5).toFixed(1)}" text-anchor="end" fill="#94a3b8" font-size="7">${v}</text>`
+        ).join('');
+
+        return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="display:block;">
+            ${gridLines}
+            ${dots}
+            ${xTickLabels}
+            ${yTickLabels}
+        </svg>`;
+    }
+
+    window.meSetGlobalAxes = function (xCol, yCol) {
+        const selX = document.getElementById('me-scatter-axis-x');
+        const selY = document.getElementById('me-scatter-axis-y');
+        if (selX) selX.value = xCol;
+        if (selY) selY.value = yCol;
+        meRenderScatterFilters();
+        meSetScatterView('scatter');
+    };
+
+    // sort state: { col: 'name'|yColName, dir: 1|-1 }
+    let _meTableSort = { col: '__max__', dir: -1 };
+
+    window.meTableSortBy = function (col) {
+        if (_meTableSort.col === col) _meTableSort.dir *= -1;
+        else { _meTableSort.col = col; _meTableSort.dir = col === 'name' ? 1 : -1; }
+        meRenderCorrelationTable();
+    };
+
+    window.meRenderCorrelationTable = function () {
+        const el = document.getElementById('me-table-view');
+        if (!el || !Object.keys(_meActiveData()).length) return;
+        const yCols = _meTargets.map(t => t.col);
+        const passFilter = new Set(meGetFilteredCols());
+        const allXCols = Object.keys(_meActiveData());
+
+        // Sort
+        const { col: sCol, dir } = _meTableSort;
+        const sorted = allXCols.slice().sort((a, b) => {
+            let va, vb;
+            if (sCol === 'name') {
+                va = a.toLowerCase(); vb = b.toLowerCase();
+                return dir * va.localeCompare(vb);
+            } else if (sCol === '__max__') {
+                va = Math.max(...yCols.map(y => Math.abs(_meActiveData()[a][y] ?? 0)));
+                vb = Math.max(...yCols.map(y => Math.abs(_meActiveData()[b][y] ?? 0)));
+            } else {
+                va = _meActiveData()[a][sCol] ?? 0;
+                vb = _meActiveData()[b][sCol] ?? 0;
+            }
+            return dir * (va - vb);
+        });
+
+        const arrow = (col) => {
+            if (_meTableSort.col !== col) return `<span style="opacity:.3;font-size:9px;">↕</span>`;
+            return `<span style="font-size:9px;">${_meTableSort.dir < 0 ? '↓' : '↑'}</span>`;
+        };
+        const thBase = `padding:6px 8px;border-bottom:2px solid #e2e8f0;font-weight:600;text-align:center;cursor:pointer;user-select:none;white-space:nowrap;`;
+        const thHover = `onmouseenter="this.style.background='#f1f5f9'" onmouseleave="this.style.background='#f8fafc'"`;
+
+        const cellStyle = (r) => {
+            const abs = Math.abs(r);
+            let bg = '#fff';
+            if (r >  0.05) bg = `rgba(37,99,235,${Math.min(abs, 1) * 0.6})`;
+            if (r < -0.05) bg = `rgba(239,68,68,${Math.min(abs, 1) * 0.6})`;
+            const fg = abs > 0.4 ? '#fff' : '#1e293b';
+            return `background:${bg};color:${fg};`;
+        };
+        let html = `<table style="border-collapse:collapse;width:100%;font-size:11px;">
+            <thead>
+                <tr style="position:sticky;top:0;z-index:2;background:#f8fafc;">
+                    <th style="text-align:left;${thBase}min-width:140px;color:#64748b;" onclick="meTableSortBy('name')" ${thHover}>X 參數 ${arrow('name')}</th>
+                    ${yCols.map(y => `<th style="${thBase}min-width:90px;color:#475569;" onclick="meTableSortBy('${y.replace(/'/g,"\\'")}') " ${thHover}>${y} ${arrow(y)}</th>`).join('')}
+                </tr>
+            </thead><tbody>`;
+        sorted.forEach((xCol, idx) => {
+            const row = _meActiveData()[xCol];
+            const pass = passFilter.has(xCol);
+            const rowBg = pass ? (idx % 2 === 0 ? '#fff' : '#fafafe') : '#f1f5f9';
+            const nameStyle = pass ? 'color:#1e293b;font-weight:500;' : 'color:#94a3b8;';
+            html += `<tr style="background:${rowBg};" onmouseenter="this.style.outline='1px solid #c7d2fe'" onmouseleave="this.style.outline='none'">
+                <td style="padding:4px 10px;border-bottom:1px solid #f1f5f9;${nameStyle}white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px;" title="${xCol}">${xCol}</td>
+                ${yCols.map(y => {
+                    const r = row[y] ?? null;
+                    if (r === null) return `<td style="padding:4px 8px;border-bottom:1px solid #f1f5f9;text-align:center;color:#cbd5e1;">—</td>`;
+                    return `<td style="padding:4px 8px;border-bottom:1px solid #f1f5f9;text-align:center;${cellStyle(r)}">${r.toFixed(3)}</td>`;
+                }).join('')}
+            </tr>`;
+        });
+        html += '</tbody></table>';
+        el.innerHTML = html;
+    };
+
+    // ── Click dot → show mini multi-target scatter modal ──────────
+    window.meShowXYScatter = async function (col) {
+        if (!_meTargets.length) return;
+        const fileId = typeof currentFileId !== 'undefined' ? currentFileId : '';
+        const sid    = typeof getSessionId === 'function' ? getSessionId() : (localStorage.getItem('sigma2_session_id') || 'default');
+        const yCols  = _meTargets.map(t => t.col).join(',');
+        _meXYModalShow(col, null);
+        try {
+            const resp = await fetch(`/api/data-prep/xy-data/${fileId}?x_col=${encodeURIComponent(col)}&y_cols=${encodeURIComponent(yCols)}&session_id=${encodeURIComponent(sid)}`);
+            _meXYModalShow(col, await resp.json());
+        } catch (e) { console.error('[ME] xy-data error:', e); }
+    };
+
+    let _meXYSyncYAxis = false;
+
+    function _meXYModalShow(col, payload) {
+        let modal = document.getElementById('me-xy-modal');
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.id = 'me-xy-modal';
+            modal.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:2000;display:flex;align-items:center;justify-content:center;';
+            const _closeModal = () => {
+                document.removeEventListener('keydown', modal._escHandler);
+                modal.remove();
+            };
+            modal.addEventListener('click', e => { if (e.target === modal) _closeModal(); });
+            modal._escHandler = e => { if (e.key === 'Escape') _closeModal(); };
+            document.addEventListener('keydown', modal._escHandler);
+            modal._close = _closeModal;
+            document.body.appendChild(modal);
+        }
+        if (!payload) {
+            modal.innerHTML = `<div style="background:#fff;border-radius:14px;padding:28px 32px;min-width:280px;text-align:center;color:#6366f1;font-size:13px;">載入中…</div>`;
+            return;
+        }
+        // Cache payload so checkbox re-render can reuse it
+        modal._payload = payload;
+
+        const { x_col, y_cols, data } = payload;
+        const xVals = data[x_col] || [];
+        const cols = Math.min(y_cols.length, 3);
+        const cachedCorrs = (_meCorrelations[x_col] || {});
+        const cachedShap  = (_meScatterMetric === 'shap') ? (_meShapData[x_col] || {}) : null;
+
+        // Compute global Y range if sync is on
+        let globalYMin = null, globalYMax = null;
+        if (_meXYSyncYAxis) {
+            y_cols.forEach(yCol => {
+                const vals = (data[yCol] || []).filter(v => v != null);
+                if (!vals.length) return;
+                const mn = Math.min(...vals), mx = Math.max(...vals);
+                if (globalYMin === null || mn < globalYMin) globalYMin = mn;
+                if (globalYMax === null || mx > globalYMax) globalYMax = mx;
+            });
+        }
+
+        const plots = y_cols.map(yCol => _meMiniScatterHTML(
+            xVals, data[yCol] || [], x_col, yCol,
+            cachedCorrs[yCol], cachedShap ? cachedShap[yCol] : null,
+            globalYMin, globalYMax
+        )).join('');
+        const isShapMode = _meScatterMetric === 'shap';
+
+        modal.innerHTML = `
+        <div style="background:#fff;border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,.25);padding:20px 24px;max-width:92vw;max-height:85vh;overflow:auto;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:${isShapMode ? 4 : 8}px;">
+                <div style="font-size:14px;font-weight:700;color:#1e293b;">參數：${x_col}</div>
+                <div style="display:flex;align-items:center;gap:12px;">
+                    <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:#64748b;cursor:pointer;user-select:none;">
+                        <input type="checkbox" id="me-xy-sync-y" ${_meXYSyncYAxis ? 'checked' : ''}
+                            onchange="_meXYToggleSyncY()"
+                            style="accent-color:#6366f1;width:13px;height:13px;">
+                        Y軸同步
+                    </label>
+                    <button onclick="document.getElementById('me-xy-modal')._close()" style="border:none;background:#f1f5f9;border-radius:6px;width:28px;height:28px;cursor:pointer;font-size:14px;color:#64748b;line-height:1;">✕</button>
+                </div>
+            </div>
+            ${isShapMode ? `<div style="font-size:10px;color:#94a3b8;margin-bottom:12px;">散佈圖為原始資料（Pearson r）；括號內為正規化 SHAP 值</div>` : ''}
+            <div id="me-xy-scatter-grid" style="display:grid;grid-template-columns:repeat(${cols},1fr);gap:12px;">${plots}</div>
+            ${_meXYSyncYAxis ? `<div style="margin-top:14px;border-top:1px solid #f1f5f9;padding-top:12px;">
+                <div style="font-size:11px;font-weight:600;color:#64748b;margin-bottom:6px;">合併時序圖 <span style="font-size:10px;font-weight:400;color:#94a3b8;">— 拖曳框選以高亮散佈圖</span></div>
+                <div id="me-xy-trend-wrap">${_meCombinedTrendSVG(y_cols, data, globalYMin, globalYMax)}</div>
+            </div>` : ''}
+        </div>`;
+    }
+
+    let _meXYBrush = null; // { i0, i1 } index range selected on trend chart
+
+    // prefix: 'me-xy' (popup modal) or 'me-ad' (inline analyze-detail panel)
+    function _meCombinedTrendSVG(y_cols, data, yMin, yMax, prefix, brushState) {
+        if (prefix === undefined) prefix = 'me-xy';
+        if (brushState === undefined) brushState = (prefix === 'me-xy' ? _meXYBrush : window._meADBrush);
+        const pfxCap = prefix === 'me-xy' ? 'XY' : 'AD';
+        const COLORS = ['#2563eb', '#e11d48', '#059669', '#d97706', '#7c3aed'];
+        const W = 460, H = 160, PAD = { l:46, r:12, t:10, b:28 };
+        const pw = W - PAD.l - PAD.r, ph = H - PAD.t - PAD.b;
+
+        const yRange = (yMax - yMin) || 1;
+        const sy = v => PAD.t + (1 - (v - yMin) / yRange) * ph;
+
+        const n = Math.max(...y_cols.map(c => (data[c] || []).length));
+        if (n === 0) return '<div style="color:#94a3b8;font-size:12px;">無資料</div>';
+        const sx = i => PAD.l + (i / (n - 1 || 1)) * pw;
+
+        function fmt(v) {
+            const abs = Math.abs(v);
+            const dec = abs >= 100 ? 0 : abs >= 10 ? 1 : abs >= 1 ? 2 : 3;
+            return v.toFixed(dec);
+        }
+        function niceTicks(mn, mx, count) {
+            const range = mx - mn || 1;
+            const raw = range / count;
+            const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+            let step = mag;
+            for (const f of [1,2,2.5,5,10]) { if (f*mag >= raw) { step = f*mag; break; } }
+            const ticks = [];
+            for (let v = Math.ceil(mn/step)*step; v <= mx+step*0.001; v = +(v+step).toFixed(10)) ticks.push(parseFloat(v.toPrecision(10)));
+            return ticks;
+        }
+
+        // Brush rect from current state
+        let brushRect = '';
+        if (brushState) {
+            const bx0 = sx(Math.min(brushState.i0, brushState.i1));
+            const bx1 = sx(Math.max(brushState.i0, brushState.i1));
+            brushRect = `<rect id="${prefix}-brush-rect" x="${bx0.toFixed(1)}" y="${PAD.t}" width="${(bx1-bx0).toFixed(1)}" height="${ph}" fill="rgba(99,102,241,0.12)" stroke="#6366f1" stroke-width="1" stroke-dasharray="4,3"/>`;
+        } else {
+            brushRect = `<rect id="${prefix}-brush-rect" x="0" y="0" width="0" height="0" fill="rgba(99,102,241,0.12)" stroke="#6366f1" stroke-width="1" stroke-dasharray="4,3"/>`;
+        }
+
+        let svg = `<svg id="${prefix}-trend-svg" width="${W}" height="${H}" style="width:100%;max-width:${W}px;cursor:crosshair;" data-n="${n}" data-padl="${PAD.l}" data-pw="${pw}" data-padt="${PAD.t}" data-ph="${ph}">`;
+        svg += `<rect x="${PAD.l}" y="${PAD.t}" width="${pw}" height="${ph}" fill="#f8fafc" rx="3"/>`;
+
+        niceTicks(yMin, yMax, 4).forEach(v => {
+            const cy = sy(v);
+            svg += `<line x1="${PAD.l}" y1="${cy.toFixed(1)}" x2="${PAD.l+pw}" y2="${cy.toFixed(1)}" stroke="#e2e8f0" stroke-width="0.8"/>`;
+            svg += `<text x="${PAD.l-4}" y="${(cy+3.5).toFixed(1)}" text-anchor="end" font-size="8" fill="#94a3b8">${fmt(v)}</text>`;
+        });
+
+        const xStep = Math.ceil(n / 6);
+        for (let i = 0; i < n; i += xStep) {
+            const cx = sx(i);
+            svg += `<line x1="${cx.toFixed(1)}" y1="${PAD.t}" x2="${cx.toFixed(1)}" y2="${PAD.t+ph}" stroke="#e2e8f0" stroke-width="0.6"/>`;
+            svg += `<text x="${cx.toFixed(1)}" y="${PAD.t+ph+11}" text-anchor="middle" font-size="8" fill="#94a3b8">${i}</text>`;
+        }
+
+        svg += `<rect x="${PAD.l}" y="${PAD.t}" width="${pw}" height="${ph}" fill="none" stroke="#cbd5e1" stroke-width="0.8"/>`;
+
+        y_cols.forEach((col, ci) => {
+            const vals = data[col] || [];
+            const color = COLORS[ci % COLORS.length];
+            const pts = vals.map((v, i) => v != null ? `${i === 0 ? 'M' : 'L'}${sx(i).toFixed(1)},${sy(v).toFixed(1)}` : null).filter(Boolean);
+            if (pts.length) svg += `<path d="${pts.join(' ')}" fill="none" stroke="${color}" stroke-width="1.5" opacity="0.85"/>`;
+            const dotStep = vals.length > 80 ? 4 : vals.length > 40 ? 2 : 1;
+            vals.forEach((v, i) => {
+                if (v == null || i % dotStep !== 0) return;
+                svg += `<circle cx="${sx(i).toFixed(1)}" cy="${sy(v).toFixed(1)}" r="2.5" fill="${color}" opacity="0.7"/>`;
+            });
+        });
+
+        // Legend
+        const legendX = PAD.l + pw - y_cols.length * 80;
+        y_cols.forEach((col, ci) => {
+            const lx = legendX + ci * 80;
+            const color = COLORS[ci % COLORS.length];
+            svg += `<line x1="${lx.toFixed(0)}" y1="${(PAD.t+8).toFixed(0)}" x2="${(lx+16).toFixed(0)}" y2="${(PAD.t+8).toFixed(0)}" stroke="${color}" stroke-width="2"/>`;
+            svg += `<text x="${(lx+20).toFixed(0)}" y="${(PAD.t+11.5).toFixed(0)}" font-size="9" fill="${color}" font-weight="600">${col.length>10?col.slice(0,9)+'…':col}</text>`;
+        });
+
+        // Brush rect (on top)
+        svg += brushRect;
+        // Hint
+        if (!brushState) svg += `<text x="${PAD.l + pw/2}" y="${PAD.t + ph - 4}" text-anchor="middle" font-size="8" fill="#a5b4fc" opacity="0.8">拖曳框選範圍以高亮散佈圖</text>`;
+        // Transparent interactive overlay
+        svg += `<rect x="${PAD.l}" y="${PAD.t}" width="${pw}" height="${ph}" fill="transparent"
+            onmousedown="_me${pfxCap}TrendMD(event)" onmousemove="_me${pfxCap}TrendMM(event)" onmouseup="_me${pfxCap}TrendMU(event)"/>`;
+        svg += '</svg>';
+
+        // Reset brush hint button
+        const resetBtn = brushState
+            ? `<button onclick="_me${pfxCap}ClearBrush()" style="margin-top:4px;font-size:10px;color:#6366f1;background:none;border:none;cursor:pointer;padding:0;">✕ 清除框選</button>`
+            : '';
+        return `<div style="position:relative;">${svg}${resetBtn}</div>`;
+    }
+
+    // Brush interaction state
+    let _meXYBrushDragging = false;
+    let _meXYBrushStart = null;
+
+    window._meXYTrendMD = function(e) {
+        const svg = document.getElementById('me-xy-trend-svg');
+        if (!svg) return;
+        _meXYBrushDragging = true;
+        const rect = svg.getBoundingClientRect();
+        const scaleX = parseFloat(svg.dataset.pw) / (rect.width - parseFloat(svg.dataset.padl) - 12);
+        const relX = (e.clientX - rect.left) - parseFloat(svg.dataset.padl);
+        const n = parseInt(svg.dataset.n);
+        _meXYBrushStart = Math.round(Math.max(0, Math.min(n-1, relX / parseFloat(svg.dataset.pw) * (n-1))));
+        _meXYBrush = { i0: _meXYBrushStart, i1: _meXYBrushStart };
+        e.preventDefault();
+    };
+    window._meXYTrendMM = function(e) {
+        if (!_meXYBrushDragging) return;
+        const svg = document.getElementById('me-xy-trend-svg');
+        if (!svg) return;
+        const rect = svg.getBoundingClientRect();
+        const relX = (e.clientX - rect.left) - parseFloat(svg.dataset.padl);
+        const n = parseInt(svg.dataset.n);
+        const pw = parseFloat(svg.dataset.pw);
+        const i1 = Math.round(Math.max(0, Math.min(n-1, relX / pw * (n-1))));
+        _meXYBrush = { i0: _meXYBrushStart, i1 };
+        // Live-update brush rect only (lightweight)
+        const bRect = document.getElementById('me-xy-brush-rect');
+        if (bRect) {
+            const padL = parseFloat(svg.dataset.padl);
+            const bx0 = padL + Math.min(_meXYBrush.i0, _meXYBrush.i1) / (n-1) * pw;
+            const bx1 = padL + Math.max(_meXYBrush.i0, _meXYBrush.i1) / (n-1) * pw;
+            bRect.setAttribute('x', bx0.toFixed(1));
+            bRect.setAttribute('width', Math.max(1, bx1-bx0).toFixed(1));
+        }
+    };
+    window._meXYTrendMU = function(e) {
+        if (!_meXYBrushDragging) return;
+        _meXYBrushDragging = false;
+        if (!_meXYBrush || _meXYBrush.i0 === _meXYBrush.i1) { _meXYBrush = null; }
+        _meXYApplyBrush();
+    };
+    window._meXYClearBrush = function() {
+        _meXYBrush = null;
+        _meXYApplyBrush();
+    };
+
+    function _meXYApplyBrush() {
+        const modal = document.getElementById('me-xy-modal');
+        if (!modal || !modal._payload) return;
+        const { x_col, y_cols, data } = modal._payload;
+        const xVals = data[x_col] || [];
+        const cachedCorrs = (_meCorrelations[x_col] || {});
+        const cachedShap  = (_meScatterMetric === 'shap') ? (_meShapData[x_col] || {}) : null;
+
+        // Build highlight set
+        let highlightSet = null;
+        if (_meXYBrush) {
+            highlightSet = new Set();
+            const lo = Math.min(_meXYBrush.i0, _meXYBrush.i1);
+            const hi = Math.max(_meXYBrush.i0, _meXYBrush.i1);
+            for (let i = lo; i <= hi; i++) highlightSet.add(i);
+        }
+
+        // Recompute global Y range
+        let globalYMin = null, globalYMax = null;
+        if (_meXYSyncYAxis) {
+            y_cols.forEach(yCol => {
+                const vals = (data[yCol] || []).filter(v => v != null);
+                if (!vals.length) return;
+                const mn = Math.min(...vals), mx = Math.max(...vals);
+                if (globalYMin === null || mn < globalYMin) globalYMin = mn;
+                if (globalYMax === null || mx > globalYMax) globalYMax = mx;
+            });
+        }
+
+        const cols = Math.min(y_cols.length, 3);
+        const plots = y_cols.map(yCol => _meMiniScatterHTML(
+            xVals, data[yCol] || [], x_col, yCol,
+            cachedCorrs[yCol], cachedShap ? cachedShap[yCol] : null,
+            globalYMin, globalYMax, highlightSet
+        )).join('');
+
+        const grid = document.getElementById('me-xy-scatter-grid');
+        if (grid) grid.innerHTML = plots;
+
+        // Rebuild trend chart to reflect brush state (reset button)
+        const trendWrap = document.getElementById('me-xy-trend-wrap');
+        if (trendWrap) trendWrap.innerHTML = _meCombinedTrendSVG(y_cols, data, globalYMin ?? Math.min(...y_cols.flatMap(c => (data[c]||[]).filter(v=>v!=null))), globalYMax ?? Math.max(...y_cols.flatMap(c => (data[c]||[]).filter(v=>v!=null))));
+    }
+
+    window._meXYToggleSyncY = function () {
+        _meXYSyncYAxis = document.getElementById('me-xy-sync-y')?.checked ?? false;
+        _meXYBrush = null;
+        const modal = document.getElementById('me-xy-modal');
+        if (modal && modal._payload) _meXYModalShow(modal._payload.x_col, modal._payload);
+    };
+
+    // ── Inline analyze-detail panel ────────────────────────────────
+    window._meADSyncYAxis = false;
+    window._meADPayload   = null;
+    window._meADBrush     = null;
+    window._meAnalyzeActiveRow = -1;
+
+    window.meAnalyzeRowDetail = async function(idx) {
+        const rows = window._meAnalyzeRows;
+        if (!rows || !rows[idx]) return;
+        const col = rows[idx].name;
+
+        // Highlight clicked row, clear previous
+        window._meAnalyzeActiveRow = idx;
+        rows.forEach((_, i) => {
+            const tr = document.getElementById(`me-analyze-row-${i}`);
+            if (!tr) return;
+            const bg0 = i % 2 ? '#f8fafc' : '#fff';
+            tr.style.background = (i === idx) ? '#e0f2fe' : bg0;
+        });
+
+        // Show panel with loading state
+        const panel = document.getElementById('me-analyze-detail');
+        if (!panel) return;
+        panel.style.display = 'block';
+        panel.innerHTML = `<div style="padding:24px;text-align:center;color:#6366f1;font-size:13px;">載入中…</div>`;
+        panel.scrollIntoView({ behavior:'smooth', block:'nearest' });
+
+        const fileId = typeof currentFileId !== 'undefined' ? currentFileId : '';
+        const sid    = typeof getSessionId === 'function' ? getSessionId() : (localStorage.getItem('sigma2_session_id') || 'default');
+        // Gather all target cols as Y columns
+        const yCols  = _meTargets.map(t => t.col).join(',');
+        if (!yCols) { panel.innerHTML = `<div style="padding:16px;color:#94a3b8;font-size:12px;">請先設定目標參數</div>`; return; }
+
+        try {
+            const resp = await fetch(`/api/data-prep/xy-data/${fileId}?x_col=${encodeURIComponent(col)}&y_cols=${encodeURIComponent(yCols)}&session_id=${encodeURIComponent(sid)}`);
+            const payload = await resp.json();
+            window._meADPayload = payload;
+            window._meADBrush   = null;
+            _meADRender(payload);
+        } catch(e) {
+            panel.innerHTML = `<div style="padding:16px;color:#ef4444;font-size:12px;">載入失敗</div>`;
+        }
+    };
+
+    function _meADRender(payload) {
+        const panel = document.getElementById('me-analyze-detail');
+        if (!panel) return;
+        const { x_col, y_cols, data } = payload;
+        const xVals = data[x_col] || [];
+        const cachedCorrs = (_meCorrelations[x_col] || {});
+        const cachedShap  = (_meScatterMetric === 'shap') ? (_meShapData[x_col] || {}) : null;
+
+        // Compute global Y range if sync on
+        let globalYMin = null, globalYMax = null;
+        if (window._meADSyncYAxis) {
+            y_cols.forEach(yCol => {
+                const vals = (data[yCol] || []).filter(v => v != null);
+                if (!vals.length) return;
+                const mn = Math.min(...vals), mx = Math.max(...vals);
+                if (globalYMin === null || mn < globalYMin) globalYMin = mn;
+                if (globalYMax === null || mx > globalYMax) globalYMax = mx;
+            });
+        }
+
+        // Build highlight set from brush
+        let highlightSet = null;
+        if (window._meADBrush) {
+            highlightSet = new Set();
+            const lo = Math.min(window._meADBrush.i0, window._meADBrush.i1);
+            const hi = Math.max(window._meADBrush.i0, window._meADBrush.i1);
+            for (let i = lo; i <= hi; i++) highlightSet.add(i);
+        }
+
+        const cols = Math.min(y_cols.length, 3);
+        const plots = y_cols.map(yCol => _meMiniScatterHTML(
+            xVals, data[yCol] || [], x_col, yCol,
+            cachedCorrs[yCol], cachedShap ? cachedShap[yCol] : null,
+            globalYMin, globalYMax, highlightSet
+        )).join('');
+
+        const adGlobalYMin = globalYMin ?? Math.min(...y_cols.flatMap(c => (data[c]||[]).filter(v=>v!=null)));
+        const adGlobalYMax = globalYMax ?? Math.max(...y_cols.flatMap(c => (data[c]||[]).filter(v=>v!=null)));
+
+        const trendSection = window._meADSyncYAxis ? `
+            <div style="margin-top:12px;border-top:1px solid #e0e7ff;padding-top:10px;">
+                <div style="font-size:11px;font-weight:600;color:#64748b;margin-bottom:5px;">合併時序圖 <span style="font-size:10px;font-weight:400;color:#94a3b8;">— 拖曳框選以高亮散佈圖</span></div>
+                <div id="me-ad-trend-wrap">${_meCombinedTrendSVG(y_cols, data, adGlobalYMin, adGlobalYMax, 'me-ad', window._meADBrush)}</div>
+            </div>` : '';
+
+        panel.innerHTML = `
+            <div style="padding:14px 20px;">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:6px;">
+                    <div style="font-size:13px;font-weight:700;color:#1e293b;">📊 ${x_col}</div>
+                    <div style="display:flex;align-items:center;gap:12px;">
+                        <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:#64748b;cursor:pointer;user-select:none;">
+                            <input type="checkbox" id="me-ad-sync-y" ${window._meADSyncYAxis ? 'checked' : ''}
+                                onchange="_meADToggleSyncY()"
+                                style="accent-color:#6366f1;width:13px;height:13px;">
+                            Y軸同步
+                        </label>
+                        <button onclick="document.getElementById('me-analyze-detail').style.display='none';window._meAnalyzeActiveRow=-1;(function(){const rows=window._meAnalyzeRows||[];rows.forEach((_,i)=>{const tr=document.getElementById('me-analyze-row-'+i);if(tr)tr.style.background=i%2?'#f8fafc':'#fff';});})();"
+                            style="border:none;background:#e0e7ff;border-radius:6px;width:24px;height:24px;cursor:pointer;font-size:12px;color:#4f46e5;line-height:1;">✕</button>
+                    </div>
+                </div>
+                <div id="me-ad-scatter-grid" style="display:grid;grid-template-columns:repeat(${cols},1fr);gap:12px;">${plots}</div>
+                ${trendSection}
+            </div>`;
+    }
+
+    window._meADToggleSyncY = function() {
+        window._meADSyncYAxis = document.getElementById('me-ad-sync-y')?.checked ?? false;
+        window._meADBrush = null;
+        if (window._meADPayload) _meADRender(window._meADPayload);
+    };
+
+    // AD brush handlers (mirror of XY brush, but for me-ad-* elements)
+    let _meADBrushDragging = false, _meADBrushStart = null;
+
+    window._meADTrendMD = function(e) {
+        const svg = document.getElementById('me-ad-trend-svg');
+        if (!svg) return;
+        _meADBrushDragging = true;
+        const rect = svg.getBoundingClientRect();
+        const relX = (e.clientX - rect.left) - parseFloat(svg.dataset.padl);
+        const n = parseInt(svg.dataset.n);
+        _meADBrushStart = Math.round(Math.max(0, Math.min(n-1, relX / parseFloat(svg.dataset.pw) * (n-1))));
+        window._meADBrush = { i0: _meADBrushStart, i1: _meADBrushStart };
+        e.preventDefault();
+    };
+    window._meADTrendMM = function(e) {
+        if (!_meADBrushDragging) return;
+        const svg = document.getElementById('me-ad-trend-svg');
+        if (!svg) return;
+        const rect = svg.getBoundingClientRect();
+        const relX = (e.clientX - rect.left) - parseFloat(svg.dataset.padl);
+        const n = parseInt(svg.dataset.n);
+        const pw = parseFloat(svg.dataset.pw);
+        const i1 = Math.round(Math.max(0, Math.min(n-1, relX / pw * (n-1))));
+        window._meADBrush = { i0: _meADBrushStart, i1 };
+        const bRect = document.getElementById('me-ad-brush-rect');
+        if (bRect) {
+            const padL = parseFloat(svg.dataset.padl);
+            const bx0 = padL + Math.min(window._meADBrush.i0, i1) / (n-1) * pw;
+            const bx1 = padL + Math.max(window._meADBrush.i0, i1) / (n-1) * pw;
+            bRect.setAttribute('x', bx0.toFixed(1));
+            bRect.setAttribute('width', Math.max(1, bx1-bx0).toFixed(1));
+        }
+    };
+    window._meADTrendMU = function(e) {
+        if (!_meADBrushDragging) return;
+        _meADBrushDragging = false;
+        if (!window._meADBrush || window._meADBrush.i0 === window._meADBrush.i1) { window._meADBrush = null; }
+        if (window._meADPayload) _meADRender(window._meADPayload);
+    };
+    window._meADClearBrush = function() {
+        window._meADBrush = null;
+        if (window._meADPayload) _meADRender(window._meADPayload);
+    };
+
+    function _meMiniScatterHTML(xVals, yVals, xLabel, yLabel, precomputedR, shapVal, yMinForce = null, yMaxForce = null, highlightSet = null) {
+        const W = 220, H = 190, PAD = { l:46, r:10, t:8, b:38 };
+        const pw = W - PAD.l - PAD.r, ph = H - PAD.t - PAD.b;
+        if (!xVals.length || !yVals.length)
+            return `<div style="border:1px solid #e2e8f0;border-radius:8px;width:${W}px;height:${H}px;display:flex;align-items:center;justify-content:center;color:#94a3b8;font-size:12px;">無資料</div>`;
+        const xMin = Math.min(...xVals), xMax = Math.max(...xVals), xRange = xMax - xMin || 1;
+        const yMin = yMinForce !== null ? yMinForce : Math.min(...yVals);
+        const yMax = yMaxForce !== null ? yMaxForce : Math.max(...yVals);
+        const yRange = yMax - yMin || 1;
+        const sx = v => PAD.l + (v - xMin) / xRange * pw;
+        const sy = v => PAD.t + (1 - (v - yMin) / yRange) * ph;
+        const n = xVals.length;
+        const xM = xVals.reduce((a,b) => a+b, 0) / n, yM = yVals.reduce((a,b) => a+b, 0) / n;
+        const num = xVals.reduce((s,x,i) => s+(x-xM)*(yVals[i]-yM), 0);
+        const dX  = xVals.reduce((s,x) => s+(x-xM)**2, 0);
+        const dY  = yVals.reduce((s,y) => s+(y-yM)**2, 0);
+        // 優先用主散佈圖的快取 r（與圖上點位置一致），避免 API 採樣差異造成符號錯誤
+        const r   = (precomputedR !== undefined && precomputedR !== null) ? precomputedR
+                  : ((dX && dY) ? num / Math.sqrt(dX*dY) : 0);
+        // 迴歸線斜率方向必須與 r 符號一致
+        const rawSlope = dX ? num/dX : 0;
+        const slope = (rawSlope === 0 || Math.sign(rawSlope) === Math.sign(r)) ? rawSlope
+                    : -rawSlope;
+        const intc = yM - slope*xM;
+        const rColor = r > 0.2 ? '#2563eb' : r < -0.2 ? '#ef4444' : '#94a3b8';
+        const lx1 = sx(xMin), ly1 = Math.max(PAD.t, Math.min(PAD.t+ph, sy(slope*xMin+intc)));
+        const lx2 = sx(xMax), ly2 = Math.max(PAD.t, Math.min(PAD.t+ph, sy(slope*xMax+intc)));
+
+        // ── 刻度輔助 ──────────────────────────────────────────────
+        function niceTickStep(range, maxTicks) {
+            const raw = range / maxTicks;
+            const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+            for (const f of [1, 2, 2.5, 5, 10]) {
+                if (f * mag >= raw) return f * mag;
+            }
+            return mag * 10;
+        }
+        function fmt(v) {
+            const abs = Math.abs(v);
+            if (abs === 0) return '0';
+            const dec = abs >= 1000 ? 0 : abs >= 100 ? 0 : abs >= 10 ? 1 : abs >= 1 ? 2 : abs >= 0.1 ? 3 : 4;
+            return v.toFixed(dec);
+        }
+        function axisTicks(min, max, maxTicks) {
+            const step = niceTickStep(max - min, maxTicks);
+            const start = Math.ceil(min / step) * step;
+            const ticks = [];
+            for (let v = start; v <= max + step * 0.001; v += step) {
+                const rv = parseFloat(v.toPrecision(10));
+                if (rv >= min - step * 0.001 && rv <= max + step * 0.001) ticks.push(rv);
+            }
+            return ticks;
+        }
+        const xTicks = axisTicks(xMin, xMax, 4);
+        const yTicks = axisTicks(yMin, yMax, 4);
+
+        let svg = `<svg width="${W}" height="${H}"><rect x="${PAD.l}" y="${PAD.t}" width="${pw}" height="${ph}" fill="#f8fafc" rx="3"/>`;
+
+        // Grid lines + Y tick labels
+        yTicks.forEach(v => {
+            const cy = sy(v);
+            svg += `<line x1="${PAD.l}" y1="${cy.toFixed(1)}" x2="${PAD.l+pw}" y2="${cy.toFixed(1)}" stroke="#e2e8f0" stroke-width="0.8"/>`;
+            svg += `<text x="${PAD.l-3}" y="${(cy+3.5).toFixed(1)}" text-anchor="end" font-size="8" fill="#94a3b8">${fmt(v)}</text>`;
+        });
+        // Grid lines + X tick labels
+        xTicks.forEach(v => {
+            const cx = sx(v);
+            svg += `<line x1="${cx.toFixed(1)}" y1="${PAD.t}" x2="${cx.toFixed(1)}" y2="${PAD.t+ph}" stroke="#e2e8f0" stroke-width="0.8"/>`;
+            svg += `<text x="${cx.toFixed(1)}" y="${PAD.t+ph+11}" text-anchor="middle" font-size="8" fill="#94a3b8">${fmt(v)}</text>`;
+        });
+
+        // Axis borders
+        svg += `<rect x="${PAD.l}" y="${PAD.t}" width="${pw}" height="${ph}" fill="none" stroke="#cbd5e1" stroke-width="0.8"/>`;
+
+        // Data points — dim non-highlighted when brush is active
+        const hasBrush = highlightSet && highlightSet.size > 0;
+        xVals.forEach((x, i) => {
+            const highlighted = !hasBrush || highlightSet.has(i);
+            const opacity = highlighted ? 0.85 : 0.08;
+            const r = highlighted ? (hasBrush ? 4 : 3) : 2.5;
+            svg += `<circle cx="${sx(x).toFixed(1)}" cy="${sy(yVals[i]).toFixed(1)}" r="${r}" fill="${rColor}" opacity="${opacity}"/>`;
+        });
+        // Regression line
+        svg += `<line x1="${lx1.toFixed(1)}" y1="${ly1.toFixed(1)}" x2="${lx2.toFixed(1)}" y2="${ly2.toFixed(1)}" stroke="${rColor}" stroke-width="1.5" opacity="0.85"/>`;
+
+        // Axis name labels
+        svg += `<text x="${PAD.l+pw/2}" y="${H-4}" text-anchor="middle" font-size="9" fill="#94a3b8">${xLabel.length>20?xLabel.slice(0,18)+'…':xLabel}</text>`;
+        svg += `<text x="9" y="${PAD.t+ph/2}" text-anchor="middle" font-size="9" fill="#94a3b8" transform="rotate(-90,9,${PAD.t+ph/2})">${yLabel.length>18?yLabel.slice(0,16)+'…':yLabel}</text>`;
+        svg += `</svg>`;
+        const shapTag = (shapVal != null)
+            ? (() => {
+                const sColor = shapVal > 0.05 ? '#2563eb' : shapVal < -0.05 ? '#ef4444' : '#94a3b8';
+                return `<span style="font-size:10px;font-weight:700;color:${sColor};margin-left:6px;white-space:nowrap;">SHAP ${shapVal >= 0 ? '+' : ''}${shapVal.toFixed(3)}</span>`;
+              })()
+            : '';
+        return `<div style="border:1px solid #e2e8f0;border-radius:8px;padding:8px;background:#fff;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;flex-wrap:wrap;gap:2px;">
+                <div style="font-size:10px;color:#475569;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">${yLabel}</div>
+                <div style="display:flex;align-items:center;gap:0;">
+                    <span style="font-size:12px;font-weight:700;color:${rColor};white-space:nowrap;">r = ${r.toFixed(3)}</span>
+                    ${shapTag}
+                </div>
+            </div>${svg}</div>`;
+    }
+
+
+    window.meRenderScatterPlot = function () {
+        const svg = document.getElementById('me-scatter-svg');
+        if (!svg) return;
+        const axX = (document.getElementById('me-scatter-axis-x') || {}).value;
+        const axY = (document.getElementById('me-scatter-axis-y') || {}).value;
+        if (!axX || !axY || !Object.keys(_meActiveData()).length) {
+            svg.innerHTML = '<text x="50%" y="50%" text-anchor="middle" fill="#94a3b8" font-size="12">請先計算後顯示</text>';
+            return;
+        }
+        const W = svg.clientWidth || 400, H = svg.clientHeight || 280;
+        const PAD = { l:52, r:20, t:24, b:44 };
+        const pw = W - PAD.l - PAD.r, ph = H - PAD.t - PAD.b;
+        const Z = _meScatterZoom;
+        const toSvgX = v => PAD.l + (v - Z.xMin) / (Z.xMax - Z.xMin) * pw;
+        const toSvgY = v => PAD.t + (1 - (v - Z.yMin) / (Z.yMax - Z.yMin)) * ph;
+        const passFilter = new Set(meGetFilteredCols());
+        const rows = Object.entries(_meActiveData()).map(([col, corrs]) => ({
+            col, cx: corrs[axX] ?? 0, cy: corrs[axY] ?? 0
+        }));
+
+        // Dynamic ticks
+        function niceTicks(mn, mx) {
+            const range = mx - mn;
+            const step = range <= 0.4 ? 0.1 : range <= 1 ? 0.25 : 0.5;
+            const ticks = [];
+            for (let v = Math.ceil(mn / step) * step; v <= mx + 1e-9; v = +(v + step).toFixed(4)) ticks.push(+v.toFixed(3));
+            return ticks;
+        }
+
+        let html = `<defs>
+            <clipPath id="me-sc-clip"><rect x="${PAD.l}" y="${PAD.t}" width="${pw}" height="${ph}"/></clipPath>
+        </defs>`;
+        html += `<rect x="${PAD.l}" y="${PAD.t}" width="${pw}" height="${ph}" fill="#f8fafc" rx="4"/>`;
+        // Reference grid lines — controlled by _meOverlaySettings
+        const OL = _meOverlaySettings;
+        if (OL.ol05) {
+            [-0.5, 0.5].forEach(v => {
+                if (v > Z.xMin && v < Z.xMax) html += `<line x1="${toSvgX(v).toFixed(1)}" y1="${PAD.t}" x2="${toSvgX(v).toFixed(1)}" y2="${PAD.t+ph}" stroke="#e2e8f0" stroke-width="1"/>`;
+                if (v > Z.yMin && v < Z.yMax) html += `<line x1="${PAD.l}" y1="${toSvgY(v).toFixed(1)}" x2="${PAD.l+pw}" y2="${toSvgY(v).toFixed(1)}" stroke="#e2e8f0" stroke-width="1"/>`;
+            });
+        }
+        if (OL.ol03) {
+            [-0.3, 0.3].forEach(v => {
+                if (v > Z.xMin && v < Z.xMax) html += `<line x1="${toSvgX(v).toFixed(1)}" y1="${PAD.t}" x2="${toSvgX(v).toFixed(1)}" y2="${PAD.t+ph}" stroke="#a5b4fc" stroke-width="1" stroke-dasharray="4,3"/>`;
+                if (v > Z.yMin && v < Z.yMax) html += `<line x1="${PAD.l}" y1="${toSvgY(v).toFixed(1)}" x2="${PAD.l+pw}" y2="${toSvgY(v).toFixed(1)}" stroke="#a5b4fc" stroke-width="1" stroke-dasharray="4,3"/>`;
+            });
+        }
+        if (OL.zero) {
+            if (Z.xMin < 0 && Z.xMax > 0) html += `<line x1="${toSvgX(0).toFixed(1)}" y1="${PAD.t}" x2="${toSvgX(0).toFixed(1)}" y2="${PAD.t+ph}" stroke="#cbd5e1" stroke-width="1.5"/>`;
+            if (Z.yMin < 0 && Z.yMax > 0) html += `<line x1="${PAD.l}" y1="${toSvgY(0).toFixed(1)}" x2="${PAD.l+pw}" y2="${toSvgY(0).toFixed(1)}" stroke="#cbd5e1" stroke-width="1.5"/>`;
+        }
+        // Ticks
+        niceTicks(Z.xMin, Z.xMax).forEach(v => {
+            const sx = toSvgX(v);
+            if (sx >= PAD.l - 1 && sx <= PAD.l + pw + 1)
+                html += `<text x="${sx.toFixed(1)}" y="${PAD.t+ph+14}" text-anchor="middle" font-size="9" fill="#94a3b8">${v}</text>`;
+        });
+        niceTicks(Z.yMin, Z.yMax).forEach(v => {
+            const sy = toSvgY(v);
+            if (sy >= PAD.t - 1 && sy <= PAD.t + ph + 1)
+                html += `<text x="${PAD.l-4}" y="${sy.toFixed(1)+4}" text-anchor="end" font-size="9" fill="#94a3b8">${v}</text>`;
+        });
+        // Axis labels
+        html += `<text x="${PAD.l+pw/2}" y="${H-4}" text-anchor="middle" font-size="11" fill="#475569" font-weight="600">${axX}</text>`;
+        html += `<text x="12" y="${PAD.t+ph/2}" text-anchor="middle" font-size="11" fill="#475569" font-weight="600" transform="rotate(-90,12,${PAD.t+ph/2})">${axY}</text>`;
+        // Optional balance lines (y=x and y=-x)
+        if (_meShowBalanceLine) {
+            html += `<g clip-path="url(#me-sc-clip)">`;
+            const bMin = Math.max(Z.xMin, Z.yMin), bMax = Math.min(Z.xMax, Z.yMax);
+            if (bMin < bMax) {
+                html += `<line x1="${toSvgX(bMin).toFixed(1)}" y1="${toSvgY(bMin).toFixed(1)}" x2="${toSvgX(bMax).toFixed(1)}" y2="${toSvgY(bMax).toFixed(1)}" stroke="#a78bfa" stroke-width="1.2" stroke-dasharray="6,4" opacity="0.7"/>`;
+                const lx = toSvgX(bMax), ly = toSvgY(bMax);
+                html += `<text x="${(lx-4).toFixed(0)}" y="${(ly-6).toFixed(0)}" font-size="8" fill="#7c3aed" opacity="0.85" text-anchor="end">兩者均衡</text>`;
+            }
+            const nMin = Math.max(Z.xMin, -Z.yMax), nMax = Math.min(Z.xMax, -Z.yMin);
+            if (nMin < nMax) {
+                html += `<line x1="${toSvgX(nMin).toFixed(1)}" y1="${toSvgY(-nMin).toFixed(1)}" x2="${toSvgX(nMax).toFixed(1)}" y2="${toSvgY(-nMax).toFixed(1)}" stroke="#f87171" stroke-width="1.2" stroke-dasharray="6,4" opacity="0.6"/>`;
+                const lx = toSvgX(nMax), ly = toSvgY(-nMax);
+                html += `<text x="${(lx-4).toFixed(0)}" y="${(ly-6).toFixed(0)}" font-size="8" fill="#ef4444" opacity="0.8" text-anchor="end">反向均衡</text>`;
+            }
+            html += `</g>`;
+        }
+        // Points (draw unselected first, then filtered, then selected on top)
+        html += `<g clip-path="url(#me-sc-clip)">`;
+        const layers = [
+            rows.filter(r => !passFilter.has(r.col) && !_meScatterSelected.has(r.col)),
+            rows.filter(r =>  passFilter.has(r.col) && !_meScatterSelected.has(r.col)),
+            rows.filter(r =>  _meScatterSelected.has(r.col)),
+        ];
+        layers.forEach(layer => layer.forEach(({ col, cx, cy }) => {
+            const sx = toSvgX(cx), sy = toSvgY(cy);
+            const isSelected = _meScatterSelected.has(col);
+            const isFiltered = passFilter.has(col);
+            const fill   = isSelected ? '#f97316' : (isFiltered ? '#6366f1' : '#d1d5db');
+            const stroke = isSelected ? '#ea580c' : (isFiltered ? '#4f46e5' : '#9ca3af');
+            const r = isSelected ? 7 : 5;
+            const opacity = isFiltered || isSelected ? 1 : 0.25;
+            const colSafe = col.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+            html += `<circle cx="${sx.toFixed(1)}" cy="${sy.toFixed(1)}" r="${r}" fill="${fill}" stroke="${stroke}" stroke-width="${isSelected ? 2 : 1}" opacity="${opacity}" style="cursor:pointer;" onclick="meScatterDotClick('${colSafe}')" ondblclick="meShowXYScatter('${colSafe}')">
+                <title>${col}\n${axX}: ${cx.toFixed(3)}\n${axY}: ${cy.toFixed(3)}\n單擊選取 / 雙擊查看多目標散佈圖</title>
+            </circle>`;
+        }));
+        // Drag box
+        if (_meScatterBox) {
+            const { x0: bx0, y0: by0, x1: bx1, y1: by1 } = _meScatterBox;
+            const bx = Math.min(bx0,bx1), by = Math.min(by0,by1);
+            const bw = Math.abs(bx1-bx0), bh = Math.abs(by1-by0);
+            const isZoom = _meScatterMode === 'zoom';
+            html += `<rect x="${bx}" y="${by}" width="${bw}" height="${bh}" fill="${isZoom ? 'rgba(251,191,36,.1)' : 'rgba(99,102,241,.08)'}" stroke="${isZoom ? '#f59e0b' : '#6366f1'}" stroke-width="1.5" stroke-dasharray="5,3"/>`;
+        }
+        html += '</g>';
+        svg.innerHTML = html;
+        if (typeof _updateScatterGridOverlay === 'function') _updateScatterGridOverlay();
+    };
+
+    window.meScatterDotClick = function (col) {
+        if (_meScatterSelected.has(col)) _meScatterSelected.delete(col);
+        else _meScatterSelected.add(col);
+        _updateScatterSelCount();
+        _meRefreshPlot();
+    };
+
+    window.meScatterToggle = window.meScatterDotClick; // alias
+
+    window.meScatterMouseDown = function (e) {
+        if (e.target.tagName === 'circle') return;
+        const rect = e.currentTarget.getBoundingClientRect();
+        const x = e.clientX - rect.left, y = e.clientY - rect.top;
+        if (_meScatterMode === 'pan') {
+            _mePanDrag = { startX: x, startY: y, startZoom: { ..._meScatterZoom } };
+        } else {
+            _meScatterDragging = true;
+            _meScatterDragStart = { x, y };
+            _meScatterBox = null;
+        }
+        e.preventDefault();
+    };
+
+    window.meScatterMouseMove = function (e) {
+        if (_mePanDrag) {
+            const rect = e.currentTarget.getBoundingClientRect();
+            const x = e.clientX - rect.left, y = e.clientY - rect.top;
+            const svg = document.getElementById('me-scatter-svg');
+            const W = svg.clientWidth || 400, H = svg.clientHeight || 280;
+            const PAD = { l:52, r:20, t:24, b:44 };
+            const pw = W - PAD.l - PAD.r, ph = H - PAD.t - PAD.b;
+            const Z = _mePanDrag.startZoom;
+            const dx = (x - _mePanDrag.startX) / pw * (Z.xMax - Z.xMin);
+            const dy = (y - _mePanDrag.startY) / ph * (Z.yMax - Z.yMin);
+            _meScatterZoom = { xMin: Z.xMin - dx, xMax: Z.xMax - dx, yMin: Z.yMin + dy, yMax: Z.yMax + dy };
+            meRenderScatterPlot();
+            return;
+        }
+        if (!_meScatterDragging) return;
+        const rect = e.currentTarget.getBoundingClientRect();
+        const cx = e.clientX - rect.left, cy = e.clientY - rect.top;
+        _meScatterBox = { x0: _meScatterDragStart.x, y0: _meScatterDragStart.y, x1: cx, y1: cy };
+        meRenderScatterPlot();
+    };
+
+    window.meScatterMouseUp = function (e) {
+        if (_mePanDrag) { _mePanDrag = null; return; }
+        if (!_meScatterDragging) return;
+        _meScatterDragging = false;
+        if (!_meScatterBox) return;
+        const axX = (document.getElementById('me-scatter-axis-x') || {}).value;
+        const axY = (document.getElementById('me-scatter-axis-y') || {}).value;
+        const svg = document.getElementById('me-scatter-svg');
+        const W = svg.clientWidth || 400, H = svg.clientHeight || 280;
+        const PAD = { l:52, r:20, t:20, b:44 };
+        const pw = W - PAD.l - PAD.r, ph = H - PAD.t - PAD.b;
+        const Z = _meScatterZoom;
+        const toDataX = sx => Z.xMin + (sx - PAD.l) / pw * (Z.xMax - Z.xMin);
+        const toDataY = sy => Z.yMin + (1 - (sy - PAD.t) / ph) * (Z.yMax - Z.yMin);
+        const toSvgX  = v  => PAD.l + (v - Z.xMin) / (Z.xMax - Z.xMin) * pw;
+        const toSvgY  = v  => PAD.t + (1 - (v - Z.yMin) / (Z.yMax - Z.yMin)) * ph;
+        const bxMin = Math.min(_meScatterBox.x0, _meScatterBox.x1);
+        const bxMax = Math.max(_meScatterBox.x0, _meScatterBox.x1);
+        const byMin = Math.min(_meScatterBox.y0, _meScatterBox.y1);
+        const byMax = Math.max(_meScatterBox.y0, _meScatterBox.y1);
+
+        if (_meScatterMode === 'zoom' && (bxMax - bxMin) > 10 && (byMax - byMin) > 10) {
+            // Zoom into the box region
+            _meScatterZoom = {
+                xMin: toDataX(bxMin), xMax: toDataX(bxMax),
+                yMin: toDataY(byMax), yMax: toDataY(byMin),
+            };
+            const btn = document.getElementById('me-zoom-reset-btn');
+            if (btn) btn.style.display = 'block';
+        } else if (_meScatterMode === 'select') {
+            // Select points within box
+            const passFilter = new Set(meGetFilteredCols());
+            Object.entries(_meActiveData()).forEach(([col, corrs]) => {
+                if (!passFilter.has(col)) return;
+                const sx = toSvgX(corrs[axX] ?? 0), sy = toSvgY(corrs[axY] ?? 0);
+                if (sx >= bxMin && sx <= bxMax && sy >= byMin && sy <= byMax) {
+                    _meScatterSelected.add(col);
+                }
+            });
+            _updateScatterSelCount();
+        }
+        _meScatterBox = null;
+        _meRefreshPlot();
+    };
+
+    window.meScatterClearSelection = function () {
+        _meScatterSelected.clear();
+        _updateScatterSelCount();
+        _meRefreshPlot();
+    };
+
+    window.meScatterAddSelected = function () {
+        if (!_meScatterSelected.size) return;
+        _meScatterSelected.forEach(col => {
+            if (!_meControlFactors.includes(col)) _meControlFactors.push(col);
+        });
+        _meScatterSelected.clear();
+        _updateScatterSelCount();
+        _renderFactorLists();
+        meRenderScatterPlot();
+        // Switch back to normal mode to confirm
+        meSetControlMode('normal');
+    };
+
+    function _updateScatterSelCount() {
+        const el = document.getElementById('me-scatter-sel-count');
+        if (el) el.textContent = _meScatterSelected.size;
+    }
+
+    // --- AI Scatter Grid Summarization ---
+    let _meLatestScatterGridSummary = null;
+
+    window.meSummarizeScatterGrid = async function () {
+        // Toggle: if labels already showing, clear them
+        if (_meLatestScatterGridSummary) {
+            _meLatestScatterGridSummary = null;
+            const btn = document.getElementById('me-plot-ai-btn');
+            if (btn) btn.innerHTML = '<span style="font-size:12px;">✨</span> 九宮格摘要';
+            if (typeof _updateScatterGridOverlay === 'function') _updateScatterGridOverlay();
+            return;
+        }
+
+        const axX = (document.getElementById('me-scatter-axis-x') || {}).value;
+        const axY = (document.getElementById('me-scatter-axis-y') || {}).value;
+        if (!axX || !axY || !Object.keys(_meActiveData()).length) return;
+
+        const passFilter = new Set(meGetFilteredCols());
+        const groups = {
+            top_left: [], top_center: [], top_right: [],
+            mid_left: [], mid_center: [], mid_right: [],
+            bottom_left: [], bottom_center: [], bottom_right: []
+        };
+
+        Object.entries(_meActiveData()).forEach(([col, corrs]) => {
+            if (!passFilter.has(col)) return;
+            const cx = corrs[axX] ?? 0;
+            const cy = corrs[axY] ?? 0;
+            let row = cy > 0.3 ? 'top' : (cy < -0.3 ? 'bottom' : 'mid');
+            let col_name = cx > 0.3 ? 'right' : (cx < -0.3 ? 'left' : 'center');
+            groups[`${row}_${col_name}`].push(col);
+        });
+
+        const btn = document.getElementById('me-plot-ai-btn');
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<span style="font-size:12px;">⏳</span> 分析中...';
+        }
+        const overlay = document.getElementById('me-scatter-grid-overlay');
+        if (overlay) {
+            overlay.style.display = 'block';
+            overlay.innerHTML = '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,0.7);border-radius:8px;pointer-events:auto;"><div style="color:#8b5cf6;font-size:13px;font-weight:600;padding:8px 16px;background:#fff;border-radius:20px;box-shadow:0 4px 6px -1px rgba(0,0,0,0.1);">正在請 AI 摘要九宮格特徵...</div></div>';
+        }
+
+        try {
+            const sid = typeof getSessionId === 'function' ? getSessionId() : (localStorage.getItem('sigma2_session_id') || 'default');
+            const res = await fetch('/api/ai/summarize_scatter_grid', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ x_axis: axX, y_axis: axY, grid_groups: groups, session_id: sid })
+            });
+            const result = await res.json();
+            if (result.error) throw new Error(result.error);
+            _meLatestScatterGridSummary = result;
+            if (typeof _updateScatterGridOverlay === 'function') _updateScatterGridOverlay();
+        } catch (e) {
+            console.error('[ME AI Grid Scatter]', e);
+            if (overlay) {
+                overlay.innerHTML = `<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,0.75);border-radius:8px;pointer-events:auto;z-index:20;">
+                    <div style="color:#ef4444;font-size:13px;font-weight:600;padding:12px 20px;background:#fff;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.15);display:flex;flex-direction:column;align-items:center;gap:10px;">
+                        <div>❌ 分析失敗: ${e.message}</div>
+                        <button onclick="document.getElementById('me-scatter-grid-overlay').style.display='none';" style="padding:4px 12px;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:4px;cursor:pointer;font-size:12px;">關閉</button>
+                    </div>
+                </div>`;
+            }
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = _meLatestScatterGridSummary
+                    ? '<span style="font-size:12px;">✕</span> 清除摘要'
+                    : '<span style="font-size:12px;">✨</span> 九宮格摘要';
+            }
+        }
+    };
+
+    window._updateScatterGridOverlay = function() {
+        const overlay = document.getElementById('me-scatter-grid-overlay');
+        if (!overlay) return;
+        if (!_meLatestScatterGridSummary) {
+            overlay.style.display = 'none';
+            // Reset button text
+            const btn = document.getElementById('me-plot-ai-btn');
+            if (btn) btn.innerHTML = '<span style="font-size:12px;">✨</span> 九宮格摘要';
+            return;
+        }
+        overlay.style.display = 'block';
+
+        const svg = document.getElementById('me-scatter-svg');
+        const W = svg.clientWidth || 400, H = svg.clientHeight || 280;
+        const PAD = { l:52, r:20, t:24, b:44 };
+        const pw = W - PAD.l - PAD.r, ph = H - PAD.t - PAD.b;
+        const Z = _meScatterZoom;
+        const toSvgX = v => PAD.l + (v - Z.xMin) / (Z.xMax - Z.xMin) * pw;
+        const toSvgY = v => PAD.t + (1 - (v - Z.yMin) / (Z.yMax - Z.yMin)) * ph;
+
+        const centers = {
+            top_left:      { cx: -0.65, cy: 0.65 },
+            top_center:    { cx: 0,     cy: 0.65 },
+            top_right:     { cx: 0.65,  cy: 0.65 },
+            mid_left:      { cx: -0.65, cy: 0 },
+            mid_center:    { cx: 0,     cy: 0 },
+            mid_right:     { cx: 0.65,  cy: 0 },
+            bottom_left:   { cx: -0.65, cy: -0.65 },
+            bottom_center: { cx: 0,     cy: -0.65 },
+            bottom_right:  { cx: 0.65,  cy: -0.65 }
+        };
+
+        let html = '';
+        // Close button — z-index 20 to ensure it's above grid labels
+        html += `<button onclick="_meLatestScatterGridSummary=null; _updateScatterGridOverlay();" style="position:absolute;top:6px;right:6px;pointer-events:auto;background:rgba(255,255,255,0.95);backdrop-filter:blur(4px);border:1px solid #cbd5e1;border-radius:6px;color:#64748b;cursor:pointer;font-size:11px;padding:3px 8px;font-weight:600;box-shadow:0 2px 6px rgba(0,0,0,0.12);z-index:20;" onmouseenter="this.style.color='#ef4444';this.style.borderColor='#fca5a5'" onmouseleave="this.style.color='#64748b';this.style.borderColor='#cbd5e1'">✕ 關閉標籤</button>`;
+
+        for (let key in centers) {
+            if (!_meLatestScatterGridSummary[key]) continue;
+            const sx = toSvgX(centers[key].cx);
+            const sy = toSvgY(centers[key].cy);
+            if (sx < 0 || sx > W || sy < 0 || sy > H) continue;
+            html += `<div style="position:absolute;left:${sx}px;top:${sy}px;transform:translate(-50%,-50%);background:rgba(255,255,255,0.95);backdrop-filter:blur(2px);border:1.5px solid #a78bfa;padding:3px 8px;border-radius:6px;color:#6d28d9;font-size:11px;font-weight:700;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,0.15);max-width:200px;overflow:hidden;text-overflow:ellipsis;text-align:center;pointer-events:none;z-index:5;">${_meLatestScatterGridSummary[key]}</div>`;
+        }
+        overlay.innerHTML = html;
+    };
+
+    // --- 分析選取參數 Modal ---
+    window._meAnalyzeSortCol = window._meAnalyzeSortCol || 'x';  // 'name' | 'x' | 'y'
+    window._meAnalyzeSortAsc = window._meAnalyzeSortAsc ?? false;
+    window.meScatterAnalyzeSelected = function () {
+        if (!_meScatterSelected.size) {
+            alert('請先在散佈圖上框選或點選參數！');
+            return;
+        }
+        const axX = (document.getElementById('me-scatter-axis-x') || {}).value || '（無）';
+        const axY = (document.getElementById('me-scatter-axis-y') || {}).value || '（無）';
+
+        // Collect data: always gather both Pearson r AND SHAP independently
+        const rows = [];
+        _meScatterSelected.forEach(col => {
+            const corrData = _meCorrelations[col] || {};
+            const shapData = _meShapData[col] || {};
+            rows.push({
+                name:    col,
+                cx:      corrData[axX] != null ? corrData[axX] : null,
+                cy:      corrData[axY] != null ? corrData[axY] : null,
+                cx_shap: shapData[axX] != null ? shapData[axX] : null,
+                cy_shap: shapData[axY] != null ? shapData[axY] : null,
+            });
+        });
+
+        _meAnalyzeRenderModal(rows, axX, axY);
+    };
+
+    function _meAnalyzeRenderModal(rows, axX, axY) {
+        // Check if any SHAP data is present in the rows
+        const hasShap = rows.some(r => r.cx_shap != null || r.cy_shap != null);
+
+        // Compute a numeric score for 建議 sorting (3=雙指標一致, 2=部分顯著, 1=訊號衝突, 0=不明顯)
+        const recScore = (r) => {
+            const xCorrSig = r.cx != null && Math.abs(r.cx) >= 0.3;
+            const yCorrSig = r.cy != null && Math.abs(r.cy) >= 0.3;
+            const xShapSig = r.cx_shap != null && Math.abs(r.cx_shap) >= 0.3;
+            const yShapSig = r.cy_shap != null && Math.abs(r.cy_shap) >= 0.3;
+            const xAgree = (r.cx != null && r.cx_shap != null) ? Math.sign(r.cx) === Math.sign(r.cx_shap) : null;
+            const yAgree = (r.cy != null && r.cy_shap != null) ? Math.sign(r.cy) === Math.sign(r.cy_shap) : null;
+            const xConflict = xAgree === false && (xCorrSig || xShapSig);
+            const yConflict = yAgree === false && (yCorrSig || yShapSig);
+            const xBothSig  = xCorrSig && xShapSig && xAgree === true;
+            const yBothSig  = yCorrSig && yShapSig && yAgree === true;
+            if (xBothSig || yBothSig) return 3;
+            if (xCorrSig || yCorrSig || xShapSig || yShapSig) return xConflict || yConflict ? 1 : 2;
+            return 0;
+        };
+
+        // Sort
+        rows.sort((a, b) => {
+            let va, vb;
+            if (window._meAnalyzeSortCol === 'name')   { va = a.name; vb = b.name; return window._meAnalyzeSortAsc ? va.localeCompare(vb) : vb.localeCompare(va); }
+            if (window._meAnalyzeSortCol === 'x')       { va = Math.abs(a.cx ?? 0);       vb = Math.abs(b.cx ?? 0); }
+            else if (window._meAnalyzeSortCol === 'y')  { va = Math.abs(a.cy ?? 0);       vb = Math.abs(b.cy ?? 0); }
+            else if (window._meAnalyzeSortCol === 'xs') { va = Math.abs(a.cx_shap ?? 0);  vb = Math.abs(b.cx_shap ?? 0); }
+            else if (window._meAnalyzeSortCol === 'ys') { va = Math.abs(a.cy_shap ?? 0);  vb = Math.abs(b.cy_shap ?? 0); }
+            else if (window._meAnalyzeSortCol === 'rec'){ va = recScore(a);               vb = recScore(b); }
+            else if (window._meAnalyzeSortCol === 'slope') { va = a.slopeDivPct ?? -Infinity; vb = b.slopeDivPct ?? -Infinity; }
+            else { va = Math.abs(a.cx ?? 0); vb = Math.abs(b.cx ?? 0); }
+            return window._meAnalyzeSortAsc ? va - vb : vb - va;
+        });
+
+        const arrow = (col) => {
+            if (window._meAnalyzeSortCol !== col) return '<span style="color:#cbd5e1;">⇅</span>';
+            return window._meAnalyzeSortAsc ? '↑' : '↓';
+        };
+
+        const metricBadge = (v, isShap) => {
+            if (v == null) return '<span style="color:#94a3b8;">—</span>';
+            const abs = Math.abs(v);
+            const color = abs >= 0.5 ? '#dc2626' : abs >= 0.3 ? '#f97316' : '#64748b';
+            const bg    = abs >= 0.5 ? '#fef2f2' : abs >= 0.3 ? '#fff7ed' : '#f8fafc';
+            const border = isShap ? 'border:1.5px dashed ' + color + ';' : '';
+            return `<span style="background:${bg};color:${color};${border}padding:3px 9px;border-radius:10px;font-weight:700;font-size:12px;">${v >= 0 ? '+' : ''}${v.toFixed(3)}</span>`;
+        };
+
+        // Recommendation badge
+        const recBadge = (r) => {
+            if (!hasShap) return '';
+            const sc = recScore(r);
+            const xCorrSig = r.cx != null && Math.abs(r.cx) >= 0.3;
+            const yCorrSig = r.cy != null && Math.abs(r.cy) >= 0.3;
+            const xShapSig = r.cx_shap != null && Math.abs(r.cx_shap) >= 0.3;
+            const yShapSig = r.cy_shap != null && Math.abs(r.cy_shap) >= 0.3;
+            const xAgree = (r.cx != null && r.cx_shap != null) ? Math.sign(r.cx) === Math.sign(r.cx_shap) : null;
+            const yAgree = (r.cy != null && r.cy_shap != null) ? Math.sign(r.cy) === Math.sign(r.cy_shap) : null;
+            const xConflict = xAgree === false && (xCorrSig || xShapSig);
+            const yConflict = yAgree === false && (yCorrSig || yShapSig);
+            if (sc === 3)
+                return `<span style="background:#f0fdf4;color:#16a34a;border:1px solid #bbf7d0;padding:3px 9px;border-radius:10px;font-size:11px;font-weight:700;">雙指標一致 ✓</span>`;
+            if (xConflict || yConflict)
+                return `<span style="background:#fff7ed;color:#ea580c;border:1px solid #fed7aa;padding:3px 9px;border-radius:10px;font-size:11px;font-weight:700;">訊號衝突</span>`;
+            if (sc === 2)
+                return `<span style="background:#eff6ff;color:#2563eb;border:1px solid #bfdbfe;padding:3px 9px;border-radius:10px;font-size:11px;font-weight:700;">部分顯著</span>`;
+            return `<span style="color:#94a3b8;font-size:11px;">影響不明顯</span>`;
+        };
+
+        const thStyle = (col) => `
+            padding:9px 12px;text-align:center;font-size:12px;font-weight:700;color:#475569;
+            border-bottom:2px solid #e2e8f0;cursor:pointer;user-select:none;
+            background:${window._meAnalyzeSortCol === col ? '#f0f7ff' : '#f8fafc'};
+            white-space:nowrap;
+        `;
+        const thStyleFixed = `padding:9px 12px;text-align:center;font-size:12px;font-weight:700;color:#475569;border-bottom:2px solid #e2e8f0;background:#f8fafc;white-space:nowrap;`;
+
+        const sortFn = (col) => `_meSortAnalyze('${col}')`;
+        window._meSortAnalyze = function(col) {
+            if (window._meAnalyzeSortCol === col) {
+                window._meAnalyzeSortAsc = !window._meAnalyzeSortAsc;
+            } else {
+                window._meAnalyzeSortCol = col;
+                window._meAnalyzeSortAsc = false;
+            }
+            _meAnalyzeRenderModal(window._meAnalyzeRows, axX, axY);
+        };
+
+        // Tiny loading placeholder SVG
+        const loadingCell = `<td style="padding:4px 8px;width:176px;">
+            <div style="display:flex;gap:4px;">
+                <div style="width:82px;height:56px;background:#f1f5f9;border-radius:5px;display:flex;align-items:center;justify-content:center;">
+                    <span style="font-size:9px;color:#94a3b8;">⏳</span></div>
+                <div style="width:82px;height:56px;background:#f1f5f9;border-radius:5px;display:flex;align-items:center;justify-content:center;">
+                    <span style="font-size:9px;color:#94a3b8;">⏳</span></div>
+            </div></td>`;
+
+        const slopeLoadCell = `<td id="me-analyze-slope-IDX" style="padding:6px 10px;text-align:center;min-width:160px;"><span style="color:#94a3b8;font-size:11px;">⏳</span></td>`;
+
+        let tableRows = rows.map((r, i) => {
+            const bg0 = i % 2 ? '#f8fafc' : '#fff';
+            const shapXCell = hasShap ? `<td style="padding:6px 8px;text-align:center;">${metricBadge(r.cx_shap, true)}</td>` : '';
+            const shapYCell = hasShap ? `<td style="padding:6px 8px;text-align:center;">${metricBadge(r.cy_shap, true)}</td>` : '';
+            const recCell   = hasShap ? `<td style="padding:6px 8px;text-align:center;">${recBadge(r)}</td>` : '';
+            return `
+            <tr id="me-analyze-row-${i}" style="background:${bg0};cursor:pointer;"
+                onclick="meAnalyzeRowDetail(${i})"
+                onmouseenter="this.style.background='#eff6ff'"
+                onmouseleave="this.style.background=(window._meAnalyzeActiveRow===${i}?'#e0f2fe':'${bg0}')">
+                <td style="padding:7px 12px;font-size:13px;color:#1e293b;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${r.name}">${r.name}</td>
+                <td style="padding:6px 8px;text-align:center;">${metricBadge(r.cx, false)}</td>
+                ${shapXCell}
+                <td style="padding:6px 8px;text-align:center;">${metricBadge(r.cy, false)}</td>
+                ${shapYCell}
+                ${recCell}
+                ${slopeLoadCell.replace('IDX', i)}
+                ${loadingCell}
+            </tr>`;
+        }).join('');
+
+        window._meAnalyzeRows = rows;
+
+        // Use a session token so stale async updates don't overwrite a re-opened modal
+        const sessionToken = Date.now();
+        window._meAnalyzeSession = sessionToken;
+
+        // Build dynamic header columns
+        const shapLegend = hasShap
+            ? `&nbsp;|&nbsp; <span style="border:1px dashed #f97316;border-radius:4px;padding:0 4px;font-size:10px;color:#ea580c;">虛線框</span> = SHAP（已歸一化）`
+            : `&nbsp;|&nbsp; <span style="color:#94a3b8;font-size:10px;">計算 SHAP 後可顯示雙指標</span>`;
+
+        const xHeaders = hasShap ? `
+            <th style="${thStyle('x')}" onclick="${sortFn('x')}">r vs X ${arrow('x')}</th>
+            <th style="${thStyle('xs')}" onclick="${sortFn('xs')}">SHAP vs X ${arrow('xs')}</th>` : `
+            <th style="${thStyle('x')}" onclick="${sortFn('x')}">與 X 軸相關性 ${arrow('x')}</th>`;
+        const yHeaders = hasShap ? `
+            <th style="${thStyle('y')}" onclick="${sortFn('y')}">r vs Y ${arrow('y')}</th>
+            <th style="${thStyle('ys')}" onclick="${sortFn('ys')}">SHAP vs Y ${arrow('ys')}</th>` : `
+            <th style="${thStyle('y')}" onclick="${sortFn('y')}">與 Y 軸相關性 ${arrow('y')}</th>`;
+        const recHeader = hasShap ? `<th style="${thStyle('rec')}" onclick="${sortFn('rec')}">建議 ${arrow('rec')}</th>` : '';
+        const slopeHeader = `
+            <th style="${thStyle('slope')}" onclick="${sortFn('slope')}" title="斜率 β（vs X / vs Y）&#10;排序依：|βX − βY| / max(|βX|,|βY|)&#10;= 兩目標斜率差異的百分比&#10;百分比愈高 → 對X、Y的影響差異愈大&#10;顯示值為原始 β">斜率 β ${arrow('slope')}<br><span style="font-size:9px;font-weight:400;color:#94a3b8;">vs X / vs Y</span></th>`;
+
+        const modalWidth = hasShap ? '1200px' : '1020px';
+
+        let existing = document.getElementById('me-analyze-modal');
+        if (!existing) {
+            existing = document.createElement('div');
+            existing.id = 'me-analyze-modal';
+            document.body.appendChild(existing);
+        }
+        existing.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;';
+        // Reset detail panel state on each open
+        window._meADSyncYAxis = false;
+        window._meADPayload = null;
+        window._meADBrush = null;
+        window._meAnalyzeActiveRow = -1;
+        existing.innerHTML = `
+            <div style="position:absolute;inset:0;background:rgba(15,23,42,0.45);backdrop-filter:blur(4px);" onclick="document.getElementById('me-analyze-modal').style.display='none';"></div>
+            <div style="position:relative;background:#fff;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,0.25);width:${modalWidth};max-width:97vw;max-height:85vh;display:flex;flex-direction:column;overflow:hidden;">
+                <!-- Header -->
+                <div style="padding:16px 20px 12px;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <div>
+                            <div style="font-size:15px;font-weight:700;color:#1e293b;">🔍 選取參數分析</div>
+                            <div style="font-size:11px;color:#64748b;margin-top:2px;">共 ${rows.length} 個參數 &nbsp;|&nbsp; 點擊列查看完整散佈圖 &nbsp;|&nbsp; 點擊表頭排序${shapLegend}</div>
+                        </div>
+                        <!-- Help icon -->
+                        <div style="position:relative;display:inline-block;" id="me-analyze-help-wrap">
+                            <button onclick="(function(){var p=document.getElementById('me-analyze-help-pop');p.style.display=p.style.display==='block'?'none':'block';})();"
+                                style="background:#e0f2fe;border:none;border-radius:50%;width:22px;height:22px;cursor:pointer;font-size:12px;font-weight:700;color:#0284c7;display:flex;align-items:center;justify-content:center;line-height:1;flex-shrink:0;"
+                                title="指標說明">?</button>
+                            <div id="me-analyze-help-pop" style="display:none;position:absolute;left:0;top:28px;z-index:100;background:#fff;border:1px solid #e2e8f0;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,0.18);padding:16px 18px;width:340px;max-height:60vh;overflow-y:auto;font-size:11px;color:#334155;line-height:1.7;">
+                                <div style="font-weight:700;font-size:12px;color:#1e293b;margin-bottom:8px;">如何解讀兩個指標？</div>
+                                <div style="margin-bottom:10px;">
+                                    <span style="font-weight:700;color:#2563eb;">相關係數 r</span>（實線框）<br>
+                                    衡量線性關係強弱。正值代表同向、負值代表反向。<br>
+                                    <span style="color:#dc2626;">|r| ≥ 0.5 強相關</span>，<span style="color:#f97316;">|r| ≥ 0.3 中等</span>，<span style="color:#64748b;">其餘偏低</span>。
+                                </div>
+                                <div style="margin-bottom:10px;">
+                                    <span style="font-weight:700;color:#ea580c;">SHAP 值</span>（虛線框，已歸一化至 ±1）<br>
+                                    衡量非線性模型中的實際貢獻度，正負代表影響方向。<br>
+                                    比 r 更能捕捉複雜交互作用。
+                                </div>
+                                <div style="border-top:1px solid #e2e8f0;padding-top:8px;margin-bottom:4px;font-weight:700;font-size:11px;color:#1e293b;">建議欄判讀</div>
+                                <div style="display:flex;flex-direction:column;gap:5px;">
+                                    <div><span style="background:#f0fdf4;color:#16a34a;border:1px solid #bbf7d0;padding:1px 6px;border-radius:8px;font-weight:700;font-size:10px;">雙指標一致 ✓</span> 兩者均顯著且方向相同 → 高可信度，優先調整</div>
+                                    <div><span style="background:#fff7ed;color:#ea580c;border:1px solid #fed7aa;padding:1px 6px;border-radius:8px;font-weight:700;font-size:10px;">訊號衝突</span> 方向相反 → 可能有非線性或分群，需確認散佈圖</div>
+                                    <div><span style="background:#eff6ff;color:#2563eb;border:1px solid #bfdbfe;padding:1px 6px;border-radius:8px;font-weight:700;font-size:10px;">部分顯著</span> 僅單一指標超過門檻 → 參考但謹慎</div>
+                                    <div><span style="color:#94a3b8;font-size:10px;">影響不明顯</span> 兩者皆低 → 此參數對目標影響有限</div>
+                                </div>
+                                <div style="margin-top:10px;padding:8px;background:#f8fafc;border-radius:6px;color:#64748b;font-size:10px;">
+                                    💡 <b>建議流程：</b>先看「雙指標一致」的參數，再以散佈圖確認趨勢，遇到「訊號衝突」時留意非線性效果。
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <button onclick="document.getElementById('me-analyze-modal').style.display='none';" style="background:#f1f5f9;border:none;border-radius:8px;width:28px;height:28px;cursor:pointer;font-size:15px;color:#64748b;display:flex;align-items:center;justify-content:center;line-height:1;">✕</button>
+                </div>
+                <!-- X/Y label -->
+                <div style="padding:8px 20px;background:#f8fafc;border-bottom:1px solid #e2e8f0;display:flex;gap:20px;align-items:center;flex-shrink:0;">
+                    <div style="font-size:11px;color:#64748b;"><span style="font-weight:700;color:#2563eb;">X軸：</span>${axX}</div>
+                    <div style="font-size:11px;color:#64748b;"><span style="font-weight:700;color:#7c3aed;">Y軸：</span>${axY}</div>
+                    ${hasShap ? `<button onclick="(function(){var p=document.getElementById('me-consensus-panel');var b=document.getElementById('me-consensus-toggle');var open=p.style.display!=='none';p.style.display=open?'none':'block';b.textContent=open?'▶ 共識分析圖':'▼ 共識分析圖';})()" id="me-consensus-toggle" style="margin-left:auto;background:#eff6ff;color:#2563eb;border:1px solid #bfdbfe;border-radius:6px;font-size:11px;font-weight:600;padding:3px 10px;cursor:pointer;">▼ 共識分析圖</button>` : ''}
+                </div>
+                ${hasShap ? `<!-- Consensus chart panel -->
+                <div id="me-consensus-panel" style="border-bottom:1px solid #e2e8f0;background:#fafbff;padding:14px 20px;flex-shrink:0;">
+                    <div id="me-consensus-charts" style="display:flex;gap:16px;align-items:flex-start;"></div>
+                </div>` : ''}
+                <!-- Table -->
+                <div style="overflow-y:auto;flex:1;">
+                    <table style="width:100%;border-collapse:collapse;">
+                        <thead style="position:sticky;top:0;z-index:2;">
+                            <tr>
+                                <th style="${thStyle('name')}" onclick="${sortFn('name')}">參數名稱 ${arrow('name')}</th>
+                                ${xHeaders}
+                                ${yHeaders}
+                                ${recHeader}
+                                ${slopeHeader}
+                                <th style="${thStyleFixed}">散佈圖 <span style="font-weight:400;color:#94a3b8;font-size:10px;">(vs X / vs Y)</span></th>
+                            </tr>
+                        </thead>
+                        <tbody>${tableRows}</tbody>
+                    </table>
+                </div>
+                <!-- Inline row detail panel -->
+                <div id="me-analyze-detail" style="display:none;border-top:2px solid #e0e7ff;flex-shrink:0;background:#f5f7ff;max-height:420px;overflow-y:auto;"></div>
+                <!-- Footer -->
+                <div style="padding:10px 20px;border-top:1px solid #e2e8f0;display:flex;justify-content:flex-end;flex-shrink:0;">
+                    <button onclick="meScatterAddSelected();document.getElementById('me-analyze-modal').style.display='none';" style="padding:6px 18px;background:#2563eb;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;margin-right:8px;">＋ 加入控制參數</button>
+                    <button onclick="document.getElementById('me-analyze-modal').style.display='none';" style="padding:6px 16px;background:#f1f5f9;color:#64748b;border:1px solid #e2e8f0;border-radius:8px;font-size:12px;cursor:pointer;">關閉</button>
+                </div>
+            </div>
+        `;
+
+        // Async load sparklines in batches of 8
+        _meLoadSparklines(rows, axX, axY, sessionToken);
+    }
+
+    // Render a tiny inline SVG scatter plot
+    function _meTinyScatterSvg(xVals, yVals, color) {
+        const W = 82, H = 56, PAD = { l:3, r:3, t:3, b:3 };
+        const pw = W - PAD.l - PAD.r, ph = H - PAD.t - PAD.b;
+        if (!xVals.length || !yVals.length)
+            return `<svg width="${W}" height="${H}"><rect x="${PAD.l}" y="${PAD.t}" width="${pw}" height="${ph}" fill="#f1f5f9" rx="3"/><text x="${W/2}" y="${H/2+3}" text-anchor="middle" font-size="8" fill="#94a3b8">無資料</text></svg>`;
+        const xMin = Math.min(...xVals), xMax = Math.max(...xVals), xRange = xMax - xMin || 1;
+        const yMin = Math.min(...yVals), yMax = Math.max(...yVals), yRange = yMax - yMin || 1;
+        const sx = v => PAD.l + (v - xMin) / xRange * pw;
+        const sy = v => PAD.t + (1 - (v - yMin) / yRange) * ph;
+        const n = xVals.length;
+        const xM = xVals.reduce((a,b) => a+b,0)/n, yM = yVals.reduce((a,b) => a+b,0)/n;
+        const num = xVals.reduce((s,x,i) => s+(x-xM)*(yVals[i]-yM),0);
+        const dX = xVals.reduce((s,x) => s+(x-xM)**2,0);
+        const dY = yVals.reduce((s,y) => s+(y-yM)**2,0);
+        const r = (dX&&dY) ? num/Math.sqrt(dX*dY) : 0;
+        const slope = dX ? num/dX : 0, intc = yM - slope*xM;
+        const lx1 = sx(xMin), ly1 = Math.max(PAD.t, Math.min(PAD.t+ph, sy(slope*xMin+intc)));
+        const lx2 = sx(xMax), ly2 = Math.max(PAD.t, Math.min(PAD.t+ph, sy(slope*xMax+intc)));
+        // sample max 120 pts to keep SVG small
+        const step = Math.max(1, Math.floor(n/120));
+        let dots = '';
+        for (let i = 0; i < n; i += step)
+            dots += `<circle cx="${sx(xVals[i]).toFixed(1)}" cy="${sy(yVals[i]).toFixed(1)}" r="2" fill="${color}" opacity="0.5"/>`;
+        return `<svg width="${W}" height="${H}">
+            <rect x="${PAD.l}" y="${PAD.t}" width="${pw}" height="${ph}" fill="#f8fafc" rx="3"/>
+            ${dots}
+            <line x1="${lx1.toFixed(1)}" y1="${ly1.toFixed(1)}" x2="${lx2.toFixed(1)}" y2="${ly2.toFixed(1)}" stroke="${color}" stroke-width="1.5" opacity="0.8"/>
+        </svg>`;
+    }
+
+    async function _meLoadSparklines(rows, axX, axY, sessionToken) {
+        const fileId = typeof currentFileId !== 'undefined' ? currentFileId : '';
+        const sid = typeof getSessionId === 'function' ? getSessionId() : (localStorage.getItem('sigma2_session_id') || 'default');
+        const yCols = encodeURIComponent([axX, axY].join(','));
+        const BATCH = 8;
+
+        for (let i = 0; i < rows.length; i += BATCH) {
+            const batch = rows.slice(i, i + BATCH);
+            await Promise.all(batch.map(async (r, bi) => {
+                const idx = i + bi;
+                if (window._meAnalyzeSession !== sessionToken) return; // modal re-opened
+                try {
+                    const resp = await fetch(`/api/data-prep/xy-data/${fileId}?x_col=${encodeURIComponent(r.name)}&y_cols=${yCols}&session_id=${encodeURIComponent(sid)}`);
+                    if (window._meAnalyzeSession !== sessionToken) return;
+                    const payload = await resp.json();
+                    const xVals = payload.data[r.name] || [];
+                    const vX = payload.data[axX] || [];
+                    const vY = payload.data[axY] || [];
+                    const calcStats = (xs, ys) => {
+                        const n = xs.length; if (!n) return { r: 0, slope: 0 };
+                        const xM = xs.reduce((a,b)=>a+b,0)/n, yM = ys.reduce((a,b)=>a+b,0)/n;
+                        const num = xs.reduce((s,x,j)=>s+(x-xM)*(ys[j]-yM),0);
+                        const dX = xs.reduce((s,x)=>s+(x-xM)**2,0), dY = ys.reduce((s,y)=>s+(y-yM)**2,0);
+                        const r = (dX&&dY)?num/Math.sqrt(dX*dY):0;
+                        const slope = dX ? num/dX : 0;
+                        return { r, slope };
+                    };
+                    const stX = calcStats(xVals, vX);
+                    const stY = calcStats(xVals, vY);
+                    const rX = stX.r, rY = stY.r;
+                    const rawBX = stX.slope, rawBY = stY.slope;
+
+                    // Normalize slope by relative range: β × (xMax−xMin) / |xMean|
+                    // = "Y change when X moves its full range, relative to X's own level"
+                    // This eliminates both unit and scale differences, making slopes comparable.
+                    const xMin = xVals.length ? Math.min(...xVals) : 0;
+                    const xMax = xVals.length ? Math.max(...xVals) : 0;
+                    const paramRange = xMax - xMin || 1;
+                    const xMean = xVals.length ? xVals.reduce((a, b) => a + b, 0) / xVals.length : 1;
+                    const xMeanAbs = Math.abs(xMean) || paramRange; // fallback if mean ≈ 0
+                    const normFactor = paramRange / xMeanAbs;
+                    const bX = rawBX * normFactor;
+                    const bY = rawBY * normFactor;
+
+                    const _rColor = rv => Math.abs(rv)<0.1?'#94a3b8':rv>0?'#2563eb':'#ef4444';
+                    const cX = _rColor(rX);
+                    const cY = _rColor(rY);
+                    const svgX = _meTinyScatterSvg(xVals, vX, cX);
+                    const svgY = _meTinyScatterSvg(xVals, vY, cY);
+
+                    // Format normalized slope
+                    const fmtSlope = v => {
+                        if (v === 0) return '0';
+                        const abs = Math.abs(v);
+                        const dec = abs >= 100 ? 1 : abs >= 10 ? 2 : abs >= 1 ? 3 : abs >= 0.1 ? 4 : abs >= 0.01 ? 5 : 6;
+                        return (v >= 0 ? '+' : '') + v.toFixed(dec);
+                    };
+                    const slopeColor = v => Math.abs(v) < 0.0001 ? '#94a3b8' : v > 0 ? '#2563eb' : '#ef4444';
+
+                    // Sort key: |βX − βY| / max(|βX|,|βY|)  — percentage divergence between the two target slopes
+                    const maxAbs = Math.max(Math.abs(rawBX), Math.abs(rawBY));
+                    const slopeDivPct = maxAbs > 0 ? Math.abs(rawBX - rawBY) / maxAbs : 0;
+                    if (window._meAnalyzeRows && window._meAnalyzeRows[idx]) {
+                        window._meAnalyzeRows[idx].slopeDivPct = slopeDivPct;
+                    }
+
+                    // Update single merged slope cell — show both raw β values + divergence %
+                    const slopeTd = document.getElementById(`me-analyze-slope-${idx}`);
+                    if (slopeTd) {
+                        const divPctStr = (slopeDivPct * 100).toFixed(1) + '%';
+                        const divColor  = slopeDivPct > 0.3 ? '#f97316' : slopeDivPct > 0.1 ? '#eab308' : '#94a3b8';
+                        slopeTd.innerHTML = `
+                            <div style="display:flex;flex-direction:column;gap:2px;align-items:center;">
+                                <div style="display:flex;gap:8px;align-items:baseline;">
+                                    <span style="font-size:12px;font-weight:700;color:${slopeColor(rawBX)};">${fmtSlope(rawBX)}<span style="font-size:9px;font-weight:400;color:#94a3b8;margin-left:2px;">X</span></span>
+                                    <span style="font-size:12px;font-weight:700;color:${slopeColor(rawBY)};">${fmtSlope(rawBY)}<span style="font-size:9px;font-weight:400;color:#94a3b8;margin-left:2px;">Y</span></span>
+                                </div>
+                                <span style="font-size:9px;color:${divColor};font-weight:600;" title="兩斜率差異百分比 = |βX−βY|/max(|βX|,|βY|)">差異 ${divPctStr}</span>
+                            </div>`;
+                    }
+
+                    const rowEl = document.getElementById(`me-analyze-row-${idx}`);
+                    if (!rowEl) return;
+                    const td = rowEl.querySelector('td:last-child');
+                    if (!td) return;
+                    td.innerHTML = `<div style="display:flex;gap:4px;align-items:flex-end;">
+                        <div>
+                            <div style="font-size:8px;color:${cX};font-weight:700;text-align:right;margin-bottom:1px;">r=${rX>=0?'+':''}${rX.toFixed(2)}</div>
+                            ${svgX}
+                        </div>
+                        <div>
+                            <div style="font-size:8px;color:${cY};font-weight:700;text-align:right;margin-bottom:1px;">r=${rY>=0?'+':''}${rY.toFixed(2)}</div>
+                            ${svgY}
+                        </div>
+                    </div>`;
+                } catch(e) { /* quietly ignore */ }
+            }));
+        }
+    }
+
     // ============ PUBLIC API ============
     window.meInit = function () {
         if (typeof allFields === 'undefined' || allFields.length === 0) return;
@@ -60,9 +1977,12 @@
 
     // Called when data cleaning rules change — clears results to avoid stale data
     window.meReset = function () {
-        // Only invalidate the result panel — keep Target/factor selections intact
+        // Invalidate result panel AND correlations — cleaning rules affect the data
+        // so any previously computed correlations / SHAP are no longer valid
         _meRenderCtx = null;
         _meSimResults = null;
+        _meCorrelations = {};
+        _meShapData = {};
         const resultArea = document.getElementById('me-step3-content');
         if (resultArea) resultArea.innerHTML = `
             <div style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;flex-direction:column;gap:8px;color:#94a3b8;">
@@ -70,6 +1990,11 @@
                 <div style="font-size:13px;color:#f59e0b;font-weight:600;">清洗規則已變更</div>
                 <div style="font-size:12px;">請重新執行分析以使用最新資料</div>
             </div>`;
+        // Also clear scatter display so stale correlations are not visible
+        const advPane = document.getElementById('me-advanced-pane');
+        if (advPane && advPane.style.display !== 'none') {
+            meFetchAndRenderScatter();
+        }
         // If currently on step 3, return to step 2
         if (_meStep === 3) meGotoStep(2);
     };
@@ -81,9 +2006,16 @@
         _meTargets = [];
         _meControlFactors = [];
         _meBgFactors = [];
+        _meCorrelations = {};
+        _meShapData = {};
+        _meScatterMetric = 'corr';
+        _meScatterSelected.clear();
+        _updateScatterSelCount();
+        _meUpdateMetricToggle();
         const resultArea = document.getElementById('me-step3-content');
         if (resultArea) resultArea.innerHTML = _emptyState('請重新設定並執行分析');
         _renderTargetChips();
+        _renderFactorLists();
         meGotoStep(1);
     };
 
@@ -115,7 +2047,14 @@
         if (titleEl) titleEl.textContent = titles[n - 1];
 
         // Refresh factor lists when entering step 2 (ensures target cols are removed)
-        if (n === 2) _renderFactorLists();
+        if (n === 2) {
+            _renderFactorLists();
+            // If advanced mode is active and correlations not yet computed, auto-fetch
+            const advPane = document.getElementById('me-advanced-pane');
+            if (advPane && advPane.style.display !== 'none' && !Object.keys(_meCorrelations).length && _meTargets.length > 0) {
+                meFetchAndRenderScatter();
+            }
+        }
 
         // Run button state
         _updateRunBtn();
@@ -158,7 +2097,21 @@
         }
 
         _meAllCols = cols.map(c => c.name);
-        
+
+        // 切換子資料集後，過濾掉已被新資料集清洗規則排除的欄位
+        const _allColsSet = new Set(_meAllCols);
+        _meControlFactors = _meControlFactors.filter(c => _allColsSet.has(c));
+        _meBgFactors      = _meBgFactors.filter(c => _allColsSet.has(c));
+        const prevTargetCount = _meTargets.length;
+        _meTargets = _meTargets.filter(t => _allColsSet.has(t.col));
+        if (_meTargets.length !== prevTargetCount) {
+            // 有 target 被排除 → 重新正規化權重、軟性 reset 結果
+            _normalizeWeights();
+            _meRenderCtx = null;
+            _meSimResults = null;
+            if (_meStep === 3) meGotoStep(2);
+        }
+
         // Update the native select for targets
         const targetSel = document.getElementById('me-target-select');
         if (targetSel) {
@@ -176,6 +2129,76 @@
 
         // Re-populate factor lists
         _renderFactorLists();
+        // Rebuild custom target dropdown
+        _buildTargetDropdown();
+    }
+
+    function _buildTargetDropdown() {
+        const wrap = document.getElementById('me-target-dd-wrap');
+        if (!wrap) return;
+        const cols = _meAllCols.slice();
+        const itemsHtml = cols.map(c =>
+            `<div class="me-td-item" data-col="${c}" onclick="_meSelectTargetDD(this)"
+                style="padding:7px 14px;font-size:13px;color:#1e293b;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"
+                onmouseenter="this.style.background='#eff6ff'" onmouseleave="this.style.background='';">${c}</div>`
+        ).join('');
+        wrap.innerHTML = `
+            <div id="me-target-dd-trigger" onclick="_meToggleTargetDD(event)"
+                style="display:flex;align-items:center;border:1px solid #cbd5e1;border-radius:6px;padding:0 10px;height:38px;cursor:pointer;background:#fff;gap:6px;user-select:none;">
+                <span id="me-target-dd-label" style="flex:1;font-size:13px;color:#94a3b8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">— 選擇目標變數 —</span>
+                <span style="color:#94a3b8;font-size:10px;flex-shrink:0;">▼</span>
+            </div>
+            <div id="me-target-dd-panel" style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:600;background:#fff;border:1px solid #e2e8f0;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.18);overflow:hidden;">
+                <div style="padding:6px 8px;border-bottom:1px solid #f1f5f9;">
+                    <input id="me-target-dd-search" type="text" placeholder="搜尋欄位…" oninput="_meFilterTargetDD()"
+                        onclick="event.stopPropagation()"
+                        style="width:100%;border:1px solid #e2e8f0;border-radius:4px;padding:5px 8px;font-size:12px;outline:none;box-sizing:border-box;color:#1e293b;">
+                </div>
+                <div id="me-target-dd-list" style="max-height:40vh;overflow-y:auto;">${itemsHtml}</div>
+            </div>`;
+        // Close on outside click (re-register each rebuild)
+        document.removeEventListener('click', window._meTDDOutsideClick);
+        window._meTDDOutsideClick = function(e) {
+            const panel = document.getElementById('me-target-dd-panel');
+            const wrap2 = document.getElementById('me-target-dd-wrap');
+            if (panel && wrap2 && !wrap2.contains(e.target)) panel.style.display = 'none';
+        };
+        document.addEventListener('click', window._meTDDOutsideClick);
+    }
+
+    window._meToggleTargetDD = function(e) {
+        e && e.stopPropagation();
+        const panel = document.getElementById('me-target-dd-panel');
+        if (!panel) return;
+        const open = panel.style.display !== 'none';
+        panel.style.display = open ? 'none' : 'block';
+        if (!open) {
+            const s = document.getElementById('me-target-dd-search');
+            if (s) { s.value = ''; window._meFilterTargetDD(); s.focus(); }
+        }
+    };
+
+    window._meFilterTargetDD = function() {
+        const kw = (document.getElementById('me-target-dd-search')?.value || '').toLowerCase();
+        document.querySelectorAll('#me-target-dd-list .me-td-item').forEach(item => {
+            item.style.display = item.dataset.col.toLowerCase().includes(kw) ? '' : 'none';
+        });
+    };
+
+    window._meSelectTargetDD = function(el) {
+        const col = el.dataset.col;
+        document.getElementById('me-target-dd-panel').style.display = 'none';
+        _meSetTargetDDLabel(col);
+        const hiddenSel = document.getElementById('me-target-select');
+        if (hiddenSel) { hiddenSel.value = col; }
+        if (typeof window.meTargetChange === 'function') window.meTargetChange();
+    };
+
+    function _meSetTargetDDLabel(val) {
+        const label = document.getElementById('me-target-dd-label');
+        if (!label) return;
+        if (val) { label.textContent = val; label.style.color = '#1e293b'; }
+        else      { label.textContent = '— 選擇目標變數 —'; label.style.color = '#94a3b8'; }
     }
 
     // ============ TARGET TREND CHART ============
@@ -207,7 +2230,7 @@
                     column: f.col, keyword: '==' + String(f.value || ''), exclude_empty: false
                 })) : [];
             const excludeIndices = (typeof _clOutlierIndices !== 'undefined') ? _clOutlierIndices : [];
-            const excludeCols = (typeof _clExcludedCols !== 'undefined') ? _clExcludedCols : [];
+            const excludeCols = (typeof _clExcludedCols !== 'undefined') ? [..._clExcludedCols] : [];
             const queryUrl = `/api/data-prep/gb-column-values?file_id=${currentFileId}&column=${encodeURIComponent(col)}&session_id=${sid}&filters=${encodeURIComponent(JSON.stringify(filters))}&exclude_indices=${encodeURIComponent(JSON.stringify(excludeIndices))}&exclude_cols=${encodeURIComponent(JSON.stringify(excludeCols))}`;
             
             const res = await fetch(queryUrl);
@@ -387,12 +2410,19 @@
         _normalizeWeights();
         // Reset the select box to default and clear trend
         sel.value = '';
+        _meSetTargetDDLabel('');
         _meCurrentTrendCol = null;
         const chartArea = document.getElementById('me-trend-area');
         if (chartArea) chartArea.innerHTML = '<div style="color:#94a3b8;font-size:12px;text-align:center;">選擇目標後顯示數據趨勢</div>';
         _renderTargetChips();
         _renderFactorLists(); // Remove this col from control/bg lists immediately
         _updateRunBtn();
+        _meSyncAdvancedFilters();
+        // If advanced mode is open and correlations are stale, auto-refresh scatter
+        const advPane = document.getElementById('me-control-advanced-pane');
+        if (advPane && advPane.style.display !== 'none' && _meStep === 2) {
+            meFetchAndRenderScatter();
+        }
     };
 
     // Save editable input values back to _meTargetStats
@@ -422,6 +2452,7 @@
         _meCurrentTrendCol = col;
         const sel = document.getElementById('me-target-select');
         if (sel) sel.value = col;
+        _meSetTargetDDLabel(col);
         _loadTrend(col);
         _renderTargetChips();
     };
@@ -486,7 +2517,21 @@
         _normalizeWeights();
         _renderTargetChips();
         _updateRunBtn();
+        _meSyncAdvancedFilters();
     };
+
+    function _meSyncAdvancedFilters() {
+        if (_meControlMode !== 'advanced') return;
+        meSetupScatterAxes();
+        meRenderScatterFilters();
+        // Refresh whichever view is currently visible
+        const gv = document.getElementById('me-global-view');
+        if (gv && gv.style.display !== 'none') {
+            meRenderGlobalView();
+        } else {
+            meRenderScatterPlot();
+        }
+    }
 
     window.meWeightChange = function (col, val) {
         const t = _meTargets.find(t => t.col === col);
@@ -1045,6 +3090,14 @@
 
             clearInterval(pTimer);
             _renderResults(data, resultArea);
+
+            // 顯示被略過的欄位警告
+            if (data.skipped_factors && data.skipped_factors.length > 0) {
+                const warn = document.createElement('div');
+                warn.style.cssText = 'margin:8px 16px 0;padding:8px 12px;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;font-size:12px;color:#92400e;';
+                warn.innerHTML = `⚠ 以下欄位在資料清洗後不存在，已略過：<b>${data.skipped_factors.join('、')}</b>`;
+                resultArea.insertBefore(warn, resultArea.firstChild);
+            }
         } catch (err) {
             clearInterval(pTimer);
             if (resultArea) resultArea.innerHTML = `
