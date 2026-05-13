@@ -2,11 +2,57 @@
 File Router - 檔案管理相關 API
 """
 
-from fastapi import APIRouter, Depends, File, UploadFile, Form, Query
+import os, json
+from fastapi import APIRouter, Depends, File, UploadFile, Form, Query, Body
 from backend.services.file_service import FileService
-from backend.dependencies import get_file_service
+from backend.dependencies import get_file_service, get_intelligent_analysis_service
 
 router = APIRouter()
+
+
+def _col_types_path(file_service: FileService, session_id: str, file_stem: str) -> str:
+    configs_dir = file_service.get_user_path(session_id, "configs")
+    safe_stem = "".join(c for c in file_stem if c.isalnum() or c in "-_")
+    return os.path.join(configs_dir, f"{safe_stem}_col_types.json")
+
+
+@router.get("/col_types")
+async def get_col_types(
+    session_id: str = Query("default"),
+    file_stem: str = Query(...),
+    file_service: FileService = Depends(get_file_service),
+):
+    """取得欄位型別 metadata（使用者手動設定過的）"""
+    path = _col_types_path(file_service, session_id, file_stem)
+    if not os.path.exists(path):
+        return {"col_types": {}}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return {"col_types": json.load(f)}
+    except Exception:
+        return {"col_types": {}}
+
+
+@router.post("/col_types")
+async def save_col_types(
+    session_id: str = Query("default"),
+    file_stem: str = Query(...),
+    body: dict = Body(...),
+    file_service: FileService = Depends(get_file_service),
+):
+    """儲存欄位型別 metadata（合併更新）"""
+    path = _col_types_path(file_service, session_id, file_stem)
+    existing = {}
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                existing = json.load(f)
+        except Exception:
+            pass
+    existing.update(body.get("col_types", {}))
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(existing, f, ensure_ascii=False, indent=2)
+    return {"ok": True, "saved": len(existing)}
 
 
 @router.post("/upload")
@@ -200,6 +246,82 @@ async def view_file(
     return await file_service.view_file(filename, page, page_size, session_id, sample_count)
 
 
+@router.post("/view-time-range/{filename}")
+async def view_file_time_range(
+    filename: str,
+    body: dict = Body(...),
+    session_id: str = Query("default"),
+    file_service: FileService = Depends(get_file_service),
+):
+    """依時間欄位或 row index 範圍篩選 CSV，回傳符合條件的 row（CSV 格式）"""
+    import asyncio
+
+    time_col = body.get("time_col", "")
+    time_min = body.get("time_min", "")
+    time_max = body.get("time_max", "")
+    row_min = body.get("row_min")  # int or None
+    row_max = body.get("row_max")  # int or None
+    mode = body.get("mode", "keep")  # keep | exclude
+
+    max_rows = body.get("max_rows", 10000)  # 前端可指定上限
+
+    def _filter():
+        import pandas as pd
+        upload_dir = file_service.resolve_uploads_dir(session_id)
+        file_path = os.path.join(upload_dir, os.path.basename(filename))
+        if not os.path.exists(file_path):
+            # Fallback to real uploads/
+            real_dir = file_service.get_user_upload_dir(session_id)
+            fallback = os.path.join(real_dir, os.path.basename(filename))
+            if os.path.exists(fallback):
+                file_path = fallback
+            else:
+                return None
+
+        df = pd.read_csv(file_path, encoding="utf-8-sig", low_memory=False)
+        df.columns = [str(c).strip() for c in df.columns]
+
+        if row_min is not None and row_max is not None:
+            # Row index 範圍篩選
+            mask = (df.index >= int(row_min)) & (df.index <= int(row_max))
+            if mode == 'exclude':
+                mask = ~mask
+        elif time_col and time_col in df.columns:
+            # 時間欄位範圍篩選
+            col = df[time_col].astype(str).str.strip()
+            mask = (col >= time_min) & (col <= time_max)
+            if mode == 'exclude':
+                mask = ~mask
+        else:
+            return None
+
+        filtered = df[mask]
+        total_filtered = len(filtered)
+
+        # 若超過 max_rows，等距取樣
+        if total_filtered > max_rows:
+            step = max(1, total_filtered // max_rows)
+            sampled = filtered.iloc[::step].head(max_rows)
+        else:
+            sampled = filtered
+
+        csv_str = sampled.to_csv(index=False)
+        return {
+            "content": csv_str,
+            "total_lines": len(sampled) + 1,
+            "filtered_count": total_filtered,
+            "sampled_count": len(sampled),
+            "original_count": len(df),
+            "is_sampled": total_filtered > max_rows,
+        }
+
+    result = await asyncio.to_thread(_filter)
+    if result is None:
+        from fastapi import HTTPException
+        raise HTTPException(404, detail="檔案或時間欄位不存在")
+    return result
+
+
 @router.post("/clear_workspace")
 async def clear_workspace(
     session_id: str = Query("default"),
@@ -207,6 +329,146 @@ async def clear_workspace(
 ):
     """清理 folos 使用者的工作空間 (刪除所有資料夾)"""
     return await file_service.clear_user_workspace(session_id)
+
+
+def _alias_path(file_service: FileService, session_id: str) -> str:
+    configs_dir = file_service.get_user_path(session_id, "configs")
+    return os.path.join(configs_dir, "column_aliases.json")
+
+
+@router.get("/column-aliases")
+async def get_column_aliases(
+    session_id: str = Query("default"),
+    file_service: FileService = Depends(get_file_service),
+):
+    """取得全域欄位別名表"""
+    path = _alias_path(file_service, session_id)
+    if not os.path.exists(path):
+        return {"aliases": {}}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return {"aliases": json.load(f)}
+    except Exception:
+        return {"aliases": {}}
+
+
+@router.post("/column-aliases")
+async def save_column_aliases(
+    session_id: str = Query("default"),
+    body: dict = Body(...),
+    file_service: FileService = Depends(get_file_service),
+):
+    """儲存全域欄位別名表 (replace=true 整份覆蓋, 否則 merge)"""
+    path = _alias_path(file_service, session_id)
+    new_aliases = body.get("aliases", {})
+    if body.get("replace"):
+        result = new_aliases
+    else:
+        existing = {}
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    existing = json.load(f)
+            except Exception:
+                pass
+        existing.update(new_aliases)
+        result = existing
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(result, f, ensure_ascii=False, indent=2)
+    return {"ok": True, "count": len(result)}
+
+
+@router.post("/column-aliases/upload")
+async def upload_alias_mapping(
+    file: UploadFile = File(...),
+    key_col: str = Form(...),
+    alias_col: str = Form(...),
+    session_id: str = Form("default"),
+    file_service: FileService = Depends(get_file_service),
+):
+    """上傳對照表 CSV/Excel，自動解析為別名表"""
+    import pandas as pd
+    import io
+
+    content = await file.read()
+    fname = file.filename.lower()
+    try:
+        if fname.endswith(('.xlsx', '.xls')):
+            df = pd.read_excel(io.BytesIO(content))
+        else:
+            for enc in ('utf-8-sig', 'utf-8', 'big5', 'gbk', 'latin-1'):
+                try:
+                    df = pd.read_csv(io.BytesIO(content), encoding=enc)
+                    break
+                except (UnicodeDecodeError, LookupError):
+                    continue
+            else:
+                df = pd.read_csv(io.BytesIO(content), encoding='latin-1')
+    except Exception as e:
+        from fastapi import HTTPException
+        raise HTTPException(400, f"無法解析檔案: {e}")
+
+    if key_col not in df.columns or alias_col not in df.columns:
+        from fastapi import HTTPException
+        raise HTTPException(400, f"找不到指定欄位: key={key_col}, alias={alias_col}")
+
+    # Build alias map
+    new_aliases = {}
+    for _, row in df.iterrows():
+        k = str(row[key_col]).strip()
+        v = str(row[alias_col]).strip()
+        if k and v and k != 'nan' and v != 'nan':
+            new_aliases[k] = v
+
+    # Merge with existing
+    path = _alias_path(file_service, session_id)
+    existing = {}
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                existing = json.load(f)
+        except Exception:
+            pass
+    existing.update(new_aliases)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(existing, f, ensure_ascii=False, indent=2)
+
+    return {"ok": True, "imported": len(new_aliases), "total": len(existing)}
+
+
+@router.post("/column-aliases/preview-file")
+async def preview_alias_file(
+    file: UploadFile = File(...),
+    session_id: str = Form("default"),
+    file_service: FileService = Depends(get_file_service),
+):
+    """預覽上傳的對照表，回傳欄位名和前幾列"""
+    import pandas as pd
+    import io
+
+    content = await file.read()
+    fname = file.filename.lower()
+    try:
+        if fname.endswith(('.xlsx', '.xls')):
+            df = pd.read_excel(io.BytesIO(content))
+        else:
+            for enc in ('utf-8-sig', 'utf-8', 'big5', 'gbk', 'latin-1'):
+                try:
+                    df = pd.read_csv(io.BytesIO(content), encoding=enc)
+                    break
+                except (UnicodeDecodeError, LookupError):
+                    continue
+            else:
+                df = pd.read_csv(io.BytesIO(content), encoding='latin-1')
+    except Exception as e:
+        from fastapi import HTTPException
+        raise HTTPException(400, f"無法解析檔案: {e}")
+
+    return {
+        "columns": df.columns.tolist(),
+        "preview": df.head(5).astype(str).values.tolist(),
+        "row_count": len(df),
+    }
 
 
 @router.post("/convert-sheet")
@@ -265,3 +527,107 @@ async def convert_sheet(
         "size": os.path.getsize(csv_path),
         "sheet_used": sheet_name,
     }
+
+
+# ── Shadow-file alias mode ──
+
+def _alias_mode_path(file_service: FileService, session_id: str) -> str:
+    configs_dir = file_service.get_user_path(session_id, "configs")
+    return os.path.join(configs_dir, "alias_mode.json")
+
+
+def _get_alias_mode(file_service: FileService, session_id: str) -> bool:
+    """Read alias mode state from configs/alias_mode.json"""
+    path = _alias_mode_path(file_service, session_id)
+    if not os.path.exists(path):
+        return False
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f).get("enabled", False)
+    except Exception:
+        return False
+
+
+def _generate_shadow_files(file_service: FileService, session_id: str):
+    """Generate shadow copies of all CSVs with aliased headers in alias_cache/"""
+    # Load alias map
+    alias_p = _alias_path(file_service, session_id)
+    if not os.path.exists(alias_p):
+        return 0
+    try:
+        with open(alias_p, "r", encoding="utf-8") as f:
+            aliases = json.load(f)
+    except Exception:
+        return 0
+    if not aliases:
+        return 0
+
+    uploads_dir = file_service.get_user_upload_dir(session_id)
+    cache_dir = file_service.get_user_path(session_id, "alias_cache")
+    os.makedirs(cache_dir, exist_ok=True)
+
+    count = 0
+    for fname in os.listdir(uploads_dir):
+        if not fname.lower().endswith(".csv"):
+            continue
+        src = os.path.join(uploads_dir, fname)
+        dst = os.path.join(cache_dir, fname)
+        try:
+            with open(src, "r", encoding="utf-8-sig") as f_in:
+                header_line = f_in.readline()
+                rest = f_in.read()
+            # Replace header columns with aliases
+            cols = header_line.rstrip("\r\n").split(",")
+            new_cols = [aliases.get(c.strip(), c.strip()) for c in cols]
+            new_header = ",".join(new_cols) + "\n"
+            with open(dst, "w", encoding="utf-8-sig", newline="") as f_out:
+                f_out.write(new_header)
+                f_out.write(rest)
+            count += 1
+        except Exception:
+            continue
+    return count
+
+
+@router.post("/alias-mode")
+async def set_alias_mode(
+    body: dict = Body(...),
+    session_id: str = Query("default"),
+    file_service: FileService = Depends(get_file_service),
+):
+    """切換別名模式 ON/OFF，ON 時自動產生 shadow 檔案"""
+    import asyncio
+
+    enabled = bool(body.get("enabled", False))
+
+    # Save state
+    mode_path = _alias_mode_path(file_service, session_id)
+    with open(mode_path, "w", encoding="utf-8") as f:
+        json.dump({"enabled": enabled}, f)
+
+    generated = 0
+    if enabled:
+        generated = await asyncio.to_thread(
+            _generate_shadow_files, file_service, session_id
+        )
+
+    # 清除 analysis_service 的 DataFrame 快取，避免讀到舊欄位名
+    try:
+        ia_service = get_intelligent_analysis_service()
+        ia_service.clear_cache(session_id)
+    except Exception:
+        pass
+
+    return {"ok": True, "enabled": enabled, "shadow_files": generated}
+
+
+@router.get("/alias-mode")
+async def get_alias_mode(
+    session_id: str = Query("default"),
+    file_service: FileService = Depends(get_file_service),
+):
+    """取得目前別名模式狀態"""
+    enabled = _get_alias_mode(file_service, session_id)
+    return {"enabled": enabled}
+
+

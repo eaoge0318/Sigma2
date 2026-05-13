@@ -43,6 +43,15 @@ class AnalysisService:
             return f"{base_id}_{conversation_id}"
         return base_id
 
+    def get_uploads_dir(self, session_id: str) -> Path:
+        """Alias-aware uploads dir: returns alias_cache/ when alias mode ON."""
+        from backend.services.file_service import resolve_uploads_path
+        return resolve_uploads_path(self.base_dir, session_id)
+
+    def get_csv_path(self, session_id: str, filename: str) -> Path:
+        """Alias-aware CSV path: returns file in alias_cache/ when alias mode ON."""
+        return self.get_uploads_dir(session_id) / filename
+
     def get_analysis_path(
         self, session_id: str, file_id: str, create: bool = False
     ) -> Path:
@@ -60,7 +69,7 @@ class AnalysisService:
         self, session_id: str, filename: str, conversation_id: str = "default"
     ) -> tuple[bool, str, dict]:
         """預處理檔案的門面方法"""
-        csv_path = self.base_dir / session_id / "uploads" / filename
+        csv_path = self.get_csv_path(session_id, filename)
         if not csv_path.exists():
             return False, f"檔案不存在: {filename}", {}
 
@@ -91,7 +100,7 @@ class AnalysisService:
             return None
 
         filename = summary["filename"]
-        csv_path = self.base_dir / session_id / "uploads" / filename
+        csv_path = self.get_csv_path(session_id, filename)
 
         if not csv_path.exists():
             return None
@@ -293,9 +302,7 @@ class AnalysisService:
                     f"Quality data missing or incomplete for {file_id}. Forcing refresh..."
                 )
                 try:
-                    csv_path = (
-                        self.base_dir / session_id / "uploads" / summary["filename"]
-                    )
+                    csv_path = self.get_csv_path(session_id, summary["filename"])
                     if csv_path.exists():
                         df = pd.read_csv(csv_path, encoding="utf-8-sig")
                         df.columns = [str(c).strip() for c in df.columns]
@@ -520,7 +527,7 @@ class AnalysisService:
             return False
 
         filename = summary["filename"]
-        csv_path = self.base_dir / session_id / "uploads" / filename
+        csv_path = self.get_csv_path(session_id, filename)
         if not csv_path.exists():
             return False
 

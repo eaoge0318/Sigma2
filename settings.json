@@ -3,9 +3,9 @@
     "files": true,
     "charts": true,
     "data_analysis": true,
-    "model_training": false,
-    "dashboard": false,
-    "ai": false
+    "model_training": true,
+    "dashboard": true,
+    "ai": true
   },
   "data_analysis_tools": {
     "pivot": true,
@@ -24,7 +24,7 @@
   "llm": {
     "_comment": "LLM 服務位址與模型名稱（改完重啟 server）",
     "api_url": "http://10.10.20.118:8000/v1/chat/completions",
-    "model": "/models/Qwen3.5-27B-AWQ"
+    "model": "/models/Qwen3.6-35B-A3B-AWQ"
   },
   "storage": {
     "base_dir": "workspace",

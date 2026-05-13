@@ -109,7 +109,7 @@
             padding: 20px;
             box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1);
             height: 280px;
-            /* å¢å??ºå?é«˜åº¦ä»¥æ”¾å¤§å?è¡?*/
+            /* å¢ï¿½??ï¿½ï¿½?é«˜åº¦ä»¥æ”¾å¤§ï¿½?ï¿½?*/
         }
 
         .status-header {
@@ -134,7 +134,7 @@
             border-color: #94a3b8;
         }
 
-        /* æ­·å²?¨ç??¥è? */
+        /* æ­·å²?ï¿½ï¿½??ï¿½ï¿½? */
         .log-container {
             background: #ffffff;
             border: 1px solid #e2e8f0;
@@ -189,14 +189,14 @@
         }
 
         /* AI Report & Chat Styles */
-        /* ?ºæ…§æµ®å??©æ?æ¨?? (Floating AI Assistant) */
+        /* ?ï¿½æ…§æµ®ï¿½??ï¿½ï¿½?ï¿½?? (Floating AI Assistant) */
         .ai-report-card {
             position: fixed;
             bottom: 90px;
             right: 30px;
             width: 450px;
             height: 480px;
-            /* ?ä??è¨­é«˜åº¦ï¼Œè?æ¯”ä??´å?è«?*/
+            /* ?ï¿½ï¿½??ï¿½è¨­é«˜åº¦ï¼Œï¿½?æ¯”ï¿½??ï¿½ï¿½?ï¿½?*/
             min-width: 350px;
             min-height: 350px;
             max-width: 90vw;
@@ -214,7 +214,7 @@
             opacity: 0;
             padding: 20px;
             resize: both;
-            /* ?¯æ´?‹å?ç¸®æ”¾ */
+            /* ?ï¿½æ´?ï¿½ï¿½?ç¸®æ”¾ */
             overflow: hidden;
         }
 
@@ -229,7 +229,7 @@
             opacity: 1;
         }
 
-        /* ?¸æµ®?‰é? (FAB) */
+        /* ?ï¿½æµ®?ï¿½ï¿½? (FAB) */
         .assistant-fab {
             position: fixed;
             bottom: 30px;
@@ -260,7 +260,7 @@
             transform: rotate(180deg);
         }
 
-        /* ç¸®æ”¾?‹æ??ç¤º */
+        /* ç¸®æ”¾?ï¿½ï¿½??ï¿½ç¤º */
         .ai-report-card::after {
             content: "";
             position: absolute;
@@ -294,7 +294,7 @@
             display: flex;
             flex-direction: column;
             transition: all 0.2s;
-            /* å¹³æ??æ¸¡ */
+            /* å¹³ï¿½??ï¿½æ¸¡ */
             position: relative;
         }
 
@@ -304,9 +304,9 @@
             box-shadow: inset 0 0 10px rgba(126, 34, 206, 0.1);
         }
 
-        /* ?–æ›³?ç¤º?‡å? */
+        /* ?ï¿½æ›³?ï¿½ç¤º?ï¿½ï¿½? */
         .ai-report-body.drag-over::after {
-            content: "?? ?¾åˆ°?™è£¡ä¸Šå‚³æª”æ?";
+            content: "?? ?ï¿½åˆ°?ï¿½è£¡ä¸Šå‚³æª”ï¿½?";
             position: absolute;
             top: 50%;
             left: 50%;
@@ -350,7 +350,7 @@
             align-self: flex-end;
             box-shadow: 0 2px 4px rgba(126, 34, 206, 0.2);
             white-space: pre-wrap;
-            /* ä½¿ç”¨?…è??¯é?è¦æ”¯??Shift+Enter ?›è? */
+            /* ä½¿ç”¨?ï¿½ï¿½??ï¿½ï¿½?è¦æ”¯??Shift+Enter ?ï¿½ï¿½? */
         }
 
         .ai-bubble {
@@ -360,7 +360,7 @@
             border: 1px solid #e9d5ff;
             box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
             white-space: normal;
-            /* AI è¨Šæ¯??marked.js æ¸²æ? HTMLï¼Œä??‰å¼·??pre-wrap */
+            /* AI è¨Šæ¯??marked.js æ¸²ï¿½? HTMLï¼Œï¿½??ï¿½å¼·??pre-wrap */
         }
 
         .ai-bubble h2,
@@ -374,7 +374,7 @@
             padding-left: 20px;
         }
 
-        /* æª”æ??è¦½?€??*/
+        /* æª”ï¿½??ï¿½è¦½?ï¿½??*/
         #file-preview {
             display: flex;
             flex-wrap: wrap;
@@ -417,7 +417,7 @@
             line-height: 15px;
         }
 
-        /* è¨Šæ¯æ°?³¡?§ç??„ä»¶ç¸®å? */
+        /* è¨Šæ¯ï¿½?ï¿½ï¿½?ï¿½ï¿½??ï¿½ä»¶ç¸®ï¿½? */
         .bubble-attachments {
             display: flex;
             flex-wrap: wrap;
@@ -803,21 +803,19 @@
         }
 
         .filter-menu {
-            position: absolute;
-            top: 100%;
-            left: 0;
-            z-index: 1000;
-            margin-top: 8px;
+            position: fixed;
+            z-index: 9990;
             background: white;
             border: 1px solid #e2e8f0;
             border-radius: 8px;
             box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
             padding: 15px;
-            width: 250px;
+            width: 300px;
             display: none;
             /* Hidden by default */
             flex-direction: column;
             gap: 12px;
+            box-sizing: border-box;
         }
 
         .filter-menu label {
@@ -834,6 +832,7 @@
             border: 1px solid #e2e8f0;
             border-radius: 6px;
             font-size: 13px;
+            box-sizing: border-box;
         }
 
         .analysis-table th:first-child,

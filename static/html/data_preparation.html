@@ -84,6 +84,7 @@
 
         .tool-sidebar .ts-file-select {
             padding: 6px 10px;
+            position: relative;
         }
 
         .tool-sidebar .ts-file-select select {
@@ -97,10 +98,94 @@
             background: #fff;
             outline: none;
             cursor: pointer;
+            display: none;
         }
 
         .tool-sidebar .ts-file-select select:focus {
             border-color: #6366f1;
+        }
+
+        .ts-file-search-wrap {
+            position: relative;
+            width: 100%;
+        }
+        .ts-file-search-wrap input {
+            width: 100%;
+            padding: 7px 28px 7px 10px;
+            border: 1.5px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 500;
+            color: #334155;
+            background: #fff;
+            outline: none;
+            box-sizing: border-box;
+        }
+        .ts-file-search-wrap input:focus {
+            border-color: #6366f1;
+        }
+        .ts-file-search-wrap input::placeholder {
+            color: #94a3b8;
+        }
+        .ts-file-dd {
+            display: none;
+            position: fixed;
+            max-height: 320px;
+            overflow-y: auto;
+            background: #fff;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            box-shadow: 0 6px 20px rgba(0,0,0,0.12);
+            z-index: 99999;
+        }
+        .ts-file-dd.open { display: block; }
+        .ts-file-dd-item {
+            padding: 7px 10px;
+            font-size: 11px;
+            color: #334155;
+            cursor: pointer;
+            border-bottom: 1px solid #f8fafc;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .ts-file-dd-item:hover { background: #f1f5f9; }
+        .ts-file-dd-item.selected { background: #ede9fe; color: #7c3aed; font-weight: 600; }
+        .ts-file-dd-item .ts-file-dd-time {
+            margin-left: auto;
+            font-size: 10px;
+            color: #94a3b8;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+        .ts-file-dd-empty {
+            padding: 12px;
+            text-align: center;
+            font-size: 11px;
+            color: #94a3b8;
+        }
+        .ts-file-sort-bar {
+            display: flex;
+            gap: 2px;
+            padding: 4px 6px;
+            border-bottom: 1px solid #e2e8f0;
+            background: #f8fafc;
+            border-radius: 8px 8px 0 0;
+        }
+        .ts-file-sort-btn {
+            font-size: 10px;
+            padding: 2px 7px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            background: transparent;
+            color: #64748b;
+        }
+        .ts-file-sort-btn.active {
+            background: #fff;
+            color: #6366f1;
+            font-weight: 600;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.08);
         }
 
         .tool-sidebar .ts-tools {
@@ -1436,6 +1521,9 @@
             font-weight: 700;
             color: #1e293b;
             margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
         }
 
         .mva-trend-grid {
@@ -2201,6 +2289,7 @@
 
         .gb-box-card canvas {
             width: 100%;
+            max-width: 100%;
             height: auto;
             display: block;
         }
@@ -2394,6 +2483,8 @@
             border: 1px solid #e2e8f0;
             border-radius: 8px;
             padding: 8px;
+            min-width: 0;
+            overflow: hidden;
         }
 
         .gb-box-card-hdr {
@@ -2574,13 +2665,95 @@
         <div class="tool-sidebar">
             <div class="ts-section">選擇檔案</div>
             <div class="ts-file-select">
-                <select id="prep-file-select">
+                <select id="prep-file-select" style="display:none;">
                     <option value="" disabled selected>-- 選擇檔案 --</option>
                 </select>
+                <div class="ts-file-search-wrap" id="ts-file-search-wrap">
+                    <input id="ts-file-search" type="text" placeholder="搜尋或選擇檔案..."
+                        autocomplete="off">
+                    <div class="ts-file-dd" id="ts-file-dd"></div>
+                </div>
             </div>
             <div class="ts-datasets" id="ts-datasets">
                 <!-- Dynamically populated -->
             </div>
+        </div>
+
+        <!-- Merge Panel -->
+        <div id="panel-merge" class="tool-panel" style="display:none;flex:1;flex-direction:column;padding:24px;gap:20px;overflow-y:auto;max-width:640px;margin:0 auto;">
+            <div style="font-size:18px;font-weight:700;color:#1e293b;">🔗 合併兩個 CSV 檔案</div>
+            <div style="font-size:13px;color:#64748b;">依據時間欄位，將兩個 CSV 的欄位合併成一行資料。</div>
+
+            <!-- 左檔 -->
+            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:10px;">
+                <div style="font-size:13px;font-weight:700;color:#1e293b;">📄 左檔（主檔）</div>
+                <div style="display:flex;gap:10px;align-items:center;">
+                    <label style="font-size:12px;color:#64748b;width:70px;flex-shrink:0;">選擇檔案</label>
+                    <select id="merge-left-file" onchange="mergeLoadCols('left')"
+                        style="flex:1;padding:6px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;background:#fff;">
+                        <option value="">-- 選擇 --</option>
+                    </select>
+                </div>
+                <div style="display:flex;gap:10px;align-items:center;">
+                    <label style="font-size:12px;color:#64748b;width:70px;flex-shrink:0;">時間欄位</label>
+                    <select id="merge-left-col"
+                        style="flex:1;padding:6px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;background:#fff;">
+                        <option value="">-- 選欄位 --</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- 右檔 -->
+            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:10px;">
+                <div style="font-size:13px;font-weight:700;color:#1e293b;">📄 右檔（附加欄位）</div>
+                <div style="display:flex;gap:10px;align-items:center;">
+                    <label style="font-size:12px;color:#64748b;width:70px;flex-shrink:0;">選擇檔案</label>
+                    <select id="merge-right-file" onchange="mergeLoadCols('right')"
+                        style="flex:1;padding:6px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;background:#fff;">
+                        <option value="">-- 選擇 --</option>
+                    </select>
+                </div>
+                <div style="display:flex;gap:10px;align-items:center;">
+                    <label style="font-size:12px;color:#64748b;width:70px;flex-shrink:0;">時間欄位</label>
+                    <select id="merge-right-col"
+                        style="flex:1;padding:6px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;background:#fff;">
+                        <option value="">-- 選欄位 --</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- 合併方式 -->
+            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:10px;">
+                <div style="font-size:13px;font-weight:700;color:#1e293b;">⚙️ 合併設定</div>
+                <div style="display:flex;gap:10px;align-items:center;">
+                    <label style="font-size:12px;color:#64748b;width:70px;flex-shrink:0;">合併方式</label>
+                    <select id="merge-how" onchange="mergeToggleTolerance()"
+                        style="flex:1;padding:6px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;background:#fff;">
+                        <option value="inner">完全符合（Inner Join）</option>
+                        <option value="left">保留左檔全部（Left Join）</option>
+                        <option value="right">保留右檔全部（Right Join）</option>
+                        <option value="outer">保留全部（Outer Join）</option>
+                        <option value="nearest">最近時間配對（Nearest）</option>
+                    </select>
+                </div>
+                <div id="merge-tolerance-row" style="display:none;flex;gap:10px;align-items:center;">
+                    <label style="font-size:12px;color:#64748b;width:70px;flex-shrink:0;">容許誤差</label>
+                    <input type="number" id="merge-tolerance" placeholder="秒數（留空不限制）" min="0"
+                        style="flex:1;padding:6px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;">
+                    <span style="font-size:12px;color:#94a3b8;">秒</span>
+                </div>
+                <div style="display:flex;gap:10px;align-items:center;">
+                    <label style="font-size:12px;color:#64748b;width:70px;flex-shrink:0;">輸出名稱</label>
+                    <input type="text" id="merge-output-name" placeholder="merged（留空自動命名）"
+                        style="flex:1;padding:6px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;">
+                </div>
+            </div>
+
+            <button onclick="doMergeFiles()"
+                style="padding:10px;background:linear-gradient(135deg,#2563eb,#3b82f6);border:none;border-radius:10px;color:#fff;font-size:14px;font-weight:700;cursor:pointer;">
+                🔗 開始合併
+            </button>
+            <div id="merge-result" style="font-size:13px;color:#22c55e;font-weight:600;min-height:20px;"></div>
         </div>
 
         <!-- Pivot Panel -->
@@ -2757,6 +2930,7 @@
                                 <button onclick="clSelectAllVisible(true)"  title="全選（目前篩選結果）" style="padding:3px 8px;font-size:11px;border:1px solid #e2e8f0;border-radius:5px;background:#fff;cursor:pointer;color:#334155;white-space:nowrap;" onmouseenter="this.style.background='#f1f5f9'" onmouseleave="this.style.background='#fff'">全選</button>
                                 <button onclick="clSelectAllVisible(false)" title="全部取消勾選（目前篩選結果）" style="padding:3px 8px;font-size:11px;border:1px solid #e2e8f0;border-radius:5px;background:#fff;cursor:pointer;color:#334155;white-space:nowrap;" onmouseenter="this.style.background='#f1f5f9'" onmouseleave="this.style.background='#fff'">取消全選</button>
                                 <button onclick="clInvertVisible()" title="反轉勾選（目前篩選結果）" style="padding:3px 8px;font-size:11px;border:1px solid #e2e8f0;border-radius:5px;background:#fff;cursor:pointer;color:#334155;white-space:nowrap;" onmouseenter="this.style.background='#f1f5f9'" onmouseleave="this.style.background='#fff'">反選</button>
+                                <button onclick="clOpenBatchSelect()" title="貼入清單批次選取欄位" style="padding:3px 8px;font-size:11px;border:1px solid #6366f1;border-radius:5px;background:#eef2ff;cursor:pointer;color:#4f46e5;white-space:nowrap;font-weight:600;" onmouseenter="this.style.background='#e0e7ff'" onmouseleave="this.style.background='#eef2ff'">📋 批次</button>
                             </div>
                             <div class="cl-col-header">
                                 <span onclick="clToggleCheckFilter()" style="cursor:pointer;font-size:16px;" title="無篩選" id="cl-check-filter-btn">≡</span>
@@ -2808,6 +2982,8 @@
                         <button class="mva-run-btn" onclick="runMvaT2()">▶ 執行分析</button>
                         <button onclick="nbSaveMvaNote()" title="存入分析筆記本"
                             style="padding:6px 12px;background:#f5f3ff;color:#7c3aed;border:1.5px solid #ede9fe;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;">📓 存入筆記</button>
+                        <button onclick="copyChartAsImage('mva-chart-wrap', this)" title="複製圖表到剪貼簿"
+                            style="padding:6px 12px;background:#f0fdf4;color:#16a34a;border:1.5px solid #bbf7d0;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;">📋 複製圖片</button>
                         <span id="mva-info" class="mva-info"></span>
                     </div>
                 </div>
@@ -2821,6 +2997,20 @@
                     >
                     <span id="mva-search-info" style="font-size:10px;color:#64748b;white-space:nowrap;"></span>
                     <span style="cursor:pointer;color:#94a3b8;font-size:14px;" onclick="mvaSearchClear()" title="清除搜尋">✕</span>
+                    <span style="width:1px;height:16px;background:#e2e8f0;"></span>
+                    <span style="font-size:11px;color:#64748b;white-space:nowrap;">副軸</span>
+                    <div style="position:relative;flex:0 0 160px;" id="mva-overlay-wrap">
+                        <input id="mva-overlay-input" type="text" placeholder="選擇參數..."
+                            style="width:100%;padding:4px 8px;font-size:11px;border:1px solid #cbd5e1;border-radius:6px;outline:none;box-sizing:border-box;"
+                            onfocus="mvaOverlayShowDD()" oninput="mvaOverlayFilter(this.value)"
+                            onkeydown="if(event.key==='Escape'){mvaOverlayHideDD()}"
+                        >
+                        <div id="mva-overlay-dd" style="display:none;position:absolute;top:100%;left:0;right:0;max-height:200px;overflow-y:auto;background:#fff;border:1px solid #e2e8f0;border-radius:6px;box-shadow:0 4px 12px #0002;z-index:99;"></div>
+                    </div>
+                    <span id="mva-overlay-clear" style="cursor:pointer;color:#94a3b8;font-size:14px;display:none;" onclick="mvaOverlayClear()" title="清除副軸">✕</span>
+                    <span style="width:1px;height:16px;background:#e2e8f0;"></span>
+                    <span id="mva-t2-toggle" style="cursor:pointer;font-size:11px;padding:2px 6px;border:1px solid #e2e8f0;border-radius:4px;color:#3b82f6;background:#eff6ff;white-space:nowrap;user-select:none;" onclick="mvaT2ToggleVis()" title="切換 T² 連線顯示">T²線</span>
+                    <span id="mva-overlay-toggle" style="display:none;cursor:pointer;font-size:11px;padding:2px 6px;border:1px solid #e2e8f0;border-radius:4px;color:#7c3aed;background:#f5f3ff;white-space:nowrap;user-select:none;" onclick="mvaOverlayToggleVis()" title="切換副軸線顯示">副軸</span>
                 </div>
                 <div class="mva-body">
                     <div class="mva-main">
@@ -2888,6 +3078,8 @@
                             <button class="gb-act-btn gb-act-clear" onclick="gbClearGroups()">清除分組</button>
                             <button onclick="nbSaveGbNote()" title="存入分析筆記本"
                                 style="padding:6px 10px;background:#f5f3ff;color:#7c3aed;border:1.5px solid #ede9fe;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;">📓 存入筆記</button>
+                            <button onclick="copyChartAsImage('gb-result-panel', this)" title="複製圖表到剪貼簿"
+                                style="padding:6px 10px;background:#f0fdf4;color:#16a34a;border:1.5px solid #bbf7d0;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;">📋 複製圖片</button>
                         </div>
                     </div>
                     <div class="gb-right" id="gb-result-panel">
@@ -2898,6 +3090,17 @@
                             <button class="gb-tab" data-method="mannwhitney"
                                 onclick="gbSwitchTest('mannwhitney')">中位數</button>
                             <button class="gb-tab" data-method="fisherz" onclick="gbSwitchTest('fisherz')">相關性</button>
+                            <span style="margin-left:auto;display:flex;align-items:center;gap:4px;">
+                                <label style="font-size:10px;color:#94a3b8;white-space:nowrap;">顯示</label>
+                                <select id="gb-top-n" onchange="if(Object.keys(_gbGroups||{}).length>=2) gbRunTest()"
+                                    style="padding:2px 4px;border:1px solid #e2e8f0;border-radius:4px;font-size:11px;color:#475569;">
+                                    <option value="10" selected>10</option>
+                                    <option value="20">20</option>
+                                    <option value="30">30</option>
+                                    <option value="50">50</option>
+                                    <option value="0">全部</option>
+                                </select>
+                            </span>
                         </div>
                         <div class="gb-fz-opts" id="gb-fz-opts" style="display:none;">
                             <label>模式</label>
@@ -3172,7 +3375,7 @@
                                                     </div>
                                                 </div>
                                             </div>
-                                            <svg id="me-scatter-svg" style="width:100%;height:100%;display:block;" onmousedown="meScatterMouseDown(event)" onmousemove="meScatterMouseMove(event)" onmouseup="meScatterMouseUp(event)" ondblclick="meScatterZoomReset()"></svg>
+                                            <svg id="me-scatter-svg" style="width:100%;height:100%;display:block;" onmousedown="meScatterMouseDown(event)" onmousemove="meScatterMouseMove(event)" onmouseup="meScatterMouseUp(event)"></svg>
                                             <!-- AI 摘要疊加層 -->
                                             <div id="me-scatter-grid-overlay" style="display:none;position:absolute;pointer-events:none;z-index:3;inset:0;"></div>
                                         </div>
@@ -3227,6 +3430,8 @@
                             <span style="font-size:13px;font-weight:700;color:#1e293b;">分析結果</span>
                             <button onclick="nbSaveMeNote()" title="存入分析筆記本"
                                 style="padding:5px 10px;background:#f5f3ff;color:#7c3aed;border:1.5px solid #ede9fe;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">📓 存入筆記</button>
+                            <button onclick="copyChartAsImage('me-step3-content', this)" title="複製圖表到剪貼簿"
+                                style="padding:5px 10px;background:#f0fdf4;color:#16a34a;border:1.5px solid #bbf7d0;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">📋 複製圖片</button>
                         </div>
                         <div id="me-step3-content" style="flex:1;overflow:hidden;min-height:0;min-width:0;position:relative;">
                             <div style="display:flex;align-items:center;justify-content:center;height:100%;flex-direction:column;gap:8px;color:#94a3b8;">
@@ -3258,8 +3463,10 @@
                     </div>
                     <div style="flex:1;">
                         <!-- Submit area -->
-                        <div style="padding:20px 16px;margin-top:auto;">
+                        <div style="padding:20px 16px 12px;margin-top:auto;display:flex;flex-direction:column;gap:8px;">
                             <button onclick="rsmRun()" style="width:100%;padding:10px;background:#e2e8f0;color:#64748b;border:none;border-radius:8px;font-weight:700;cursor:not-allowed;" id="rsm-sidebar-run-btn">分析</button>
+                            <button onclick="nbSaveRsmCurrentNote()" title="存入分析筆記本" style="width:100%;padding:8px;background:#f5f3ff;color:#7c3aed;border:1.5px solid #ede9fe;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;">📓 存入筆記</button>
+                            <button onclick="copyChartAsImage('rsm-result-area', this)" title="複製圖表到剪貼簿" style="width:100%;padding:8px;background:#f0fdf4;color:#16a34a;border:1.5px solid #bbf7d0;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;">📋 複製圖片</button>
                         </div>
                     </div>
                 </div>
@@ -3343,16 +3550,120 @@
                             </div>
                         </div>
                     </div>
-                    <!-- Step 3: Results -->
-                    <div id="rsm-step3" style="flex:1;display:none;flex-direction:column;padding:20px;gap:16px;overflow-y:auto;">
-                        <div style="display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">
-                            <span style="font-size:13px;font-weight:700;color:#1e293b;">分析結果</span>
-                            <button onclick="nbSaveRsmNote()" title="存入分析筆記本"
-                                style="padding:5px 10px;background:#f5f3ff;color:#7c3aed;border:1.5px solid #ede9fe;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">📓 存入筆記</button>
+                    <!-- Step 2 Advanced: Multi-target scatter selector (mirrors ME 進階篩選, rsm-adv- prefix) -->
+                    <div id="rsm-step2-adv" style="flex:1;display:none;flex-direction:row;gap:10px;padding:16px;overflow:hidden;">
+                        <!-- 左側: 目標相關性篩選 + 操作按鈕 -->
+                        <div style="width:180px;flex-shrink:0;display:flex;flex-direction:column;gap:8px;min-height:0;">
+                            <div style="flex-shrink:0;">
+                                <div style="font-size:11px;font-weight:600;color:#475569;margin-bottom:5px;">目標相關性篩選範圍</div>
+                                <div style="display:flex;gap:4px;">
+                                    <button onclick="meRangePreset('all')"  style="flex:1;padding:3px 0;border:1px solid #e2e8f0;border-radius:5px;font-size:10px;color:#64748b;background:#f8fafc;cursor:pointer;">全選</button>
+                                    <button onclick="meRangePreset('low')"  style="flex:1;padding:3px 0;border:1px solid #e2e8f0;border-radius:5px;font-size:10px;color:#64748b;background:#f8fafc;cursor:pointer;">低相關</button>
+                                    <button onclick="meRangePreset('high')" style="flex:1;padding:3px 0;border:1px solid #e2e8f0;border-radius:5px;font-size:10px;color:#64748b;background:#f8fafc;cursor:pointer;">高相關</button>
+                                </div>
+                            </div>
+                            <div id="rsm-adv-scatter-filters" style="flex:1;display:flex;flex-direction:column;gap:10px;overflow-y:auto;padding-right:2px;"></div>
+                            <div style="flex-shrink:0;display:flex;flex-direction:column;gap:6px;padding-top:4px;border-top:1px solid #e2e8f0;">
+                                <button onclick="meScatterAnalyzeSelected()" style="width:100%;padding:7px 10px;background:linear-gradient(135deg,#7c3aed,#a855f7);color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">🔍 分析選取參數</button>
+                                <button onclick="meScatterClearSelection()" style="width:100%;padding:5px 10px;background:#f1f5f9;color:#64748b;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;cursor:pointer;">清除選取</button>
+                                <button onclick="nbSaveRsmAdvNote()" title="存入分析筆記本" style="width:100%;padding:5px 10px;background:#f5f3ff;color:#7c3aed;border:1.5px solid #ede9fe;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">📓 存入筆記</button>
+                                <button onclick="copyChartAsImage('rsm-adv-scatter-area', this)" title="複製圖表到剪貼簿" style="width:100%;padding:5px 10px;background:#f0fdf4;color:#16a34a;border:1.5px solid #bbf7d0;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">📋 複製圖片</button>
+                            </div>
                         </div>
-                        <div id="rsm-result-area" style="flex:1;">
+                        <!-- 右側: 視圖切換 + 散佈圖 -->
+                        <div id="rsm-adv-scatter-area" style="flex:1;min-width:0;display:flex;flex-direction:column;gap:6px;position:relative;">
+                            <div style="display:flex;justify-content:flex-end;align-items:center;flex-shrink:0;gap:8px;">
+                                <button id="rsm-adv-fullscreen-btn" onclick="window.rsmAdvToggleFullscreen()" title="全螢幕檢視" style="padding:3px 8px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;cursor:pointer;color:#475569;">⛶ 全螢幕</button>
+                                <div style="display:flex;background:#f1f5f9;border-radius:6px;padding:2px;gap:2px;" title="切換散佈圖指標">
+                                    <button id="rsm-adv-metric-corr-btn" onclick="meSetScatterMetric('corr')" style="padding:3px 10px;border:none;border-radius:4px;font-size:11px;cursor:pointer;background:#6366f1;color:#fff;font-weight:600;">相關係數</button>
+                                    <button id="rsm-adv-metric-shap-btn" onclick="meSetScatterMetric('shap')" style="padding:3px 10px;border:none;border-radius:4px;font-size:11px;cursor:pointer;background:transparent;color:#64748b;">SHAP</button>
+                                </div>
+                                <div style="width:1px;height:18px;background:#e2e8f0;flex-shrink:0;"></div>
+                                <div style="display:flex;background:#f1f5f9;border-radius:6px;padding:2px;gap:2px;">
+                                    <button id="rsm-adv-view-global-btn"  onclick="meSetScatterView('global')"  style="padding:3px 10px;border:none;border-radius:4px;font-size:11px;cursor:pointer;background:#2563eb;color:#fff;font-weight:600;">全域散佈圖</button>
+                                    <button id="rsm-adv-view-scatter-btn" onclick="meSetScatterView('scatter')" style="padding:3px 10px;border:none;border-radius:4px;font-size:11px;cursor:pointer;background:transparent;color:#64748b;">雙因子散佈圖</button>
+                                    <button id="rsm-adv-view-table-btn"   onclick="meSetScatterView('table')"   style="padding:3px 10px;border:none;border-radius:4px;font-size:11px;cursor:pointer;background:transparent;color:#64748b;">相關性表格</button>
+                                </div>
+                            </div>
+                            <div id="rsm-adv-global-view" style="flex:1;min-height:0;position:relative;border:1px solid #e2e8f0;border-radius:8px;background:#fff;overflow:hidden;">
+                                <span style="font-size:12px;color:#94a3b8;">請先計算相關性以顯示全域散佈圖</span>
+                            </div>
+                            <div id="rsm-adv-scatter-view" style="flex:1;min-height:0;display:none;flex-direction:column;gap:4px;">
+                                <div style="display:flex;gap:8px;align-items:flex-end;flex-shrink:0;">
+                                    <div style="flex:1;min-width:0;">
+                                        <div style="font-size:10px;color:#94a3b8;margin-bottom:3px;">X 軸目標</div>
+                                        <select id="rsm-adv-scatter-axis-x" onchange="meRenderScatterFilters();meRenderScatterPlot();" style="width:100%;padding:5px 8px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px;"></select>
+                                    </div>
+                                    <div style="flex:1;min-width:0;">
+                                        <div style="font-size:10px;color:#94a3b8;margin-bottom:3px;">Y 軸目標</div>
+                                        <select id="rsm-adv-scatter-axis-y" onchange="meRenderScatterFilters();meRenderScatterPlot();" style="width:100%;padding:5px 8px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px;"></select>
+                                    </div>
+                                    <div style="flex-shrink:0;display:flex;gap:3px;align-items:center;padding-bottom:1px;">
+                                        <button id="rsm-adv-plot-select-btn" onclick="meSetPlotMode('select')" title="單擊選取/取消參數" style="padding:4px 8px;border:none;border-radius:5px;font-size:11px;cursor:pointer;background:#2563eb;color:#fff;font-weight:600;">✓ 選取</button>
+                                        <button id="rsm-adv-plot-zoom-btn"   onclick="meSetPlotMode('zoom')"   title="拖曳框選放大" style="padding:4px 8px;border:none;border-radius:5px;font-size:11px;cursor:pointer;background:#f1f5f9;color:#64748b;">⊕ 放大</button>
+                                        <button id="rsm-adv-plot-pan-btn"    onclick="meSetPlotMode('pan')"    title="拖曳平移" style="padding:4px 8px;border:none;border-radius:5px;font-size:11px;cursor:pointer;background:#f1f5f9;color:#64748b;">✥ 移動</button>
+                                        <button id="rsm-adv-zoom-reset-btn"  onclick="meScatterZoomReset()"    title="重置縮放" style="display:none;padding:4px 8px;border:none;border-radius:5px;font-size:11px;cursor:pointer;background:#f59e0b;color:#fff;">↺</button>
+                                        <div style="position:relative;" id="rsm-adv-overlay-settings-wrap">
+                                            <button onclick="meToggleOverlaySettings(event)" title="輔助線設定" id="rsm-adv-overlay-settings-btn" style="padding:4px 8px;border:none;border-radius:5px;font-size:11px;cursor:pointer;background:#f1f5f9;color:#64748b;">⚙</button>
+                                            <div id="rsm-adv-overlay-settings-panel" style="display:none;position:absolute;right:0;top:calc(100% + 6px);z-index:500;background:#fff;border:1px solid #e2e8f0;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,0.15);padding:12px 14px;width:190px;font-size:12px;color:#334155;">
+                                                <div style="font-weight:700;font-size:11px;color:#64748b;margin-bottom:8px;letter-spacing:.04em;">輔助線顯示</div>
+                                                <label style="display:flex;align-items:center;gap:8px;padding:5px 0;cursor:pointer;border-bottom:1px solid #f1f5f9;">
+                                                    <input type="checkbox" id="rsm-adv-ol-zero" checked onchange="meOverlaySettingChange()" style="accent-color:#6366f1;width:14px;height:14px;"><span>零軸十字線</span>
+                                                </label>
+                                                <label style="display:flex;align-items:center;gap:8px;padding:5px 0;cursor:pointer;border-bottom:1px solid #f1f5f9;">
+                                                    <input type="checkbox" id="rsm-adv-ol-03" checked onchange="meOverlaySettingChange()" style="accent-color:#6366f1;width:14px;height:14px;"><span>±0.3 門檻虛線</span>
+                                                </label>
+                                                <label style="display:flex;align-items:center;gap:8px;padding:5px 0;cursor:pointer;border-bottom:1px solid #f1f5f9;">
+                                                    <input type="checkbox" id="rsm-adv-ol-05" checked onchange="meOverlaySettingChange()" style="accent-color:#6366f1;width:14px;height:14px;"><span>±0.5 門檻實線</span>
+                                                </label>
+                                                <label style="display:flex;align-items:center;gap:8px;padding:5px 0;cursor:pointer;">
+                                                    <input type="checkbox" id="rsm-adv-ol-balance" onchange="meOverlaySettingChange()" style="accent-color:#7c3aed;width:14px;height:14px;"><span>均衡線 (y=±x)</span>
+                                                </label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div style="flex:1;min-height:0;position:relative;border:1px solid #e2e8f0;border-radius:8px;background:#fff;">
+                                    <div id="rsm-adv-scatter-loading" style="display:none;position:absolute;inset:0;background:rgba(255,255,255,0.85);z-index:5;align-items:center;justify-content:center;font-size:13px;color:#6366f1;border-radius:8px;">計算相關性中...</div>
+                                    <svg id="rsm-adv-scatter-svg" style="width:100%;height:100%;display:block;" onmousedown="meScatterMouseDown(event)" onmousemove="meScatterMouseMove(event)" onmouseup="meScatterMouseUp(event)"></svg>
+                                    <div id="rsm-adv-scatter-grid-overlay" style="display:none;position:absolute;pointer-events:none;z-index:3;inset:0;"></div>
+                                </div>
+                            </div>
+                            <div id="rsm-adv-table-view" style="flex:1;min-height:0;display:none;overflow:auto;border:1px solid #e2e8f0;border-radius:8px;background:#fff;"></div>
+                            <div id="rsm-adv-view-hint" style="font-size:10px;color:#94a3b8;flex-shrink:0;">點擊全域散佈圖格子 → 進入雙因子散佈圖　|　雙因子散佈圖：框選圓點選取 → 查看相關性分佈</div>
+                        </div>
+                    </div>
+
+                    <!-- Step 3: Results -->
+                    <div id="rsm-step3" style="flex:1;min-height:0;display:none;flex-direction:column;padding:20px;gap:16px;overflow:hidden;">
+                        <div style="display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">
+                            <div style="display:flex;align-items:center;gap:8px;">
+                                <span style="font-size:13px;font-weight:700;color:#1e293b;">分析結果</span>
+                                <button id="rsm-fullscreen-btn" onclick="window.rsmToggleFullscreen()" title="全螢幕檢視"
+                                    style="padding:3px 8px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;cursor:pointer;color:#475569;">⛶ 全螢幕</button>
+                            </div>
+                            <div style="display:flex;align-items:center;gap:8px;">
+                                <!-- Analysis type tab switcher -->
+                                <div id="rsm-analysis-tabs" style="display:none;background:#f1f5f9;border-radius:8px;padding:3px;gap:2px;">
+                                    <button id="rsm-tab-poly" onclick="window.rsmSwitchAnalysisTab('poly')"
+                                        style="padding:4px 12px;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;background:#2563eb;color:#fff;transition:all .2s;">
+                                        📊 多項式特徵
+                                    </button>
+                                    <button id="rsm-tab-shap" onclick="window.rsmSwitchAnalysisTab('shap')"
+                                        style="padding:4px 12px;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;background:transparent;color:#64748b;transition:all .2s;">
+                                        🔥 單變量分析
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="rsm-result-area" style="flex:1;min-height:0;overflow-y:auto;">
                             <div style="display:flex;align-items:center;justify-content:center;height:100%;color:#94a3b8;font-size:14px;">
                                 請先完成設定並點擊左下方「分析」按鈕
+                            </div>
+                        </div>
+                        <div id="rsm-shap-area" style="flex:1;min-height:0;overflow-y:auto;display:none;">
+                            <div style="display:flex;align-items:center;justify-content:center;height:200px;color:#94a3b8;font-size:14px;">
+                                點擊「執行 SHAP 分析」開始
                             </div>
                         </div>
                     </div>
@@ -3507,6 +3818,8 @@
                             <span style="font-size:13px;font-weight:700;color:#1e293b;">分析結果</span>
                             <button onclick="nbSaveAssocNote()" title="存入分析筆記本"
                                 style="padding:5px 10px;background:#f5f3ff;color:#7c3aed;border:1.5px solid #ede9fe;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">📓 存入筆記</button>
+                            <button onclick="copyChartAsImage('assoc-step3', this)" title="複製圖表到剪貼簿"
+                                style="padding:5px 10px;background:#f0fdf4;color:#16a34a;border:1.5px solid #bbf7d0;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">📋 複製圖片</button>
                         </div>
                         <div id="assoc-result-area" style="flex:1;">
                             <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:200px;color:#94a3b8;gap:8px;">
@@ -3732,6 +4045,46 @@
         // ================================================================
         let currentFileId = null;
         let allFields = [];          // [{name, dtype}]
+
+        // ── 欄位型別覆蓋（持久化到 localStorage，key = sigma2_col_types_<stem>）──
+        let _dtypeOverrides = {}; // { colName: 'numeric'|'category'|'datetime'|'number'|'object' }
+        const _PIVOT_DTYPE_CYCLE = ['numeric', 'category', 'datetime'];
+        const _PIVOT_DTYPE_ICON = { numeric: '#', category: 'Aa', datetime: '🕐' };
+        const _PIVOT_DTYPE_CLASS = { numeric: 'numeric', category: 'category', datetime: 'datetime' };
+        const _CL_DTYPE_CYCLE = ['number', 'object', 'datetime'];
+        const _CL_DTYPE_LABEL = { number: '#', object: 'Aa', text: 'Aa', datetime: '🕐' };
+
+        function _saveDtypeOverrides() {
+            if (!_currentFileStem) return;
+            const sid = getSessionId ? getSessionId() : (localStorage.getItem('sigma2_session_id') || 'default');
+            fetch(`/api/files/col_types?session_id=${encodeURIComponent(sid)}&file_stem=${encodeURIComponent(_currentFileStem)}`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ col_types: _dtypeOverrides })
+            }).catch(() => {});
+        }
+        async function _loadDtypeOverrides() {
+            _dtypeOverrides = {};
+            if (!_currentFileStem) return;
+            const sid = getSessionId ? getSessionId() : (localStorage.getItem('sigma2_session_id') || 'default');
+            try {
+                const r = await fetch(`/api/files/col_types?session_id=${encodeURIComponent(sid)}&file_stem=${encodeURIComponent(_currentFileStem)}`);
+                if (r.ok) {
+                    const d = await r.json();
+                    Object.assign(_dtypeOverrides, d.col_types || {});
+                }
+            } catch(e) {}
+        }
+        function _setDtypeOverride(colName, val) {
+            _dtypeOverrides[colName] = val;
+            _saveDtypeOverrides();
+        }
+        function _getEffectiveDtype(colName, rawDtype, cycle) {
+            if (_dtypeOverrides[colName] !== undefined) {
+                const ov = _dtypeOverrides[colName];
+                if (cycle.includes(ov)) return ov;
+            }
+            return rawDtype;
+        }
         let pivotConfig = {
             rows: [],
             cols: [],
@@ -4141,6 +4494,10 @@
         function switchTool(toolName) {
             // Save current pivotConfig before switching away
             if (_activeTool === 'pivot') _savePivotConfig();
+            // 離開 RSM 時恢復 ME 的 targets（避免污染主效應圖）
+            if (_activeTool === 'rsm' && typeof window.meRestoreScatterContext === 'function') {
+                window.meRestoreScatterContext();
+            }
             _activeTool = toolName;
             if (toolName === 'pivot') {
                 // Set active dataset to original file
@@ -4160,6 +4517,8 @@
             document.getElementById('panel-rsm').style.display = toolName === 'rsm' ? 'flex' : 'none';
             document.getElementById('panel-association').style.display = toolName === 'association' ? 'flex' : 'none';
             document.getElementById('panel-notebook').style.display = toolName === 'notebook' ? 'flex' : 'none';
+            document.getElementById('panel-merge').style.display = toolName === 'merge' ? 'flex' : 'none';
+            if (toolName === 'merge') mergeInitFileSelects();
             // Show current file in notebook header
             if (toolName === 'notebook') {
                 const nbSub = document.getElementById('nb-chat-file-sub');
@@ -4182,6 +4541,10 @@
             if (!ds) return;
             // Save current pivotConfig before switching away
             if (_activeTool === 'pivot') _savePivotConfig();
+            // 離開 RSM 時恢復 ME 的 targets
+            if (_activeTool === 'rsm' && typeof window.meRestoreScatterContext === 'function') {
+                window.meRestoreScatterContext();
+            }
             const prevDs = _activeDataset;
             // Save current notebook notes before switching dataset
             if (prevDs && prevDs.id !== dsId && _nbNotes && _nbNotes.length > 0) {
@@ -4215,6 +4578,7 @@
             document.getElementById('panel-rsm').style.display = _activeTool === 'rsm' ? 'flex' : 'none';
             document.getElementById('panel-association').style.display = _activeTool === 'association' ? 'flex' : 'none';
             document.getElementById('panel-notebook').style.display = _activeTool === 'notebook' ? 'flex' : 'none';
+            document.getElementById('panel-merge').style.display = _activeTool === 'merge' ? 'flex' : 'none';
 
             if (_activeTool === 'notebook') {
                 const nbSub = document.getElementById('nb-chat-file-sub');
@@ -4291,6 +4655,15 @@
                 gbLoadScatter();
             }
             renderDatasetsSidebar();
+        }
+
+        // ── Column alias helper (reads from localStorage set by file_manager) ──
+        function _dpAlias(colName) {
+            try {
+                if (localStorage.getItem('sigma2_useAlias') !== '1') return colName;
+                const map = JSON.parse(localStorage.getItem('sigma2_aliases') || '{}');
+                return map[colName] || colName;
+            } catch(_) { return colName; }
         }
 
         // ================================================================
@@ -4668,10 +5041,11 @@
                     }));
                     const resp = await fetch(`/api/data-prep/column-stats?session_id=${sid}`, {
                         method: 'POST', headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ 
-                            file_id: currentFileId, 
+                        body: JSON.stringify({
+                            file_id: currentFileId,
                             filters: dsFilters,
-                            exclude_indices: Array.from(prevRowIndices)
+                            exclude_indices: Array.from(prevRowIndices),
+                            file_stem: _currentFileStem || null
                         })
                     });
                     if (resp.ok) stats = await resp.json();
@@ -4878,7 +5252,7 @@
                 document.getElementById('cl-col-body').innerHTML = '<div style="padding:24px;color:#94a3b8;font-size:12px;text-align:center;">⏳ 載入中...</div>';
                 const resp = await fetch(`/api/data-prep/column-stats?session_id=${sid}`, {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ file_id: currentFileId, filters: dsFilters })
+                    body: JSON.stringify({ file_id: currentFileId, filters: dsFilters, file_stem: _currentFileStem || null })
                 });
                 if (!resp.ok) throw new Error('Failed');
                 // Dataset switched while fetching column stats — abort
@@ -4977,11 +5351,14 @@
                 if (_clCheckFilter === 'checked' && excluded) return;
                 if (_clCheckFilter === 'unchecked' && !excluded) return;
                 // Filter by search keyword
-                if (searchKw && !c.col.toLowerCase().includes(searchKw)) return;
+                const displayName = _dpAlias(c.col);
+                if (searchKw && !c.col.toLowerCase().includes(searchKw) && !displayName.toLowerCase().includes(searchKw)) return;
                 const hasOutlier = (c.n_outlier || 0) > 0;
                 const selected = i === _clSelectedIdx;
                 const pctMissing = c.pct_missing != null ? c.pct_missing.toFixed(1) : '-';
-                const typeLabel = c.dtype === 'number' ? '#' : 'Aa';
+                const _rawDtype = c.dtype === 'text' ? 'object' : c.dtype; // 後端回 "text"，統一為 "object"
+                const effDtype = _getEffectiveDtype(c.col, _rawDtype, _CL_DTYPE_CYCLE);
+                const typeLabel = _CL_DTYPE_LABEL[effDtype] || 'Aa';
                 const stdVal = c.std != null ? c.std.toFixed(2) : '-';
                 // Rule tag for excluded columns
                 let ruleTag = '';
@@ -4994,8 +5371,8 @@
                 }
                 html += `<div class="cl-col-row${excluded ? ' excluded' : ''}${hasOutlier ? ' has-outlier' : ''}${selected ? ' selected' : ''}" data-col-name="${escapeAttr(c.col)}">
                     <div class="cl-cb${excluded ? '' : ' checked'}"></div>
-                    <span class="cl-col-name" title="${c.col}" style="display:flex;align-items:center;">${c.col}${ruleTag}</span>
-                    <span class="cl-col-type">${typeLabel}</span>
+                    <span class="cl-col-name" title="${c.col}" style="display:flex;align-items:center;">${displayName}${ruleTag}</span>
+                    <span class="cl-col-type" data-dtype-cl="${escapeAttr(c.col)}" title="點擊切換型別" style="cursor:pointer;">${typeLabel}</span>
                     <span class="cl-col-stat${parseFloat(pctMissing) > 20 ? ' bad' : ''}">${pctMissing}%</span>
                     <span class="cl-col-stat${hasOutlier ? ' bad' : ''}">${c.n_outlier || 0}</span>
                     <span class="cl-col-stat">${stdVal}</span>
@@ -5145,6 +5522,25 @@
             if (!row) return;
             const colName = row.dataset.colName;
             if (!colName) return;
+
+            // 型別標籤點擊切換
+            const dtypeSpan = e.target.closest('[data-dtype-cl]');
+            if (dtypeSpan) {
+                e.stopPropagation();
+                const c = (_clColumnStats || []).find(x => x.col === colName);
+                const rawDtype = c ? (c.dtype === 'text' ? 'object' : c.dtype) : 'object';
+                const cur = _getEffectiveDtype(colName, rawDtype, _CL_DTYPE_CYCLE);
+                const idx = _CL_DTYPE_CYCLE.indexOf(cur);
+                const next = _CL_DTYPE_CYCLE[(idx + 1) % _CL_DTYPE_CYCLE.length];
+                _setDtypeOverride(colName, next);
+                dtypeSpan.textContent = _CL_DTYPE_LABEL[next] || 'Aa';
+                // 同步樞紐分析表 allFields
+                const pf = allFields.find(x => x.name === colName);
+                const pivotNext = next === 'number' ? 'numeric' : next === 'datetime' ? 'datetime' : 'category';
+                if (pf) pf.dtype = pivotNext;
+                return;
+            }
+
             const clickedCb = e.target.closest('.cl-cb');
 
             if (clickedCb) {
@@ -5736,12 +6132,16 @@
         // MVA: Multivariate Analysis
         // ================================================================
         let _mvaT2Data = null;
-        let _mvaPad = { t: 30, b: 35, l: 55, r: 15 };
+        let _mvaPad = { t: 30, b: 35, l: 55, r: 15, rOverlay: 55 };
         let _mvaSelected = [];
         let _mvaBrush = null;
         const _mvaFilters = [];  // [{col, keyword, excludeEmpty}]
         let _mvaSearchMatches = [];   // chart indices of keyword-matching points
         let _mvaSearchKeyword = '';   // current search keyword
+        let _mvaOverlayCol = '';      // secondary axis column name
+        let _mvaOverlayData = null;   // {column, values} from API
+        let _mvaOverlayVisible = true;  // toggle overlay line visibility
+        let _mvaT2LineVisible = true;   // toggle T² line visibility
 
         function openMvaFilter() {
             // Reuse the filter popover, but target MVA
@@ -5749,7 +6149,7 @@
             sel.innerHTML = '<option value="">— 選擇欄位 —</option>';
             // Use allFields (loaded from file)
             allFields.forEach(f => {
-                sel.innerHTML += `<option value="${escapeAttr(f.name)}">${f.name}</option>`;
+                sel.innerHTML += `<option value="${escapeAttr(f.name)}">${_dpAlias(f.name)}</option>`;
             });
             document.getElementById('fp-keyword').value = '';
             document.getElementById('fp-exclude-empty').checked = false;
@@ -5829,6 +6229,12 @@
                 _mvaT2Data = await resp.json();
                 _mvaSelected = [];
                 _mvaSearchMatches = []; _mvaSearchKeyword = '';
+                // Keep overlay column but re-fetch values if set
+                if (_mvaOverlayCol && _mvaT2Data.columns_used && _mvaT2Data.columns_used.includes(_mvaOverlayCol)) {
+                    mvaOverlaySelect(_mvaOverlayCol);
+                } else {
+                    _mvaOverlayData = null;
+                }
                 const _si = document.getElementById('mva-search-input'); if (_si) _si.value = '';
                 const _sif = document.getElementById('mva-search-info'); if (_sif) _sif.textContent = '';
                 _mvaOrigMap = _mvaT2Data.original_indices || Array.from({ length: _mvaT2Data.t2_values.length }, (_, i) => i);
@@ -5894,7 +6300,8 @@
             const vals = _mvaT2Data.t2_values;
             const u95 = _mvaT2Data.ucl_95;
             const u99 = _mvaT2Data.ucl_99;
-            const pad = _mvaPad;
+            const hasOverlay = _mvaOverlayVisible && _mvaOverlayData && _mvaOverlayData.values && _mvaOverlayData.values.length === vals.length;
+            const pad = { ..._mvaPad, r: hasOverlay ? _mvaPad.rOverlay : _mvaPad.r };
             const cw = W - pad.l - pad.r, ch = H - pad.t - pad.b;
             const maxVal = Math.max(...vals, u99) * 1.15;
 
@@ -5924,70 +6331,119 @@
             }
 
             // UCL lines
-            ctx.setLineDash([6, 4]);
-            ctx.font = FONT;
+            if (_mvaT2LineVisible) {
+                ctx.setLineDash([6, 4]);
+                ctx.font = FONT;
 
-            // 95% UCL — label right
-            ctx.strokeStyle = CLR_95; ctx.lineWidth = 1;
-            const y95 = yScale(u95);
-            ctx.beginPath(); ctx.moveTo(pad.l, y95); ctx.lineTo(pad.l + cw, y95); ctx.stroke();
-            ctx.fillStyle = CLR_95;
-            ctx.textAlign = 'right';
-            ctx.fillText(`95% UCL = ${u95.toFixed(1)}`, pad.l + cw - 5, y95 - 4);
+                // 95% UCL — label right
+                ctx.strokeStyle = CLR_95; ctx.lineWidth = 1;
+                const y95 = yScale(u95);
+                ctx.beginPath(); ctx.moveTo(pad.l, y95); ctx.lineTo(pad.l + cw, y95); ctx.stroke();
+                ctx.fillStyle = CLR_95;
+                ctx.textAlign = 'right';
+                ctx.fillText(`95% UCL = ${u95.toFixed(1)}`, pad.l + cw - 5, y95 - 4);
 
-            // 99% UCL — label left
-            ctx.strokeStyle = CLR_99; ctx.lineWidth = 1;
-            const y99 = yScale(u99);
-            ctx.beginPath(); ctx.moveTo(pad.l, y99); ctx.lineTo(pad.l + cw, y99); ctx.stroke();
-            ctx.fillStyle = CLR_99;
-            ctx.textAlign = 'left';
-            ctx.fillText(`99% UCL = ${u99.toFixed(1)}`, pad.l + 5, y99 - 4);
+                // 99% UCL — label left
+                ctx.strokeStyle = CLR_99; ctx.lineWidth = 1;
+                const y99 = yScale(u99);
+                ctx.beginPath(); ctx.moveTo(pad.l, y99); ctx.lineTo(pad.l + cw, y99); ctx.stroke();
+                ctx.fillStyle = CLR_99;
+                ctx.textAlign = 'left';
+                ctx.fillText(`99% UCL = ${u99.toFixed(1)}`, pad.l + 5, y99 - 4);
 
-            ctx.setLineDash([]);
-            ctx.textAlign = 'left';
-
-            // T² line
-            ctx.strokeStyle = CLR_LINE; ctx.lineWidth = 1;
-            ctx.beginPath();
-            for (let i = 0; i < vals.length; i++) {
-                const x = xScale(i), y = yScale(Math.min(vals[i], maxVal));
-                i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+                ctx.setLineDash([]);
+                ctx.textAlign = 'left';
             }
-            ctx.stroke();
 
-            // Points
-            const searchSet = new Set(_mvaSearchMatches);
-            const hasSearch = _mvaSearchKeyword && searchSet.size > 0;
-            for (let i = 0; i < vals.length; i++) {
-                const x = xScale(i), y = yScale(Math.min(vals[i], maxVal));
-                const isSelected = _mvaSelected.includes(i);
-                const isAnomaly = vals[i] > u99;
-                const isSearchMatch = searchSet.has(i);
-                // Dim non-matching points when search is active
-                const dimmed = hasSearch && !isSearchMatch;
-                const r = (isSelected || isSearchMatch) ? 4 : 2.5;
-                ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
-                if (isSearchMatch) {
-                    ctx.fillStyle = CLR_SEARCH; ctx.fill();
-                    ctx.strokeStyle = CLR_SEARCH_BORDER; ctx.lineWidth = 1.5; ctx.stroke();
-                } else if (isSelected) {
-                    ctx.fillStyle = CLR_SELECTED; ctx.fill();
-                    ctx.strokeStyle = CLR_SELECTED_BORDER; ctx.lineWidth = 1.5; ctx.stroke();
-                } else if (isAnomaly) {
-                    ctx.fillStyle = dimmed ? 'rgba(239,68,68,0.4)' : CLR_ANOMALY; ctx.fill();
-                } else {
-                    ctx.fillStyle = dimmed ? 'rgba(59,130,246,0.35)' : CLR_POINT; ctx.fill();
+            // === Overlay: secondary axis line (drawn behind T² line) ===
+            if (hasOverlay) {
+                const ov = _mvaOverlayData.values;
+                const ovValid = ov.filter(v => v != null);
+                if (ovValid.length > 0) {
+                    const ovMin = Math.min(...ovValid), ovMax = Math.max(...ovValid);
+                    const ovRange = ovMax - ovMin || 1;
+                    const ovPad = ovRange * 0.1;
+                    const ovScaleMin = ovMin - ovPad, ovScaleMax = ovMax + ovPad;
+                    const yScaleOv = v => pad.t + ch - ((v - ovScaleMin) / (ovScaleMax - ovScaleMin)) * ch;
+                    const CLR_OV = '#8b5cf6';
+                    const CLR_OV_TEXT = '#7c3aed';
+
+                    ctx.strokeStyle = CLR_OV; ctx.lineWidth = 1.5; ctx.globalAlpha = 0.7;
+                    ctx.beginPath();
+                    let started = false;
+                    for (let i = 0; i < ov.length; i++) {
+                        if (ov[i] == null) { started = false; continue; }
+                        const x = xScale(i), y = yScaleOv(ov[i]);
+                        if (!started) { ctx.moveTo(x, y); started = true; } else { ctx.lineTo(x, y); }
+                    }
+                    ctx.stroke();
+                    ctx.globalAlpha = 1.0;
+
+                    // Right Y-axis ticks
+                    ctx.fillStyle = CLR_OV_TEXT; ctx.font = FONT;
+                    const rightX = pad.l + cw;
+                    for (let i = 0; i <= 5; i++) {
+                        const frac = i / 5;
+                        const v = ovScaleMax - frac * (ovScaleMax - ovScaleMin);
+                        const y = pad.t + (ch / 5) * i;
+                        ctx.textAlign = 'left';
+                        const vText = Math.abs(v) >= 100 ? v.toFixed(0) : Math.abs(v) >= 1 ? v.toFixed(1) : v.toPrecision(3);
+                        ctx.fillText(vText, rightX + 6, y + 3);
+                    }
+                    // Right axis label
+                    const colLabel = _mvaOverlayData.column.length > 18 ? _mvaOverlayData.column.substring(0,16) + '…' : _mvaOverlayData.column;
+                    ctx.save(); ctx.translate(W - 4, pad.t + ch / 2); ctx.rotate(Math.PI / 2);
+                    ctx.textAlign = 'center'; ctx.fillStyle = CLR_OV_TEXT; ctx.font = FONT;
+                    ctx.fillText(colLabel, 0, 0); ctx.restore();
                 }
             }
 
-            // Search match legend (top right corner)
-            if (_mvaSearchKeyword && searchSet.size > 0) {
-                ctx.save();
-                const legX = pad.l + cw - 5, legY = pad.t + 6;
-                ctx.font = FONT; ctx.textAlign = 'right';
-                ctx.fillStyle = CLR_SEARCH_BORDER;
-                ctx.fillText(`🔍 ${searchSet.size} 筆符合`, legX, legY);
-                ctx.restore();
+            // T² line
+            if (_mvaT2LineVisible) {
+                ctx.strokeStyle = CLR_LINE; ctx.lineWidth = 1;
+                ctx.beginPath();
+                for (let i = 0; i < vals.length; i++) {
+                    const x = xScale(i), y = yScale(Math.min(vals[i], maxVal));
+                    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+                }
+                ctx.stroke();
+            }
+
+            // Points
+            if (_mvaT2LineVisible) {
+                const searchSet = new Set(_mvaSearchMatches);
+                const hasSearch = _mvaSearchKeyword && searchSet.size > 0;
+                for (let i = 0; i < vals.length; i++) {
+                    const x = xScale(i), y = yScale(Math.min(vals[i], maxVal));
+                    const isSelected = _mvaSelected.includes(i);
+                    const isAnomaly = vals[i] > u99;
+                    const isSearchMatch = searchSet.has(i);
+                    // Dim non-matching points when search is active
+                    const dimmed = hasSearch && !isSearchMatch;
+                    const r = (isSelected || isSearchMatch) ? 4 : 2.5;
+                    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+                    if (isSearchMatch) {
+                        ctx.fillStyle = CLR_SEARCH; ctx.fill();
+                        ctx.strokeStyle = CLR_SEARCH_BORDER; ctx.lineWidth = 1.5; ctx.stroke();
+                    } else if (isSelected) {
+                        ctx.fillStyle = CLR_SELECTED; ctx.fill();
+                        ctx.strokeStyle = CLR_SELECTED_BORDER; ctx.lineWidth = 1.5; ctx.stroke();
+                    } else if (isAnomaly) {
+                        ctx.fillStyle = dimmed ? 'rgba(239,68,68,0.4)' : CLR_ANOMALY; ctx.fill();
+                    } else {
+                        ctx.fillStyle = dimmed ? 'rgba(59,130,246,0.35)' : CLR_POINT; ctx.fill();
+                    }
+                }
+
+                // Search match legend (top right corner)
+                if (_mvaSearchKeyword && searchSet.size > 0) {
+                    ctx.save();
+                    const legX = pad.l + cw - 5, legY = pad.t + 6;
+                    ctx.font = FONT; ctx.textAlign = 'right';
+                    ctx.fillStyle = CLR_SEARCH_BORDER;
+                    ctx.fillText(`🔍 ${searchSet.size} 筆符合`, legX, legY);
+                    ctx.restore();
+                }
             }
 
             // Y axis ticks
@@ -6013,6 +6469,7 @@
             ctx.fillText('Index', pad.l + cw / 2, H - 3);
             ctx.save(); ctx.translate(12, pad.t + ch / 2); ctx.rotate(-Math.PI / 2);
             ctx.fillText('T² Value', 0, 0); ctx.restore();
+
         }
 
         // === MVA Keyword Search ===
@@ -6090,6 +6547,91 @@
             drawMvaChart();
         }
 
+        // === MVA Overlay (Secondary Axis) ===
+        function mvaOverlayShowDD() {
+            const dd = document.getElementById('mva-overlay-dd');
+            const cols = (_mvaT2Data && (_mvaT2Data.all_columns || _mvaT2Data.columns_used)) ? (_mvaT2Data.all_columns || _mvaT2Data.columns_used) : [];
+            if (!cols.length) { dd.style.display = 'none'; return; }
+            mvaOverlayFilter(document.getElementById('mva-overlay-input').value);
+            dd.style.display = 'block';
+        }
+        function mvaOverlayHideDD() {
+            setTimeout(() => { document.getElementById('mva-overlay-dd').style.display = 'none'; }, 150);
+        }
+        function mvaOverlayFilter(keyword) {
+            const dd = document.getElementById('mva-overlay-dd');
+            const cols = (_mvaT2Data && (_mvaT2Data.all_columns || _mvaT2Data.columns_used)) ? (_mvaT2Data.all_columns || _mvaT2Data.columns_used) : [];
+            const kw = keyword.toLowerCase();
+            const filtered = kw ? cols.filter(c => c.toLowerCase().includes(kw) || _dpAlias(c).toLowerCase().includes(kw)) : cols;
+            dd.innerHTML = filtered.slice(0, 500).map(c =>
+                `<div style="padding:4px 8px;font-size:11px;cursor:pointer;color:#334155;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
+                     onmousedown="mvaOverlaySelect('${c.replace(/'/g, "\\'")}')"
+                     onmouseover="this.style.background='#eef2ff'" onmouseout="this.style.background=''"
+                     title="${c}">${_dpAlias(c)}</div>`
+            ).join('');
+            dd.style.display = filtered.length ? 'block' : 'none';
+        }
+        async function mvaOverlaySelect(col) {
+            document.getElementById('mva-overlay-dd').style.display = 'none';
+            document.getElementById('mva-overlay-input').value = col;
+            document.getElementById('mva-overlay-clear').style.display = '';
+            document.getElementById('mva-overlay-toggle').style.display = '';
+            _mvaOverlayCol = col;
+            _mvaOverlayVisible = true;
+            // Fetch column values
+            try {
+                const sid = getSessionId();
+                const exclIdx = _pivotCleanMode ? [...new Set([..._mvaExcludedIndices, ...(_clOutlierIndices || [])])] : _mvaExcludedIndices;
+                const resp = await fetch(`/api/data-prep/t2-overlay-column?session_id=${sid}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        file_id: currentFileId,
+                        column: col,
+                        filters: _mvaFilters
+                            .filter(f => !f.isExclusion && !f.isColExclusion)
+                            .map(f => ({ column: f.col, keyword: f.keyword || '', exclude_empty: f.excludeEmpty || false })),
+                        exclude_indices: exclIdx
+                    })
+                });
+                if (!resp.ok) { _mvaOverlayData = null; return; }
+                _mvaOverlayData = await resp.json();
+                drawMvaChart();
+            } catch (e) {
+                _mvaOverlayData = null;
+            }
+        }
+        function mvaOverlayClear() {
+            _mvaOverlayCol = '';
+            _mvaOverlayData = null;
+            _mvaOverlayVisible = true;
+            document.getElementById('mva-overlay-input').value = '';
+            document.getElementById('mva-overlay-clear').style.display = 'none';
+            document.getElementById('mva-overlay-toggle').style.display = 'none';
+            drawMvaChart();
+        }
+        function mvaOverlayToggleVis() {
+            _mvaOverlayVisible = !_mvaOverlayVisible;
+            const btn = document.getElementById('mva-overlay-toggle');
+            btn.style.opacity = _mvaOverlayVisible ? '1' : '0.5';
+            btn.style.textDecoration = _mvaOverlayVisible ? 'none' : 'line-through';
+            drawMvaChart();
+        }
+        function mvaT2ToggleVis() {
+            _mvaT2LineVisible = !_mvaT2LineVisible;
+            const btn = document.getElementById('mva-t2-toggle');
+            btn.style.opacity = _mvaT2LineVisible ? '1' : '0.5';
+            btn.style.textDecoration = _mvaT2LineVisible ? 'none' : 'line-through';
+            drawMvaChart();
+        }
+        // Close dropdown when clicking outside
+        document.addEventListener('click', e => {
+            const wrap = document.getElementById('mva-overlay-wrap');
+            if (wrap && !wrap.contains(e.target)) {
+                document.getElementById('mva-overlay-dd').style.display = 'none';
+            }
+        });
+
         // === MVA Hover Tooltip ===
         (function setupMvaTooltip() {
             const canvas = document.getElementById('mva-canvas');
@@ -6108,7 +6650,8 @@
                 const my = (e.clientY - rect.top) * scaleY;
 
                 const vals = _mvaT2Data.t2_values;
-                const pad = _mvaPad;
+                const _hasOv = _mvaOverlayVisible && _mvaOverlayData && _mvaOverlayData.values && _mvaOverlayData.values.length === vals.length;
+                const pad = { ..._mvaPad, r: _hasOv ? _mvaPad.rOverlay : _mvaPad.r };
                 const W = canvas.width, H = canvas.height;
                 const cw = W - pad.l - pad.r, ch = H - pad.t - pad.b;
                 const maxVal = Math.max(...vals, _mvaT2Data.ucl_99) * 1.15;
@@ -6129,13 +6672,19 @@
                 const t2Val = vals[nearest].toFixed(2);
                 const origIdx = _mvaOrigMap[nearest] ?? nearest;
                 let lines = [`<b>#${origIdx}</b>  T²=${t2Val}`];
+                // Overlay value in tooltip
+                if (_hasOv && _mvaOverlayData.values[nearest] != null) {
+                    const ovV = _mvaOverlayData.values[nearest];
+                    const ovText = Math.abs(ovV) >= 100 ? ovV.toFixed(1) : Math.abs(ovV) >= 1 ? ovV.toFixed(2) : ovV.toPrecision(3);
+                    lines.push(`<span style="color:#c4b5fd">${_mvaOverlayData.column}:</span> ${ovText}`);
+                }
                 const headCols = _mvaT2Data.head_cols || [];
                 const headData = _mvaT2Data.head_data || [];
                 if (headCols.length > 0 && headData[nearest]) {
                     headCols.forEach((col, j) => {
                         const val = headData[nearest][j] || '-';
                         const short = val.length > 20 ? val.slice(0, 18) + '…' : val;
-                        lines.push(`<span style="color:#94a3b8">${col}:</span> ${short}`);
+                        lines.push(`<span style="color:#94a3b8">${_dpAlias(col)}:</span> ${short}`);
                     });
                 }
                 tipEl.innerHTML = lines.join('<br>');
@@ -6209,7 +6758,8 @@
 
                 // Find selected points
                 const vals = _mvaT2Data.t2_values;
-                const pad = _mvaPad;
+                const _bHasOv = _mvaOverlayVisible && _mvaOverlayData && _mvaOverlayData.values && _mvaOverlayData.values.length === vals.length;
+                const pad = { ..._mvaPad, r: _bHasOv ? _mvaPad.rOverlay : _mvaPad.r };
                 const W = canvas.width, H = canvas.height;
                 const cw = W - pad.l - pad.r, ch = H - pad.t - pad.b;
                 const maxVal = Math.max(...vals, _mvaT2Data.ucl_99) * 1.15;
@@ -6312,6 +6862,7 @@
         async function mvaAnalyzeSelected() {
             if (!_mvaSelected.length || !_mvaT2Data || !currentFileId) return;
             const panel = document.getElementById('mva-contrib-panel');
+            const topNVal = parseInt(document.getElementById('mva-top-n')?.value) || 10;
             panel.innerHTML = '<div class="mva-contrib-title">⏳ 計算貢獻度中...</div>';
             try {
                 const sid = getSessionId();
@@ -6327,7 +6878,7 @@
                         exclude_indices: _mvaExcludedIndices,
                         selected_indices: origSel,
                         exclude_columns: _pivotCleanMode ? [...new Set([..._mvaExcludedCols, ...(_clExcludedCols || [])])] : _mvaExcludedCols,
-                        top_n: 10
+                        top_n: topNVal
                     })
                 });
                 if (!resp.ok) {
@@ -6338,13 +6889,16 @@
                 const data = await resp.json();
                 _mvaContribData = data;
                 const items = data.top_contributions || [];
-                let html = `<div class="mva-contrib-title">📊 Top ${items.length} 貢獻參數趨勢<span style="font-size:10px;color:#94a3b8;font-weight:400;margin-left:6px;">已選 ${data.n_selected} 筆</span></div>`;
+                let html = `<div class="mva-contrib-title">📊 Top ${items.length} 貢獻參數趨勢<span style="font-size:10px;color:#94a3b8;font-weight:400;margin-left:6px;">已選 ${data.n_selected} 筆</span>
+                    <select id="mva-top-n" onchange="mvaAnalyzeSelected()" style="margin-left:auto;padding:2px 4px;border:1px solid #e2e8f0;border-radius:4px;font-size:11px;color:#475569;">
+                        ${[10,20,30,50,0].map(v => `<option value="${v}"${v===topNVal?' selected':''}>${v||'全部'}</option>`).join('')}
+                    </select></div>`;
                 html += '<div class="mva-trend-grid">';
                 items.forEach((item, idx) => {
                     const safeParam = item.parameter.replace(/'/g, "\\'");
                     html += `<div class="mva-trend-card">
                         <div class="mva-trend-card-hdr">
-                            <div class="mva-trend-card-name" title="${item.parameter}">${item.parameter}</div>
+                            <div class="mva-trend-card-name" title="${item.parameter}">${_dpAlias(item.parameter)}</div>
                             <div class="mva-trend-card-pct">${item.pct}%</div>
                             <button class="mva-trend-card-dismiss" onclick="event.stopPropagation();mvaExcludeCol('${safeParam}')" title="排除此參數">✕</button>
                         </div>
@@ -6373,7 +6927,7 @@
                 const ctx = canvas.getContext('2d');
                 ctx.fillStyle = '#fafbfc'; ctx.fillRect(0, 0, W, H);
 
-                const vals = item.values || [];
+                const vals = item.raw_values || item.values || [];
                 if (!vals.length) return;
 
                 const pad = { t: 5, b: 5, l: 3, r: 3 };
@@ -6463,7 +7017,7 @@
             if (!item) return;
             const selIdxs = new Set(_mvaContribData.selected_indices || []);
 
-            document.getElementById('mva-lb-title').textContent = item.parameter;
+            document.getElementById('mva-lb-title').textContent = _dpAlias(item.parameter);
             document.getElementById('mva-lb-sub').textContent = `貢獻 ${item.pct}% · ${_mvaLbIdx + 1} / ${items.length} · ← → 切換 · ESC 關閉`;
 
             const canvas = document.getElementById('mva-lb-canvas');
@@ -6474,7 +7028,7 @@
             const ctx = canvas.getContext('2d');
             ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
 
-            const vals = item.values || [];
+            const vals = item.raw_values || item.values || [];
             if (!vals.length) return;
 
             const valsClean = vals.map(v => v ?? 0);
@@ -6536,6 +7090,8 @@
         // File Loading
         // ================================================================
         const fileSelect = document.getElementById('prep-file-select');
+        let _tsFiles = [];          // [{file_id, filename, uploaded_at, size}]
+        let _tsFileSortBy = 'time'; // 'time' | 'name'
 
         async function loadFileList() {
             try {
@@ -6545,6 +7101,13 @@
                 if (!resp.ok) return;
                 const data = await resp.json();
                 const files = data.files || [];
+                _tsFiles = files.map(f => ({
+                    file_id: f.file_id || f.filename,
+                    filename: f.filename || f.file_id,
+                    uploaded_at: parseFloat(f.uploaded_at) || 0,
+                    size: f.size || 0
+                }));
+                // Keep hidden select in sync for compatibility
                 fileSelect.innerHTML = '<option value="" disabled>-- 選擇檔案 --</option>';
                 files.forEach(f => {
                     const opt = document.createElement('option');
@@ -6554,15 +7117,116 @@
                     fileSelect.appendChild(opt);
                 });
                 if (!prevVal) fileSelect.selectedIndex = 0;
+                // Update custom dropdown display
+                _tsFileRender();
+                const input = document.getElementById('ts-file-search');
+                if (input && currentFileId) {
+                    const cur = _tsFiles.find(f => f.file_id === currentFileId);
+                    if (cur) input.value = cur.filename;
+                }
             } catch (e) {
                 console.error('loadFileList error:', e);
             }
         }
 
+        function _tsFileOpen() {
+            const dd = document.getElementById('ts-file-dd');
+            const input = document.getElementById('ts-file-search');
+            // Position fixed dropdown below the input
+            const rect = input.getBoundingClientRect();
+            dd.style.top = (rect.bottom + 2) + 'px';
+            dd.style.left = rect.left + 'px';
+            dd.style.width = Math.max(rect.width, 320) + 'px';
+            dd.classList.add('open');
+            input.select();
+            _tsFileRender();
+        }
+        function _tsFileClose() {
+            document.getElementById('ts-file-dd').classList.remove('open');
+            // Restore current selection text
+            const input = document.getElementById('ts-file-search');
+            if (currentFileId) {
+                const cur = _tsFiles.find(f => f.file_id === currentFileId);
+                if (cur) input.value = cur.filename;
+            }
+        }
+        function _tsFileFilter(keyword) {
+            _tsFileRender(keyword);
+        }
+        function _tsFileSetSort(sort) {
+            _tsFileSortBy = sort;
+            _tsFileRender(document.getElementById('ts-file-search').value);
+        }
+        function _tsFileRender(keyword) {
+            const dd = document.getElementById('ts-file-dd');
+            const kw = (keyword || '').trim().toLowerCase();
+            let list = kw ? _tsFiles.filter(f => f.filename.toLowerCase().includes(kw)) : [..._tsFiles];
+            // Sort
+            if (_tsFileSortBy === 'time') {
+                list.sort((a, b) => b.uploaded_at - a.uploaded_at);
+            } else {
+                list.sort((a, b) => a.filename.localeCompare(b.filename));
+            }
+            let html = `<div class="ts-file-sort-bar">
+                <button class="ts-file-sort-btn ${_tsFileSortBy === 'time' ? 'active' : ''}" onmousedown="event.preventDefault();_tsFileSetSort('time')">最近修改</button>
+                <button class="ts-file-sort-btn ${_tsFileSortBy === 'name' ? 'active' : ''}" onmousedown="event.preventDefault();_tsFileSetSort('name')">名稱 A→Z</button>
+                <span style="margin-left:auto;font-size:10px;color:#94a3b8;padding:2px 4px;">${list.length} 個檔案</span>
+            </div>`;
+            if (list.length === 0) {
+                html += '<div class="ts-file-dd-empty">找不到符合的檔案</div>';
+            } else {
+                list.forEach(f => {
+                    const isCurrent = f.file_id === currentFileId;
+                    const timeStr = f.uploaded_at ? new Date(f.uploaded_at * 1000).toLocaleString('zh-TW', {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : '';
+                    const sizeStr = f.size > 1048576 ? (f.size / 1048576).toFixed(1) + ' MB' : f.size > 1024 ? Math.round(f.size / 1024) + ' KB' : f.size + ' B';
+                    // Highlight keyword match
+                    let name = f.filename;
+                    if (kw) {
+                        const idx = name.toLowerCase().indexOf(kw);
+                        if (idx >= 0) name = name.substring(0, idx) + '<b style="color:#6366f1;">' + name.substring(idx, idx + kw.length) + '</b>' + name.substring(idx + kw.length);
+                    }
+                    html += `<div class="ts-file-dd-item${isCurrent ? ' selected' : ''}" onmousedown="event.preventDefault();_tsFileSelect('${f.file_id.replace(/'/g, "\\'")}')">
+                        <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${f.filename}">${name}</span>
+                        <span class="ts-file-dd-time">${sizeStr} · ${timeStr}</span>
+                    </div>`;
+                });
+            }
+            dd.innerHTML = html;
+        }
+        function _tsFileSelect(fileId) {
+            _tsFileClose();
+            const f = _tsFiles.find(x => x.file_id === fileId);
+            if (!f) return;
+            document.getElementById('ts-file-search').value = f.filename;
+            // Sync hidden select and trigger change
+            fileSelect.value = fileId;
+            fileSelect.dispatchEvent(new Event('change'));
+        }
+        // Bind file search input events (can't use inline handlers - functions not yet defined when HTML parses)
+        (function() {
+            const inp = document.getElementById('ts-file-search');
+            if (inp) {
+                inp.addEventListener('focus', () => _tsFileOpen());
+                inp.addEventListener('input', () => _tsFileFilter(inp.value));
+                inp.addEventListener('keydown', e => { if (e.key === 'Escape') _tsFileClose(); });
+            }
+        })();
+        // Close dropdown on outside click
+        document.addEventListener('click', e => {
+            const wrap = document.getElementById('ts-file-search-wrap');
+            if (wrap && !wrap.contains(e.target)) _tsFileClose();
+        });
+
         fileSelect.addEventListener('change', async () => {
             const fid = fileSelect.value;
             if (!fid) return;
             currentFileId = fid;
+            // Sync search input display
+            const tsInput = document.getElementById('ts-file-search');
+            if (tsInput) {
+                const cur = _tsFiles.find(f => f.file_id === fid);
+                if (cur) tsInput.value = cur.filename;
+            }
 
             // Reset datasets — create 'original' for this file
             _datasets = [];
@@ -6571,6 +7235,7 @@
             _assocDatasetId = null; // force assocInit on next association open
             const fname = fileSelect.options[fileSelect.selectedIndex]?.text || fid;
             _currentFileStem = _getFileStem(fname);
+            await _loadDtypeOverrides(); // 載入此檔案儲存的欄位型別設定
             addDataset({ id: 'original', name: fname, type: 'file', fileId: fid, rowCount: '',
                          datasetPath: `${_currentFileStem}/main` });
             // 初始化主資料集資料夾（不存 data.csv）
@@ -6653,8 +7318,8 @@
             if (tcEl) tcEl.innerHTML = '';
             const btnA = document.getElementById('btn-analyze');
             if (btnA) btnA.disabled = true;
-            const tsInput = document.getElementById('target-search');
-            if (tsInput) tsInput.value = '';
+            const tgtInput = document.getElementById('target-search');
+            if (tgtInput) tgtInput.value = '';
 
             await loadColumns(fid);
             // Load column stats for notebook LLM context (non-blocking)
@@ -6697,23 +7362,11 @@
                 let cols = [];
                 let numericCols = [];
 
-                try {
-                    const resp = await fetch(`/api/data-prep/columns/${fileId}?session_id=${sid}`);
-                    if (resp.ok) {
-                        const data = await resp.json();
-                        cols = data.columns || [];
-                        numericCols = data.numeric_columns || [];
-                    } else {
-                        throw new Error('columns endpoint not available');
-                    }
-                } catch (_) {
-                    // Fallback: try summary endpoint
-                    const resp2 = await fetch(`/api/data-prep/columns/${fileId}?session_id=${sid}`);
-                    if (resp2.ok) {
-                        const summary = await resp2.json();
-                        cols = summary.columns || [];
-                        numericCols = summary.numeric_columns || [];
-                    }
+                const resp = await fetch(`/api/data-prep/columns/${fileId}?session_id=${sid}`);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    cols = data.columns || [];
+                    numericCols = data.numeric_columns || [];
                 }
 
                 if (cols.length === 0) {
@@ -6778,10 +7431,10 @@
             const q = document.getElementById('target-search').value.toLowerCase();
             const dd = document.getElementById('target-dropdown');
             const filtered = _targetOptions.filter(n =>
-                !selectedTargets.includes(n) && n.toLowerCase().includes(q)
+                !selectedTargets.includes(n) && (n.toLowerCase().includes(q) || _dpAlias(n).toLowerCase().includes(q))
             );
-            dd.innerHTML = filtered.slice(0, 50).map(n =>
-                `<div class="ts-dropdown-item" onmousedown="selectTargetItem('${n.replace(/'/g, "\\'")}')">${n}</div>`
+            dd.innerHTML = filtered.slice(0, 500).map(n =>
+                `<div class="ts-dropdown-item" onmousedown="selectTargetItem('${n.replace(/'/g, "\\'")}')" title="${n}">${_dpAlias(n)}</div>`
             ).join('');
             if (filtered.length === 0) {
                 dd.innerHTML = '<div style="padding:6px 8px;font-size:10px;color:#94a3b8;">無匹配</div>';
@@ -6821,7 +7474,7 @@
                 return;
             }
             container.innerHTML = selectedTargets.map(t =>
-                `<div class="ts-chip"><span class="ts-name">${t}</span><span class="ts-rm" onclick="removeTarget('${escapeAttr(t)}')">✕</span></div>`
+                `<div class="ts-chip" title="${t}"><span class="ts-name">${_dpAlias(t)}</span><span class="ts-rm" onclick="removeTarget('${escapeAttr(t)}')">✕</span></div>`
             ).join('');
         }
 
@@ -6899,7 +7552,7 @@
             const list = document.getElementById('field-list');
             const search = document.getElementById('field-search').value.toLowerCase();
 
-            let filtered = allFields.filter(f => f.name.toLowerCase().includes(search));
+            let filtered = allFields.filter(f => f.name.toLowerCase().includes(search) || _dpAlias(f.name).toLowerCase().includes(search));
 
             // If clean mode, filter out excluded columns
             if (_pivotCleanMode && _clExcludedCols && _clExcludedCols.size > 0) {
@@ -6916,19 +7569,36 @@
             ]);
 
             list.innerHTML = filtered.map(f => {
-                const iconClass = f.dtype === 'numeric' ? 'numeric' : f.dtype === 'datetime' ? 'datetime' : 'category';
-                const iconText = f.dtype === 'numeric' ? '#' : f.dtype === 'datetime' ? '🕐' : 'Aa';
+                const eff = _getEffectiveDtype(f.name, f.dtype, _PIVOT_DTYPE_CYCLE);
+                const iconClass = _PIVOT_DTYPE_CLASS[eff] || 'category';
+                const iconText = _PIVOT_DTYPE_ICON[eff] || 'Aa';
                 const inUse = usedSet.has(f.name);
                 return `<div class="field-item ${inUse ? 'in-use' : ''}"
                     draggable="true"
-                    ondragstart="handleFieldDragStart(event, '${escapeAttr(f.name)}', '${f.dtype}')"
+                    ondragstart="handleFieldDragStart(event, '${escapeAttr(f.name)}', '${eff}')"
                     ondragend="handleFieldDragEnd(event)"
-                    
                     title="${f.name}">
-                    <div class="field-icon ${iconClass}">${iconText}</div>
-                    <div class="field-name">${f.name}</div>
+                    <div class="field-icon ${iconClass}" data-dtype-pivot="${escapeAttr(f.name)}" title="點擊切換型別" style="cursor:pointer;">${iconText}</div>
+                    <div class="field-name">${_dpAlias(f.name)}</div>
                 </div>`;
             }).join('');
+
+            // 型別圖示點擊切換
+            list.querySelectorAll('[data-dtype-pivot]').forEach(icon => {
+                icon.addEventListener('click', e => {
+                    e.stopPropagation();
+                    const name = icon.dataset.dtypePivot;
+                    const f = allFields.find(x => x.name === name);
+                    if (!f) return;
+                    const cur = _getEffectiveDtype(name, f.dtype, _PIVOT_DTYPE_CYCLE);
+                    const idx = _PIVOT_DTYPE_CYCLE.indexOf(cur);
+                    const next = _PIVOT_DTYPE_CYCLE[(idx + 1) % _PIVOT_DTYPE_CYCLE.length];
+                    _setDtypeOverride(name, next);
+                    icon.textContent = _PIVOT_DTYPE_ICON[next];
+                    icon.className = `field-icon ${_PIVOT_DTYPE_CLASS[next]}`;
+                    f.dtype = next;
+                });
+            });
         }
 
         document.getElementById('field-search').addEventListener('input', renderFieldList);
@@ -7111,15 +7781,15 @@
                             <option value="std" ${v.agg === 'std' ? 'selected' : ''}>標準差</option>
                             <option value="median" ${v.agg === 'median' ? 'selected' : ''}>中位數</option>
                         </select>
-                        ${v.name}
+                        ${_dpAlias(v.name)}
                         <span class="chip-remove" onclick="removeChip('${escapeAttr(v.name)}', 'values', ${i})">✕</span>
                     </div>
                 `).join('');
             } else {
                 items = pivotConfig[zone];
                 container.innerHTML = items.map(name => `
-                    <div class="dz-chip">
-                        ${name}
+                    <div class="dz-chip" title="${name}">
+                        ${_dpAlias(name)}
                         <span class="chip-remove" onclick="removeChip('${escapeAttr(name)}', '${zone}')">✕</span>
                     </div>
                 `).join('');
@@ -7235,7 +7905,7 @@
             sel.innerHTML = '<option value="">— 選擇欄位 —</option>';
             const visCols = getVisibleCols();
             visCols.forEach(c => {
-                sel.innerHTML += `<option value="${escapeAttr(c)}">${c}</option>`;
+                sel.innerHTML += `<option value="${escapeAttr(c)}">${_dpAlias(c)}</option>`;
             });
             document.getElementById('fp-keyword').value = '';
             document.getElementById('fp-exclude-empty').checked = false;
@@ -7273,10 +7943,10 @@
             const hint = document.getElementById('hint-filters');
             // Keep existing drag-drop filter chips, append active filter chips
             const existingChips = pivotConfig.filters.map(name =>
-                `<div class="dz-chip">${name}<span class="chip-remove" onclick="removeChip('${escapeAttr(name)}', 'filters')">✕</span></div>`
+                `<div class="dz-chip" title="${name}">${_dpAlias(name)}<span class="chip-remove" onclick="removeChip('${escapeAttr(name)}', 'filters')">✕</span></div>`
             ).join('');
             const activeChips = _activeFilters.map((f, i) => {
-                let desc = f.col;
+                let desc = _dpAlias(f.col);
                 if (f.keyword) desc += ` "${f.keyword}"`;
                 if (f.excludeEmpty) desc += ' (排除空白)';
                 return `<div class="dz-chip" style="background:#eef2ff;border-color:#c7d2fe;">${desc}<span class="chip-remove" onclick="removeFilter(${i})">✕</span></div>`;
@@ -7391,7 +8061,7 @@
             html += '<th style="width:32px;"></th>'; // expand button column
             visCols.forEach(h => {
                 const arrow = _sortCol === h ? (_sortDir === 1 ? ' ▲' : ' ▼') : ' ⇅';
-                html += `<th onclick="sortByColumn('${escapeAttr(h)}')" style="cursor:pointer;user-select:none;">${h}<span style="font-size:9px;opacity:0.5;margin-left:3px;">${arrow}</span></th>`;
+                html += `<th onclick="sortByColumn('${escapeAttr(h)}')" style="cursor:pointer;user-select:none;" title="${h}">${_dpAlias(h)}<span style="font-size:9px;opacity:0.5;margin-left:3px;">${arrow}</span></th>`;
             });
             html += '</tr></thead><tbody>';
             filteredData.forEach((row, _fi) => {
@@ -7416,7 +8086,7 @@
                         const top3 = row[top3Key];
                         if (top3 && top3.length > 0) {
                             const t1 = top3[0];
-                            const label = `${t1.name}(${t1.r >= 0 ? '+' : ''}${t1.r.toFixed(3)})`;
+                            const label = `${_dpAlias(t1.name)}(${t1.r >= 0 ? '+' : ''}${t1.r.toFixed(3)})`;
                             html += `<td><span class="top1-link" onclick="openCorrChart(${rowIdx},'${escapeAttr(target)}')">${label}</span></td>`;
                         } else {
                             html += `<td>${formatCell(row[h])}</td>`;
@@ -7425,7 +8095,7 @@
                         const ct3 = row['_top3_common'];
                         if (ct3 && ct3.length > 0) {
                             const c1 = ct3[0];
-                            const label = `${c1.name}(Σ${c1.score.toFixed(3)})`;
+                            const label = `${_dpAlias(c1.name)}(Σ${c1.score.toFixed(3)})`;
                             html += `<td><span class="top1-link" onclick="openCommonChart(${rowIdx})">${label}</span></td>`;
                         } else {
                             html += `<td>${formatCell(row[h])}</td>`;
@@ -7436,7 +8106,7 @@
                         const xgb3 = row[xgbKey];
                         if (xgb3 && xgb3.length > 0) {
                             const x1 = xgb3[0];
-                            const label = `${x1.name}(${x1.imp.toFixed(3)})`;
+                            const label = `${_dpAlias(x1.name)}(${x1.imp.toFixed(3)})`;
                             html += `<td><span class="xgb-link" onclick="openXgbChart(${rowIdx},'${escapeAttr(target)}')">${label}</span></td>`;
                         } else {
                             html += `<td>${formatCell(row[h])}</td>`;
@@ -7802,6 +8472,86 @@
         // ================================================================
         // Export Cleaned Data
         // ================================================================
+        // ========== 合併兩個 CSV ==========
+        function mergeInitFileSelects() {
+            const files = Array.from(document.getElementById('prep-file-select').options)
+                .filter(o => o.value)
+                .map(o => ({ value: o.value, text: o.textContent }));
+            ['merge-left-file', 'merge-right-file'].forEach(id => {
+                const sel = document.getElementById(id);
+                const cur = sel.value;
+                sel.innerHTML = '<option value="">-- 選擇 --</option>' +
+                    files.map(f => `<option value="${f.value}"${f.value===cur?' selected':''}>${f.text}</option>`).join('');
+            });
+        }
+
+        async function mergeLoadCols(side) {
+            const fileSelId = side === 'left' ? 'merge-left-file' : 'merge-right-file';
+            const colSelId  = side === 'left' ? 'merge-left-col'  : 'merge-right-col';
+            const fileId = document.getElementById(fileSelId).value;
+            const colSel = document.getElementById(colSelId);
+            colSel.innerHTML = '<option value="">載入中...</option>';
+            if (!fileId) { colSel.innerHTML = '<option value="">-- 選欄位 --</option>'; return; }
+            try {
+                const sid = getSessionId();
+                const res = await fetch(`/api/data-prep/columns/${fileId}?session_id=${sid}`);
+                const data = await res.json();
+                const cols = data.columns || [];
+                colSel.innerHTML = '<option value="">-- 選欄位 --</option>' +
+                    cols.map(c => `<option value="${c}">${_dpAlias(c)}</option>`).join('');
+            } catch(e) {
+                colSel.innerHTML = '<option value="">載入失敗</option>';
+            }
+        }
+
+        function mergeToggleTolerance() {
+            const how = document.getElementById('merge-how').value;
+            document.getElementById('merge-tolerance-row').style.display = how === 'nearest' ? 'flex' : 'none';
+        }
+
+        async function doMergeFiles() {
+            const leftFile  = document.getElementById('merge-left-file').value;
+            const rightFile = document.getElementById('merge-right-file').value;
+            const leftCol   = document.getElementById('merge-left-col').value;
+            const rightCol  = document.getElementById('merge-right-col').value;
+            const how       = document.getElementById('merge-how').value;
+            const tolSec    = document.getElementById('merge-tolerance').value;
+            const outName   = document.getElementById('merge-output-name').value.trim();
+            const resultDiv = document.getElementById('merge-result');
+
+            if (!leftFile || !rightFile) { alert('請選擇兩個檔案'); return; }
+            if (!leftCol || !rightCol)   { alert('請選擇兩個時間欄位'); return; }
+
+            resultDiv.style.color = '#64748b';
+            resultDiv.textContent = '合併中，請稍候...';
+
+            try {
+                const sid = getSessionId();
+                const res = await fetch(`/api/data-prep/merge-files?session_id=${sid}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        file_id_left: leftFile,
+                        file_id_right: rightFile,
+                        time_col_left: leftCol,
+                        time_col_right: rightCol,
+                        how,
+                        tolerance_seconds: tolSec ? parseFloat(tolSec) : null,
+                        custom_name: outName || null,
+                    }),
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || '合併失敗');
+                resultDiv.style.color = '#22c55e';
+                resultDiv.textContent = `✅ 合併完成！${data.filename}（${data.rows_merged} 筆，${data.columns.length} 欄）已匯出至檔案管理。`;
+                // Reload file list
+                if (typeof loadFiles === 'function') await loadFiles();
+            } catch(e) {
+                resultDiv.style.color = '#ef4444';
+                resultDiv.textContent = `❌ ${e.message}`;
+            }
+        }
+
         async function exportCleanedData(dsId) {
             const ds = _datasets.find(d => d.id === dsId);
             if (!ds) return;
@@ -8176,16 +8926,16 @@
             const input = document.getElementById('gb-target-input');
             const dd = document.getElementById('gb-target-dd');
             const q = (input.value || '').toLowerCase();
-            const filtered = _gbTargetOptions.filter(n => !q || n.toLowerCase().includes(q));
+            const filtered = _gbTargetOptions.filter(n => !q || n.toLowerCase().includes(q) || _dpAlias(n).toLowerCase().includes(q));
             dd.innerHTML = filtered.map(n =>
-                `<div class="gb-ss-item" onmousedown="gbSelectTarget('${n.replace(/'/g, "\\\\'")}')">${n}</div>`
+                `<div class="gb-ss-item" onmousedown="gbSelectTarget('${n.replace(/'/g, "\\\\'")}')" title="${n}">${_dpAlias(n)}</div>`
             ).join('');
             if (filtered.length === 0) dd.innerHTML = '<div style="padding:8px 12px;color:#94a3b8;font-size:12px;">無符合欄位</div>';
             dd.classList.add('show');
         }
 
         function gbSelectTarget(name) {
-            document.getElementById('gb-target-input').value = name;
+            document.getElementById('gb-target-input').value = _dpAlias(name);
             document.getElementById('gb-target-select').value = name;
             document.getElementById('gb-target-dd').classList.remove('show');
             document.getElementById('gb-target-clear').style.display = '';
@@ -8233,7 +8983,7 @@
                 column: f.col, keyword: '==' + String(f.value || ''), exclude_empty: false
             }));
             const exclIdx = typeof _clOutlierIndices !== 'undefined' ? _clOutlierIndices : [];
-            const exclCols = typeof _clExcludedCols !== 'undefined' ? [..._clExcludedCols] : [];
+            const exclCols = typeof _clExcludedCols !== 'undefined' ? (_clExcludedCols instanceof Set ? [..._clExcludedCols] : (Array.isArray(_clExcludedCols) ? _clExcludedCols : [])) : [];
             try {
                 const url = `/api/data-prep/gb-column-values?session_id=${sid}&file_id=${currentFileId}&column=${encodeURIComponent(col)}&filters=${encodeURIComponent(JSON.stringify(dsFilters))}&exclude_indices=${encodeURIComponent(JSON.stringify(exclIdx))}&exclude_cols=${encodeURIComponent(JSON.stringify(exclCols))}`;
                 const resp = await fetch(url);
@@ -8394,7 +9144,7 @@
                 exclude_indices: exclIdx,
                 groups: _gbGroups,
                 test_method: _gbTestMethod,
-                top_n: 10,
+                top_n: parseInt(document.getElementById('gb-top-n').value) || 0,
                 exclude_cols: combinedExclCols
             };
             if (_gbTestMethod === 'fisherz') {
@@ -8427,13 +9177,16 @@
             document.querySelectorAll('.gb-tab').forEach(b => b.classList.toggle('active', b.dataset.method === method));
             const fzOpts = document.getElementById('gb-fz-opts');
             fzOpts.style.display = method === 'fisherz' ? 'flex' : 'none';
+            // Give more space to the result grid in correlation mode
+            const gbRight = document.getElementById('gb-result-panel');
+            if (gbRight) gbRight.style.flex = method === 'fisherz' ? '2' : '1';
             if (method === 'fisherz') {
                 // Populate Fisher Z target dropdown
                 const sel = document.getElementById('gb-fz-target');
                 const prev = sel.value;
                 sel.innerHTML = '<option value="">— 選擇 Target —</option>';
                 (allFields || []).forEach(f => {
-                    sel.innerHTML += `<option value="${f.name}">${f.name}</option>`;
+                    sel.innerHTML += `<option value="${f.name}">${_dpAlias(f.name)}</option>`;
                 });
                 if (prev) sel.value = prev;
             }
@@ -8486,12 +9239,16 @@
         function gbRenderResults() {
             const data = _gbTestResult;
             if (!data) return;
+
+            // Sort results by p_value ascending (most significant first)
+            data.results.sort((a, b) => (a.p_value ?? 1) - (b.p_value ?? 1));
+
             const grid = document.getElementById('gb-result-grid');
             const gnames = data.group_names;
             const isFZ = data.test_method === 'fisherz';
 
-            // FZ scatter cards are taller → use 3 cols to keep them compact
-            grid.style.gridTemplateColumns = isFZ ? 'repeat(3, 1fr)' : 'repeat(2, 1fr)';
+            // FZ scatter cards are taller → use 4 cols to keep them compact
+            grid.style.gridTemplateColumns = isFZ ? 'repeat(4, 1fr)' : 'repeat(2, 1fr)';
 
             grid.innerHTML = data.results.map((item, idx) => {
                 const pBg = item.p_value < 0.001 ? '#ef4444' : item.p_value < 0.05 ? '#f59e0b' : '#94a3b8';
@@ -8538,7 +9295,7 @@
                 return `<div class="gb-box-card" onclick="gbOpenLb(${idx})" style="position:relative;">
                     <button onclick="event.stopPropagation();gbExcludeCol('${safeParam}')" title="排除" style="position:absolute;top:2px;right:2px;background:none;border:none;color:#94a3b8;cursor:pointer;font-size:12px;padding:2px 4px;line-height:1;z-index:2;">&times;</button>
                     <div class="gb-box-card-hdr">
-                        <div class="gb-box-card-name" title="${item.parameter}">${item.parameter}</div>
+                        <div class="gb-box-card-name" title="${item.parameter}">${_dpAlias(item.parameter)}</div>
                         <div class="gb-box-card-pval" style="background:${pBg};">${pText}</div>
                     </div>
                     <canvas id="gb-bp-${idx}" width="200" height="100"></canvas>
@@ -8552,10 +9309,10 @@
                         const pw = c.parentElement.clientWidth - 16;
                         c.width = Math.max(pw, 120);
                         // FZ scatter: near-square aspect; boxplot: wider
-                        c.height = Math.round(c.width * (isFZ ? 0.72 : 0.5));
+                        c.height = Math.round(c.width * (isFZ ? 0.65 : 0.5));
                     }
                     if (isFZ && item.scatter_data) {
-                        gbDrawScatterPlot(`gb-bp-${idx}`, item.scatter_data, gnames, item.param_x, item.param_y, item.r_values);
+                        gbDrawScatterPlot(`gb-bp-${idx}`, item.scatter_data, gnames, _dpAlias(item.param_x || ''), _dpAlias(item.param_y || ''), item.r_values);
                     } else {
                         gbDrawBoxPlot(`gb-bp-${idx}`, item.box_data, gnames);
                     }
@@ -8570,7 +9327,7 @@
             const item = data.results[idx];
             const pColor = item.p_value < 0.001 ? '#ef4444' : item.p_value < 0.05 ? '#f59e0b' : '#94a3b8';
             const pText = item.p_value < 0.001 ? 'p<.001' : `p=${item.p_value.toFixed(3)}`;
-            document.getElementById('gb-lb-title').textContent = item.parameter;
+            document.getElementById('gb-lb-title').textContent = _dpAlias(item.parameter);
             const pvalEl = document.getElementById('gb-lb-pval');
             pvalEl.textContent = pText;
             pvalEl.style.color = pColor;
@@ -8582,7 +9339,7 @@
             if (isFZ && item.scatter_data) {
                 if (tc) tc.style.display = 'none';
                 if (cdfWrap) cdfWrap.style.display = 'none';
-                gbDrawScatterPlot('gb-lb-canvas', item.scatter_data, data.group_names, item.param_x, item.param_y, item.r_values);
+                gbDrawScatterPlot('gb-lb-canvas', item.scatter_data, data.group_names, _dpAlias(item.param_x || ''), _dpAlias(item.param_y || ''), item.r_values);
             } else {
                 if (cdfWrap) cdfWrap.style.display = '';
                 gbDrawBoxPlot('gb-lb-canvas', item.box_data, data.group_names);
@@ -9088,12 +9845,12 @@
                     headCols.forEach((col, j) => {
                         const val = headData[nearest][j] || '-';
                         const short = val.length > 20 ? val.slice(0, 18) + '…' : val;
-                        lines.push(`<span style="color:#94a3b8">${col}:</span> ${short}`);
+                        lines.push(`<span style="color:#94a3b8">${_dpAlias(col)}:</span> ${short}`);
                     });
                 }
                 tip.innerHTML = lines.join('<br>');
                 tip.style.display = 'block';
-                
+
                 // Position logic with right-edge boundary check
                 let tipLeft = (e.clientX - rect.left) + 14;
                 if (tipLeft + tip.offsetWidth > rect.width) {
@@ -9148,12 +9905,12 @@
                     headCols.forEach((col, j) => {
                         const val = headData[nearest][j] || '-';
                         const short = val.length > 20 ? val.slice(0, 18) + '…' : val;
-                        lines.push(`<span style="color:#94a3b8">${col}:</span> ${short}`);
+                        lines.push(`<span style="color:#94a3b8">${_dpAlias(col)}:</span> ${short}`);
                     });
                 }
                 tip.innerHTML = lines.join('<br>');
                 tip.style.display = 'block';
-                
+
                 // Position logic with right-edge boundary check
                 let tipLeft = (e.clientX - rect.left) + 14;
                 if (tipLeft + tip.offsetWidth > rect.width) {
@@ -9181,7 +9938,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
     <script src="/static/js/lib/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/markmap-autoloader@0.16"></script>
-    <script src="/static/js/rsm_manager.js?v=3"></script>
+    <script src="/static/js/rsm_manager.js?v=17"></script>
     <script src="/static/js/me_manager.js?v=57"></script>
     <script src="/static/js/association_manager.js?v=1"></script>
 
@@ -9198,16 +9955,21 @@
             <div style="padding:22px 24px;">
                 <div style="margin-bottom:18px;">
                     <div style="font-size:13px;font-weight:600;color:#334155;margin-bottom:10px;">選擇分析演算法</div>
-                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
                         <label id="rsm-smart-algo-corr-label" style="border:2px solid #6366f1;border-radius:10px;padding:12px;cursor:pointer;background:#eef2ff;">
                             <input type="radio" name="rsm-smart-algo" value="correlation" checked style="display:none;">
                             <div style="font-size:12px;font-weight:700;color:#4338ca;">相關係數 (Abs)</div>
                             <div style="font-size:11px;color:#94a3b8;margin-top:3px;">線性關係，運算極快</div>
                         </label>
+                        <label id="rsm-smart-algo-mi-label" style="border:2px solid #e2e8f0;border-radius:10px;padding:12px;cursor:pointer;background:#fff;">
+                            <input type="radio" name="rsm-smart-algo" value="mi" style="display:none;">
+                            <div style="font-size:12px;font-weight:700;color:#475569;">MI 互訊息</div>
+                            <div style="font-size:11px;color:#94a3b8;margin-top:3px;">非線性，速度中等</div>
+                        </label>
                         <label id="rsm-smart-algo-xgb-label" style="border:2px solid #e2e8f0;border-radius:10px;padding:12px;cursor:pointer;background:#fff;">
                             <input type="radio" name="rsm-smart-algo" value="xgboost" style="display:none;">
                             <div style="font-size:12px;font-weight:700;color:#475569;">XGBoost (SHAP)</div>
-                            <div style="font-size:11px;color:#94a3b8;margin-top:3px;">非線性關係，精準但較慢</div>
+                            <div style="font-size:11px;color:#94a3b8;margin-top:3px;">非線性，精準但較慢</div>
                         </label>
                     </div>
                 </div>
@@ -9223,11 +9985,12 @@
     <script>
         document.querySelectorAll('input[name="rsm-smart-algo"]').forEach(radio => {
             radio.addEventListener('change', () => {
-                document.getElementById('rsm-smart-algo-corr-label').style.border = '2px solid #e2e8f0';
-                document.getElementById('rsm-smart-algo-corr-label').style.background = '#fff';
-                document.getElementById('rsm-smart-algo-xgb-label').style.border = '2px solid #e2e8f0';
-                document.getElementById('rsm-smart-algo-xgb-label').style.background = '#fff';
-                const lbl = document.getElementById(`rsm-smart-algo-${radio.value === 'correlation' ? 'corr' : 'xgb'}-label`);
+                ['corr','mi','xgb'].forEach(k => {
+                    const el = document.getElementById(`rsm-smart-algo-${k}-label`);
+                    if (el) { el.style.border = '2px solid #e2e8f0'; el.style.background = '#fff'; }
+                });
+                const map = { correlation: 'corr', mi: 'mi', xgboost: 'xgb' };
+                const lbl = document.getElementById(`rsm-smart-algo-${map[radio.value]}-label`);
                 if (lbl) { lbl.style.border = '2px solid #6366f1'; lbl.style.background = '#eef2ff'; }
             });
         });
@@ -9249,16 +10012,21 @@
                 <!-- Algorithm selection -->
                 <div style="margin-bottom:18px;">
                     <div style="font-size:13px;font-weight:600;color:#334155;margin-bottom:10px;">選擇分析演算法</div>
-                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
                         <label id="me-smart-algo-corr-label" style="border:2px solid #7c3aed;border-radius:10px;padding:12px;cursor:pointer;background:#faf5ff;">
                             <input type="radio" name="me-smart-algo" value="correlation" checked style="display:none;">
                             <div style="font-size:12px;font-weight:700;color:#6d28d9;">相關係數 (Abs)</div>
                             <div style="font-size:11px;color:#94a3b8;margin-top:3px;">線性關係，運算極快</div>
                         </label>
+                        <label id="me-smart-algo-mi-label" style="border:2px solid #e2e8f0;border-radius:10px;padding:12px;cursor:pointer;background:#fff;">
+                            <input type="radio" name="me-smart-algo" value="mi" style="display:none;">
+                            <div style="font-size:12px;font-weight:700;color:#475569;">互資訊 (MI)</div>
+                            <div style="font-size:11px;color:#94a3b8;margin-top:3px;">非線性，捕捉複雜關係</div>
+                        </label>
                         <label id="me-smart-algo-xgb-label" style="border:2px solid #e2e8f0;border-radius:10px;padding:12px;cursor:pointer;background:#fff;">
                             <input type="radio" name="me-smart-algo" value="xgboost" style="display:none;">
                             <div style="font-size:12px;font-weight:700;color:#475569;">XGBoost (SHAP)</div>
-                            <div style="font-size:11px;color:#94a3b8;margin-top:3px;">非線性關係，精準但較慢</div>
+                            <div style="font-size:11px;color:#94a3b8;margin-top:3px;">精準但較慢</div>
                         </label>
                     </div>
                 </div>
@@ -9277,10 +10045,10 @@
         // Smart modal algo card highlight
         document.querySelectorAll('input[name="me-smart-algo"]').forEach(radio => {
             radio.addEventListener('change', () => {
-                document.getElementById('me-smart-algo-corr-label').style.borderColor = '#e2e8f0';
-                document.getElementById('me-smart-algo-corr-label').style.background = '#fff';
-                document.getElementById('me-smart-algo-xgb-label').style.borderColor  = '#e2e8f0';
-                document.getElementById('me-smart-algo-xgb-label').style.background  = '#fff';
+                ['me-smart-algo-corr-label','me-smart-algo-mi-label','me-smart-algo-xgb-label'].forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) { el.style.borderColor = '#e2e8f0'; el.style.background = '#fff'; }
+                });
                 const sel = document.querySelector('input[name="me-smart-algo"]:checked');
                 if (sel) {
                     const lbl = sel.closest('label');
@@ -9524,6 +10292,47 @@
                 }
                 return null;
             } catch (e) { return null; }
+        }
+
+        /** 複製圖表到剪貼簿（canvas 或包含 canvas 的容器） */
+        async function copyChartAsImage(canvasIdOrEl, btnEl) {
+            const origText = btnEl ? btnEl.textContent : '';
+            try {
+                if (btnEl) { btnEl.textContent = '擷取中...'; btnEl.disabled = true; }
+                const el = typeof canvasIdOrEl === 'string' ? document.getElementById(canvasIdOrEl) : canvasIdOrEl;
+                if (!el) throw new Error('找不到圖表');
+
+                let canvas;
+                if (el.tagName === 'CANVAS') {
+                    canvas = el;
+                } else {
+                    // 容器：用 html2canvas 擷取整個區域
+                    if (!window.html2canvas) {
+                        await new Promise((resolve, reject) => {
+                            const s = document.createElement('script');
+                            s.src = 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';
+                            s.onload = resolve; s.onerror = reject;
+                            document.head.appendChild(s);
+                        });
+                    }
+                    canvas = await html2canvas(el, { backgroundColor: '#ffffff', scale: 2, useCORS: true, logging: false });
+                }
+
+                const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
+                if (navigator.clipboard && typeof ClipboardItem !== 'undefined') {
+                    await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+                    if (btnEl) { btnEl.textContent = '已複製 ✓'; btnEl.style.background = '#10b981'; btnEl.style.color = '#fff'; }
+                } else {
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a'); a.href = url; a.download = `chart_${Date.now()}.png`; a.click();
+                    URL.revokeObjectURL(url);
+                    if (btnEl) { btnEl.textContent = '已下載 ✓'; btnEl.style.background = '#10b981'; btnEl.style.color = '#fff'; }
+                }
+            } catch (err) {
+                console.error('Copy chart failed:', err);
+                if (btnEl) { btnEl.textContent = '失敗'; btnEl.style.background = '#ef4444'; btnEl.style.color = '#fff'; }
+            }
+            if (btnEl) setTimeout(() => { btnEl.textContent = origText; btnEl.style.background = ''; btnEl.style.color = ''; btnEl.disabled = false; }, 2000);
         }
 
         // ---- Image resize helper ----
@@ -10007,14 +10816,21 @@
             const _render = (idx) => {
                 _nbLbImgIdx = idx;
                 const n = imgs.length;
+                const copyBtnStyle = 'background:rgba(255,255,255,0.15);border:none;color:#fff;font-size:12px;padding:5px 12px;border-radius:6px;cursor:pointer;white-space:nowrap;';
                 lb.innerHTML = `
                     <img src="${imgs[idx]}" style="max-width:92vw;border-radius:8px;box-shadow:0 8px 40px rgba(0,0,0,0.5);object-fit:contain;cursor:default;display:block;" onclick="event.stopPropagation()">
-                    <div style="display:flex;align-items:center;gap:16px;">
-                        ${n > 1 ? `<button onclick="event.stopPropagation();_nbLbNav(-1)" style="background:rgba(255,255,255,0.15);border:none;color:#fff;font-size:18px;padding:6px 12px;border-radius:6px;cursor:pointer;">‹</button>` : ''}
-                        <div style="color:rgba(255,255,255,0.7);font-size:12px;">${title} 圖 ${idx+1}${n>1?` / ${n}`:''} &nbsp;·&nbsp; 點擊背景關閉</div>
-                        ${n > 1 ? `<button onclick="event.stopPropagation();_nbLbNav(1)" style="background:rgba(255,255,255,0.15);border:none;color:#fff;font-size:18px;padding:6px 12px;border-radius:6px;cursor:pointer;">›</button>` : ''}
+                    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:center;">
+                        ${n > 1 ? `<button onclick="event.stopPropagation();_nbLbNav(-1)" style="${copyBtnStyle}font-size:18px;">‹</button>` : ''}
+                        <div style="color:rgba(255,255,255,0.7);font-size:12px;">${title} 圖 ${idx+1}${n>1?` / ${n}`:''}</div>
+                        ${n > 1 ? `<button onclick="event.stopPropagation();_nbLbNav(1)" style="${copyBtnStyle}font-size:18px;">›</button>` : ''}
+                        <span style="width:1px;height:16px;background:rgba(255,255,255,0.2);"></span>
+                        <button onclick="event.stopPropagation();_nbCopyImg(${idx})" style="${copyBtnStyle}">複製此圖</button>
+                        ${n > 1 ? `<button onclick="event.stopPropagation();_nbCopyAllImgs()" style="${copyBtnStyle}">複製全部 ${n} 張</button>` : ''}
                     </div>`;
             };
+
+            // Store imgs reference for copy functions
+            window._nbLbImgs = imgs;
 
             window._nbLbNav = (dir) => {
                 const n = imgs.length;
@@ -10030,6 +10846,114 @@
             document.addEventListener('keydown', escHandler);
             _render(curIdx);
             document.body.appendChild(lb);
+        }
+
+        async function _nbCopyImg(idx) {
+            const imgs = window._nbLbImgs;
+            if (!imgs || !imgs[idx]) return;
+            try {
+                const resp = await fetch(imgs[idx]);
+                const blob = await resp.blob();
+                const pngBlob = await _nbConvertToPng(blob);
+                await navigator.clipboard.write([new ClipboardItem({ 'image/png': pngBlob })]);
+                _nbLbFlash('已複製到剪貼簿');
+            } catch (e) {
+                // Fallback: download
+                const a = document.createElement('a');
+                a.href = imgs[idx];
+                a.download = `chart_${idx + 1}.png`;
+                a.click();
+                _nbLbFlash('已下載圖片');
+            }
+        }
+
+        async function _nbCopyAllImgs() {
+            const imgs = window._nbLbImgs;
+            if (!imgs || imgs.length === 0) return;
+            if (imgs.length === 1) { _nbCopyImg(0); return; }
+            // Stitch all images vertically into one canvas
+            try {
+                const loaded = await Promise.all(imgs.map(src => new Promise((resolve, reject) => {
+                    const img = new Image();
+                    img.onload = () => resolve(img);
+                    img.onerror = reject;
+                    img.src = src;
+                })));
+                const maxW = Math.max(...loaded.map(i => i.naturalWidth));
+                const totalH = loaded.reduce((s, i) => s + Math.round(i.naturalHeight * (maxW / i.naturalWidth)), 0);
+                const gap = 8;
+                const canvas = document.createElement('canvas');
+                canvas.width = maxW;
+                canvas.height = totalH + gap * (loaded.length - 1);
+                const ctx = canvas.getContext('2d');
+                ctx.fillStyle = '#fff';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                let y = 0;
+                loaded.forEach((img, i) => {
+                    const scale = maxW / img.naturalWidth;
+                    const h = Math.round(img.naturalHeight * scale);
+                    ctx.drawImage(img, 0, y, maxW, h);
+                    y += h + gap;
+                });
+                canvas.toBlob(async blob => {
+                    try {
+                        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+                        _nbLbFlash(`已複製 ${imgs.length} 張圖片`);
+                    } catch (e) {
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url; a.download = 'charts_all.png'; a.click();
+                        URL.revokeObjectURL(url);
+                        _nbLbFlash('已下載合併圖片');
+                    }
+                }, 'image/png');
+            } catch (e) {
+                _nbLbFlash('合併失敗: ' + e.message);
+            }
+        }
+
+        function _nbConvertToPng(blob) {
+            return new Promise((resolve, reject) => {
+                if (blob.type === 'image/png') { resolve(blob); return; }
+                const img = new Image();
+                img.onload = () => {
+                    const c = document.createElement('canvas');
+                    c.width = img.naturalWidth; c.height = img.naturalHeight;
+                    c.getContext('2d').drawImage(img, 0, 0);
+                    c.toBlob(b => b ? resolve(b) : reject(new Error('toBlob failed')), 'image/png');
+                    URL.revokeObjectURL(img.src);
+                };
+                img.onerror = reject;
+                img.src = URL.createObjectURL(blob);
+            });
+        }
+
+        function _nbLbFlash(msg) {
+            const lb = document.getElementById('nb-img-lightbox');
+            if (!lb) return;
+            let toast = lb.querySelector('.nb-lb-toast');
+            if (!toast) {
+                toast = document.createElement('div');
+                toast.className = 'nb-lb-toast';
+                toast.style.cssText = 'position:fixed;top:20px;left:50%;transform:translateX(-50%);background:rgba(16,185,129,0.92);color:#fff;padding:8px 20px;border-radius:8px;font-size:13px;font-weight:600;z-index:10000;pointer-events:none;transition:opacity 0.3s;';
+                lb.appendChild(toast);
+            }
+            toast.textContent = msg;
+            toast.style.opacity = '1';
+            setTimeout(() => { toast.style.opacity = '0'; }, 1800);
+        }
+
+        async function _nbCopyNoteImgs(noteIdx) {
+            const note = _nbNotes[noteIdx];
+            if (!note?.imageData?.length) return;
+            window._nbLbImgs = note.imageData;
+            if (note.imageData.length === 1) {
+                await _nbCopyImg(0);
+            } else {
+                await _nbCopyAllImgs();
+            }
+            // Show a toast in the notebook panel since lightbox may not be open
+            _nbShowToast(`已複製 ${note.imageData.length} 張圖片`);
         }
 
         function _nbFallbackCopy(text, onSuccess) {
@@ -10056,6 +10980,7 @@
                         <div style="display:flex;align-items:center;gap:8px;">
                             <span style="font-size:11px;color:#94a3b8;">${timestamp || ''}</span>
                             <button id="nb-text-copy-btn" style="padding:3px 10px;font-size:11px;background:#f1f5f9;color:#475569;border:1px solid #e2e8f0;border-radius:6px;cursor:pointer;">複製文字</button>
+                            <button id="nb-img-copy-btn" style="padding:3px 10px;font-size:11px;background:#f1f5f9;color:#475569;border:1px solid #e2e8f0;border-radius:6px;cursor:pointer;">複製圖片</button>
                         </div>
                     </div>
                     <div class="nb-md-body" style="font-size:13px;color:#334155;line-height:1.7;overflow-y:auto;flex:1;user-select:text;">${typeof marked !== 'undefined' ? marked.parse(text) : text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/\n/g,'<br>')}</div>
@@ -10078,6 +11003,56 @@
                     } else {
                         _nbFallbackCopy(text, ok);
                     }
+                };
+            }
+            // 複製圖片按鈕
+            const imgBtn = modal.querySelector('#nb-img-copy-btn');
+            if (imgBtn) {
+                imgBtn.onclick = async () => {
+                    const contentEl = modal.querySelector('.nb-md-body');
+                    if (!contentEl) return;
+                    imgBtn.textContent = '擷取中...';
+                    imgBtn.disabled = true;
+                    try {
+                        // 動態載入 html2canvas（僅首次）
+                        if (!window.html2canvas) {
+                            await new Promise((resolve, reject) => {
+                                const s = document.createElement('script');
+                                s.src = 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';
+                                s.onload = resolve;
+                                s.onerror = reject;
+                                document.head.appendChild(s);
+                            });
+                        }
+                        const canvas = await html2canvas(contentEl, {
+                            backgroundColor: '#ffffff',
+                            scale: 2,
+                            useCORS: true,
+                            logging: false,
+                        });
+                        const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
+                        if (navigator.clipboard && typeof ClipboardItem !== 'undefined') {
+                            await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+                            imgBtn.textContent = '已複製 ✓';
+                            imgBtn.style.background = '#10b981';
+                            imgBtn.style.color = '#fff';
+                        } else {
+                            // Fallback: 下載圖片
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url; a.download = `${tool}_${Date.now()}.png`;
+                            a.click(); URL.revokeObjectURL(url);
+                            imgBtn.textContent = '已下載 ✓';
+                            imgBtn.style.background = '#10b981';
+                            imgBtn.style.color = '#fff';
+                        }
+                    } catch (err) {
+                        console.error('Image copy failed:', err);
+                        imgBtn.textContent = '失敗';
+                        imgBtn.style.background = '#ef4444';
+                        imgBtn.style.color = '#fff';
+                    }
+                    setTimeout(() => { imgBtn.textContent = '複製圖片'; imgBtn.style.background = '#f1f5f9'; imgBtn.style.color = '#475569'; imgBtn.disabled = false; }, 2000);
                 };
             }
             modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
@@ -11330,7 +12305,8 @@
                             <div style="font-size:10px;color:#94a3b8;margin-top:2px;">${note.timestamp}</div>
                         </div>
                         ${note.imageData?.length > 0
-                            ? `<span data-nb-del onclick="event.stopPropagation();_nbSendImagesToChat(${realIdx})" title="傳圖至聊天（不含文字）" style="flex-shrink:0;cursor:pointer;color:#cbd5e1;font-size:13px;line-height:1;padding:0 2px;" onmouseover="this.style.color='#7c3aed'" onmouseout="this.style.color='#cbd5e1'">⬆</span>`
+                            ? `<span data-nb-del onclick="event.stopPropagation();_nbCopyNoteImgs(${realIdx})" title="複製圖片到剪貼簿" style="flex-shrink:0;cursor:pointer;color:#cbd5e1;font-size:12px;line-height:1;padding:0 2px;" onmouseover="this.style.color='#16a34a'" onmouseout="this.style.color='#cbd5e1'">📋</span>
+                               <span data-nb-del onclick="event.stopPropagation();_nbSendImagesToChat(${realIdx})" title="傳圖至聊天（不含文字）" style="flex-shrink:0;cursor:pointer;color:#cbd5e1;font-size:13px;line-height:1;padding:0 2px;" onmouseover="this.style.color='#7c3aed'" onmouseout="this.style.color='#cbd5e1'">⬆</span>`
                             : ''}
                         <span data-nb-del onclick="event.stopPropagation();_nbDeleteNote(${realIdx})" title="刪除" style="flex-shrink:0;cursor:pointer;color:#cbd5e1;font-size:14px;line-height:1;padding:0 2px;" onmouseover="this.style.color='#ef4444'" onmouseout="this.style.color='#cbd5e1'">×</span>
                     </div>`;
@@ -11810,7 +12786,7 @@
                     fzTgt.style.display = fzMode === 'vs_target' ? '' : 'none';
                     if (fzTargetVal) {
                         fzTgt.innerHTML = `<option value="">— 選擇 Target —</option>` +
-                            (allFields || []).map(f => `<option value="${f.name}">${f.name}</option>`).join('');
+                            (allFields || []).map(f => `<option value="${f.name}">${_dpAlias(f.name)}</option>`).join('');
                         fzTgt.value = fzTargetVal;
                     }
                 }
@@ -11959,7 +12935,7 @@
                         filters: (typeof _activeDataset !== 'undefined' && _activeDataset?.filters) ?
                             _activeDataset.filters.map(f => ({ column: f.col, keyword: '==' + String(f.value||''), exclude_empty: false })) : [],
                         exclude_indices: (typeof _clOutlierIndices !== 'undefined') ? _clOutlierIndices : [],
-                        exclude_cols: (typeof _clExcludedCols !== 'undefined') ? [..._clExcludedCols] : [],
+                        exclude_cols: typeof _clExcludedCols !== 'undefined' ? (_clExcludedCols instanceof Set ? [..._clExcludedCols] : (Array.isArray(_clExcludedCols) ? _clExcludedCols : [])) : [],
                     })
                 });
                 const d = await res.json();
@@ -12087,7 +13063,33 @@
                 if (!rsmTarget) { _nbShowToast('無法取得目標欄位，請重新分析'); return; }
                 const allSorted = [...terms].sort((a,b) => Math.abs(b.coefficient) - Math.abs(a.coefficient));
 
-                let lines = [`多項式特徵分析  顯著相關項 ${terms.length} 個\n`];
+                const _typeLabel = t => ({ main: '主效應', interaction: '交互', quadratic: '二階', cubic: '三階' }[t] || t);
+                const _fmtSigned = v => {
+                    if (v == null) return '—';
+                    const abs = Math.abs(v);
+                    if (abs !== 0 && abs < 0.00005) return (v >= 0 ? '+' : '') + v.toExponential(2);
+                    return (v >= 0 ? '+' : '') + v.toFixed(4);
+                };
+
+                // ── R² 總覽 ──
+                const _r2 = lastResult.r_squared;
+                const _r2Label = _r2 != null ? _r2.toFixed(4) : '—';
+                const _r2Grade = _r2 == null ? '' : _r2 >= 0.8 ? '（優）' : _r2 >= 0.5 ? '（中）' : '（弱）';
+                let lines = [`多項式特徵分析  顯著相關項 ${terms.length} 個   R²=${_r2Label}${_r2Grade}\n`];
+
+                // ── 各類別最強1名快速摘要 ──
+                lines.push('【各類別最強項摘要】');
+                CAT_META.forEach(({ key, label, icon }) => {
+                    const top1 = terms.filter(t => t.type === key && t.correlation != null)
+                        .sort((a, b) => Math.abs(b.correlation) - Math.abs(a.correlation))[0];
+                    if (!top1) return;
+                    const rStr = `r=${_fmtSigned(top1.correlation)}`;
+                    const bStr = (top1.lasso_coef != null && top1.lasso_coef !== 0) ? `  β=${_fmtSigned(top1.lasso_coef)}` : '';
+                    lines.push(`  ${icon}${label}最強: ${top1.name}  ${rStr}${bStr}`);
+                });
+                lines.push('');
+
+                // ── 各類別 Top N ──
                 CAT_META.forEach(({ key, label, icon }) => {
                     const top = terms.filter(t => t.type === key).slice(0, TOP_N);
                     if (!top.length) return;
@@ -12095,21 +13097,137 @@
                     top.forEach((t, i) => lines.push(`  ${i+1}. ${t.name}（${Math.abs(t.coefficient).toFixed(4)}）`));
                     lines.push('');
                 });
-                const text = lines.join('\n');
+
+                // 全域相關係數前10（依 |r| 排序）
+                const _topByCorr = [...terms]
+                    .filter(t => t.correlation != null)
+                    .sort((a, b) => Math.abs(b.correlation) - Math.abs(a.correlation))
+                    .slice(0, 10);
+                if (_topByCorr.length) {
+                    lines.push('【相關係數前10名（全域 |r| 排序）】');
+                    _topByCorr.forEach((t, i) => {
+                        const bStr = t.lasso_coef != null ? `  β=${_fmtSigned(t.lasso_coef)}` : '';
+                        lines.push(`  #${i+1} [${_typeLabel(t.type)}] ${t.name}  r=${_fmtSigned(t.correlation)}${bStr}`);
+                    });
+                    lines.push('');
+                }
+
+                // 全域 Lasso β 前10（依 |β| 排序，排除 0/null）
+                const _topByLasso = [...terms]
+                    .filter(t => t.lasso_coef != null && t.lasso_coef !== 0)
+                    .sort((a, b) => Math.abs(b.lasso_coef) - Math.abs(a.lasso_coef))
+                    .slice(0, 10);
+                if (_topByLasso.length) {
+                    lines.push('【Lasso β 前10名（全域 |β| 排序）】');
+                    _topByLasso.forEach((t, i) => {
+                        const rStr = t.correlation != null ? `  r=${_fmtSigned(t.correlation)}` : '';
+                        lines.push(`  #${i+1} [${_typeLabel(t.type)}] ${t.name}  β=${_fmtSigned(t.lasso_coef)}${rStr}`);
+                    });
+                    lines.push('');
+                }
+
+                let text = lines.join('\n');
                 const catTasks = CAT_META.map(m => ({ ...m, items: terms.filter(t => t.type === m.key).slice(0, TOP_N) })).filter(t => t.items.length);
                 const total = 1 + catTasks.length;
                 const images = [];
                 let taskIdx = 0;
 
-                _nbProgressShow(`生成圖表 0 / ${total}`);
+                _nbProgressShow('📊 準備中...');
                 try {
-                    taskIdx++;
-                    _nbProgressUpdate(`整體 Top 10  (${taskIdx} / ${total})`, Math.round(taskIdx/total*100));
-                    images.push(makeBarCanvas('🎯 整體 Top 10', allSorted.slice(0, 10), '#6366f1', 420, t => t.coefficient).dataUrl);
+                    // ── Phase 1: 先抓資料 ──
+                    _nbProgressUpdate('📊 條件式分析...', 10);
+                    if (typeof window._rsmFetchConditionalForNote === 'function') {
+                        try { await window._rsmFetchConditionalForNote(5); }
+                        catch(e) { console.warn('[note] auto conditional fetch failed:', e); }
+                    }
+                    _nbProgressUpdate('🔥 SHAP 分析...', 30);
 
+                    // ── 文字樹狀圖 canvas helper ──
+                    const makeTextCanvas = (text, opts = {}) => {
+                        if (!text?.trim()) return null;
+                        const lines = text.split('\n');
+                        const FS = opts.fontSize || 11;
+                        const LH = FS + 4;
+                        const PAD = 10;
+                        const W = opts.width || 640;
+                        const H = PAD * 2 + lines.length * LH + 4;
+                        const c = document.createElement('canvas');
+                        c.width = W; c.height = H;
+                        const ctx = c.getContext('2d');
+                        ctx.fillStyle = '#0f172a'; ctx.fillRect(0, 0, W, H);
+                        lines.forEach((line, i) => {
+                            const y = PAD + (i + 1) * LH;
+                            // Syntax highlight
+                            if (/^【|^▶/.test(line))          ctx.fillStyle = '#fbbf24';
+                            else if (/[├└│]/.test(line))       ctx.fillStyle = '#5eead4';
+                            else if (/r=[\+\-]/.test(line))    ctx.fillStyle = '#86efac';
+                            else if (/⚠|★|↑|↓|↕/.test(line)) ctx.fillStyle = '#f87171';
+                            else                                ctx.fillStyle = '#e2e8f0';
+                            ctx.font = `${FS}px 'Courier New', monospace`;
+                            ctx.fillText(line, PAD, y);
+                        });
+                        return { dataUrl: c.toDataURL('image/jpeg', 0.88), width: W, height: H };
+                    };
+
+                    let _shapInterText = null;
+                    if (typeof window._rsmFetchShapForNote === 'function') {
+                        try {
+                            console.log('[note] SHAP fetch start, targets:', window._rsmTargets?.length, 'selectedFactors:', window._rsmSelectedFactors?.length, 'displayedTerms:', window._rsmDisplayedTerms?.length);
+                            const _shapFetchResult = await window._rsmFetchShapForNote();
+                            console.log('[note] SHAP fetch result:', !!_shapFetchResult, 'rsmShapResult:', !!window._rsmShapResult);
+                            _shapInterText = typeof window._rsmGetShapInterNoteText === 'function'
+                                ? window._rsmGetShapInterNoteText(5) : null;
+                            if (_shapInterText) text += '\n\n【SHAP 交互分析（自動打包）】\n' + _shapInterText;
+                        } catch(e) { console.error('[note] SHAP inter auto-fetch failed:', e); }
+                    } else { console.warn('[note] _rsmFetchShapForNote not found'); }
+
+                    // 條件式文字（Regular 先，Trellis 後）
+                    const _condHistory = window._rsmConditionalHistory || [];
+                    const COND_LIMIT = 10;
+                    const _regularEntries = [..._condHistory].filter(e => !e.isTrellis)
+                        .sort((a, b) => a.fisherP - b.fisherP).slice(0, COND_LIMIT);
+                    const _trellisEntries = [..._condHistory].filter(e => e.isTrellis)
+                        .sort((a, b) => a.fisherP - b.fisherP).slice(0, COND_LIMIT);
+                    const _allCondEntries = [..._regularEntries, ..._trellisEntries];
+
+                    // ── ★ 方向反轉摘要（最重要） ──
+                    const _reversalEntries = _regularEntries.filter(e => {
+                        if (!e.groups?.length) return false;
+                        const pos = e.groups.filter(g => g.r > 0.05).length;
+                        const neg = e.groups.filter(g => g.r < -0.05).length;
+                        return pos > 0 && neg > 0;
+                    });
+                    if (_reversalEntries.length) {
+                        text += `\n\n【⚠ 方向反轉摘要（${_reversalEntries.length}項，在不同條件下正負相關並存）】`;
+                        _reversalEntries.forEach((e, i) => {
+                            const rVals = e.groups.map(g => `${g.label}:r=${(g.r >= 0 ? '+' : '')}${g.r.toFixed(3)}`).join('  ');
+                            const sigTag = e.fisherP < 0.05 ? ' ★顯著' : e.fisherP < 0.1 ? ' △邊緣' : '';
+                            text += `\n  ${i+1}. ${e.termName}（條件:${e.condVar}）  ${rVals}${sigTag}`;
+                        });
+                        text += '\n';
+                    }
+
+                    // ── 條件式顯著性統計 ──
+                    if (_regularEntries.length) {
+                        const _sig   = _regularEntries.filter(e => e.fisherP < 0.05).length;
+                        const _marg  = _regularEntries.filter(e => e.fisherP >= 0.05 && e.fisherP < 0.1).length;
+                        const _ns    = _regularEntries.filter(e => e.fisherP >= 0.1).length;
+                        text += `\n【條件式顯著性統計（Fisher Z，共${_regularEntries.length}筆）】`;
+                        text += `\n  ★ 顯著(p<0.05): ${_sig}筆  △ 邊緣(p<0.1): ${_marg}筆  ○ 不顯著: ${_ns}筆\n`;
+                    }
+
+                    if (_allCondEntries.length) {
+                        text += `\n【條件式分析（自動打包，前${_allCondEntries.length}筆）】`;
+                        _allCondEntries.forEach((e, i) => {
+                            text += `\n\n[${i+1}/${_allCondEntries.length}]\n` + e.text;
+                        });
+                    }
+
+                    // ── Phase 2: 依序生成圖片 ──
+                    // ① 相關係數 Top（整體 + 各類別 bar+scatter）
+                    _nbProgressUpdate('① 相關係數圖...', 50);
+                    images.push(makeBarCanvas('🎯 整體 Top 10', allSorted.slice(0, 10), '#6366f1', 420, t => t.coefficient).dataUrl);
                     for (const { label, icon, color, items } of catTasks) {
-                        taskIdx++;
-                        _nbProgressUpdate(`${icon} ${label}  (${taskIdx} / ${total})`, Math.round(taskIdx/total*100));
                         const bar = makeBarCanvas(`${icon} ${label} Top ${TOP_N}`, items, color, 360, t => t.coefficient);
                         const scatUrls = await Promise.all(items.map(async (term) => {
                             try { return await makeScatterCanvas(await fetchScatter(term, rsmTarget), term.name, rsmTarget, color); }
@@ -12118,8 +13236,205 @@
                         images.push(await combineBarGrid(bar, scatUrls, 2));
                     }
 
+                    // ── 條件式分析圖 helper ──
+                    const grpColors = ['#3b82f6', '#f59e0b', '#10b981'];
+                    const quadColors4 = ['#6366f1', '#0ea5e9', '#f59e0b', '#10b981'];
+                    const _makeCondChart = async (entry) => {
+                        const SW = SCAT_W, SH = SCAT_H, TITLE_H = 22, GAP = 4;
+                        // ── Trellis 樹狀圖 ──
+                        if (entry.isTrellis && entry.cells?.length) {
+                            const cells = entry.cells;
+                            const td = entry.trellisData || {};
+                            const nA = td.nA || 2;
+                            const nB = td.nB || Math.round(cells.length / nA);
+                            const aSplits = td.aSplits || [{label:'A低'},{label:'A高'}];
+                            const bSplits = td.bSplits || [{label:'B低'},{label:'B高'}];
+                            // Leaf scatter: slightly smaller to fit tree layout
+                            const LSW = 240, LSH = 150;
+                            const leafColors = ['#6366f1','#0ea5e9','#f59e0b','#10b981','#ec4899','#8b5cf6'];
+                            const scatUrls = await Promise.all(cells.map((c, ci) => {
+                                const lbl = (c.label || `C${ci}`).replace('_Low','↓').replace('_High','↑');
+                                const rStr = c.r != null ? `r=${(c.r>=0?'+':'')+c.r.toFixed(3)}` : '';
+                                return makeScatterCanvas({ x: c.x, y: c.y }, `${lbl} n=${c.n} ${rStr}`, td.factor_c || entry.termName, leafColors[ci % 6]);
+                            }));
+                            if (!scatUrls.some(Boolean)) return null;
+                            // Layout: nA columns, each column has nB leaves stacked horizontally
+                            const groupW = nB * LSW + (nB - 1) * GAP;
+                            const A_SEP = 24;    // gap between A groups
+                            const HEADER_H = 56; // title + factor names
+                            const BRANCH_H = 38; // space for branch lines + A label
+                            const totalW = nA * groupW + (nA - 1) * A_SEP;
+                            const totalH = HEADER_H + BRANCH_H + LSH;
+                            const out = document.createElement('canvas');
+                            out.width = totalW; out.height = totalH;
+                            const ctx = out.getContext('2d');
+                            ctx.fillStyle = '#f8fafc'; ctx.fillRect(0, 0, totalW, totalH);
+                            // Header
+                            ctx.fillStyle = '#1e293b'; ctx.font = 'bold 11px sans-serif';
+                            ctx.fillText(`🌳 ${entry.termName}`, 6, 16);
+                            ctx.fillStyle = '#475569'; ctx.font = '9.5px sans-serif';
+                            ctx.fillText(`A: ${(td.factor_a||'').slice(0,28)}  (中位 ${td.a_median||'?'})`, 6, 30);
+                            ctx.fillText(`B: ${(td.factor_b||'').slice(0,28)}  (中位 ${td.b_median||'?'})   C(X): ${(td.factor_c||'').slice(0,20)}`, 6, 44);
+                            // Root node dot
+                            const rootX = totalW / 2, rootY = HEADER_H;
+                            ctx.fillStyle = '#6366f1';
+                            ctx.beginPath(); ctx.arc(rootX, rootY, 4, 0, Math.PI * 2); ctx.fill();
+                            // Horizontal bar connecting A-group centers
+                            const aCenters = Array.from({length: nA}, (_, ai) => ai * (groupW + A_SEP) + groupW / 2);
+                            ctx.strokeStyle = '#94a3b8'; ctx.lineWidth = 1.5;
+                            ctx.beginPath(); ctx.moveTo(rootX, rootY); ctx.lineTo(rootX, rootY + 8); ctx.stroke();
+                            ctx.beginPath(); ctx.moveTo(aCenters[0], rootY + 8); ctx.lineTo(aCenters[nA - 1], rootY + 8); ctx.stroke();
+                            for (let ai = 0; ai < nA; ai++) {
+                                const ax = aCenters[ai];
+                                const aLabelY = rootY + 8 + 14;
+                                // Branch line down to A label
+                                ctx.strokeStyle = '#94a3b8'; ctx.lineWidth = 1.5;
+                                ctx.beginPath(); ctx.moveTo(ax, rootY + 8); ctx.lineTo(ax, aLabelY - 2); ctx.stroke();
+                                // A label
+                                const as = aSplits[ai] || {};
+                                const aRangeStr = (as.range_min != null && as.range_max != null) ? ` [${as.range_min}~${as.range_max}]` : '';
+                                const aText = `${as.label || (ai===0?'A低':'A高')}${aRangeStr}`;
+                                ctx.fillStyle = leafColors[ai * nB]; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'center';
+                                ctx.fillText(aText.slice(0, 32), ax, aLabelY + 8);
+                                ctx.textAlign = 'left';
+                                // B branch lines from A to each leaf
+                                const bY = aLabelY + 12;
+                                const leafY = HEADER_H + BRANCH_H;
+                                for (let bi = 0; bi < nB; bi++) {
+                                    const leafCX = ai * (groupW + A_SEP) + bi * (LSW + GAP) + LSW / 2;
+                                    ctx.strokeStyle = '#cbd5e1'; ctx.lineWidth = 1;
+                                    ctx.beginPath(); ctx.moveTo(ax, bY); ctx.lineTo(leafCX, leafY - 2); ctx.stroke();
+                                    // B label
+                                    const bs = bSplits[bi] || {};
+                                    const bRangeStr = (bs.range_min != null && bs.range_max != null) ? ` [${bs.range_min}~${bs.range_max}]` : '';
+                                    const bText = `${bs.label || (bi===0?'B低':'B高')}${bRangeStr}`;
+                                    ctx.fillStyle = '#64748b'; ctx.font = '8px sans-serif'; ctx.textAlign = 'center';
+                                    ctx.fillText(bText.slice(0, 20), leafCX, leafY - 3);
+                                    ctx.textAlign = 'left';
+                                }
+                            }
+                            // Draw scatter images at leaves (scaled)
+                            await Promise.all(scatUrls.map((url, ci) => new Promise(res => {
+                                if (!url) { res(); return; }
+                                const ai = Math.floor(ci / nB), bi = ci % nB;
+                                const x = ai * (groupW + A_SEP) + bi * (LSW + GAP);
+                                const y = HEADER_H + BRANCH_H;
+                                const img = new Image(); img.onload = () => { ctx.drawImage(img, x, y, LSW, LSH); res(); };
+                                img.src = url;
+                            })));
+                            return out.toDataURL('image/jpeg', 0.88);
+                        }
+                        // ── 一般條件式（三組並排） ──
+                        if (!entry.groups?.length) return null;
+                        const scatUrls = await Promise.all(entry.groups.map((g, gi) => {
+                            const label = g.label || `G${gi}`;
+                            const rStr = g.r != null ? `r=${(g.r>=0?'+':'')+g.r.toFixed(3)}` : '';
+                            const title = `${label} n=${g.n} ${rStr}`;
+                            return makeScatterCanvas(
+                                { x: g.x, y: g.y },
+                                title,
+                                entry.condVar || entry.termName,
+                                grpColors[gi] || '#6366f1'
+                            );
+                        }));
+                        const valid = scatUrls.filter(Boolean);
+                        if (!valid.length) return null;
+                        const totalW = valid.length * SW + (valid.length - 1) * GAP;
+                        const out = document.createElement('canvas');
+                        out.width = totalW; out.height = SH + TITLE_H;
+                        const ctx = out.getContext('2d');
+                        ctx.fillStyle = '#f8fafc'; ctx.fillRect(0, 0, totalW, TITLE_H);
+                        ctx.fillStyle = '#1e293b'; ctx.font = 'bold 10px sans-serif';
+                        const sigTag = entry.fisherP < 0.05 ? ' ★顯著' : entry.fisherP < 0.1 ? ' △邊緣' : '';
+                        const titleStr = `${entry.termName}  條件:${entry.condVar}  p=${entry.fisherP < 0.001 ? '<0.001' : entry.fisherP.toFixed(3)}${sigTag}`;
+                        ctx.fillText(titleStr.slice(0, 70), 6, 15);
+                        await Promise.all(valid.map((url, i) => new Promise(res => {
+                            const img = new Image(); img.onload = () => {
+                                ctx.drawImage(img, i * (SW + GAP), TITLE_H);
+                                res();
+                            }; img.src = url;
+                        })));
+                        return out.toDataURL('image/jpeg', 0.88);
+                    };
+
+                    // ② 相關係數3格 Top（Regular 條件式）
+                    _nbProgressUpdate('② 條件式3格圖...', 65);
+                    for (const e of _regularEntries) {
+                        try { const img = await _makeCondChart(e); if (img) images.push(img); } catch(_) {}
+                    }
+
+                    // ③ 相關係數樹狀圖 Top（Trellis）
+                    _nbProgressUpdate('③ 樹狀圖...', 75);
+                    for (const e of _trellisEntries) {
+                        try { const img = await _makeCondChart(e); if (img) images.push(img); } catch(_) {}
+                    }
+
+                    // ④ SHAP 重要性 Top10 + 3因子 3格圖
+                    _nbProgressUpdate('④ SHAP 3因子...', 83);
+                    const _shapResult = window._rsmShapResult;
+                    const _shapBgData = window._rsmShapInterData;
+                    console.log('[note] condHistory:', window._rsmConditionalHistory?.length, 'regular:', _regularEntries.length, 'trellis:', _trellisEntries.length, 'shap:', !!_shapResult, 'shapBg:', !!_shapBgData);
+                    if (_shapResult?.targets?.length) {
+                        const _shapTarget = _shapResult.targets[0];
+                        // SHAP 重要性 Top10 bar
+                        try {
+                            const _shapList = _shapResult.results?.[_shapTarget]?.shap_importance?.slice(0, 10) || [];
+                            if (_shapList.length) {
+                                const _shapBar = makeBarCanvas(`🔥 SHAP 重要性 Top10 (${_shapTarget})`,
+                                    _shapList.map(s => ({ name: s.factor, coefficient: s.importance })), '#f59e0b', 420, t => t.coefficient);
+                                if (_shapBar?.dataUrl) images.push(_shapBar.dataUrl);
+                            }
+                        } catch(e) { console.warn('[note] SHAP bar failed:', e); }
+                        try {
+                            const _bgMeta = _shapBgData?.results?.[_shapTarget]?.background;
+                            const _bgGroups = _bgMeta?.factors_by_group;
+                            const _bgFactor = window._rsmNoteAutoBgFactor || '';
+                            if (_bgGroups?.length && _bgFactor) {
+                                const topBg = _bgGroups.slice(0, 8);
+                                const _mkBar = (label, getV, color) => makeBarCanvas(label,
+                                    topBg.map(f => ({ name: f.factor, coefficient: getV(f) })), color, 280, t => t.coefficient);
+                                const bgBars = [
+                                    _mkBar(`低組 SHAP (bg:${_bgFactor.slice(0,12)})`, f => f.low,  '#3b82f6'),
+                                    _mkBar(`中組 SHAP`, f => f.mid,  '#f59e0b'),
+                                    _mkBar(`高組 SHAP`, f => f.high, '#10b981'),
+                                ].filter(b => b?.dataUrl);
+                                if (bgBars.length) {
+                                    const GAP = 6, bH = bgBars[0].height || 220, bW = bgBars[0].width || 280;
+                                    const outC = document.createElement('canvas');
+                                    outC.width = bgBars.length * bW + (bgBars.length - 1) * GAP; outC.height = bH;
+                                    const octx = outC.getContext('2d');
+                                    octx.fillStyle = '#fff'; octx.fillRect(0, 0, outC.width, outC.height);
+                                    await Promise.all(bgBars.map((b, bi) => new Promise(res => {
+                                        const img = new Image(); img.onload = () => { octx.drawImage(img, bi * (bW + GAP), 0); res(); };
+                                        img.src = b.dataUrl;
+                                    })));
+                                    images.push(outC.toDataURL('image/jpeg', 0.88));
+                                }
+                            }
+                        } catch(e) { console.warn('[note] SHAP 3F bar failed:', e); }
+
+                        // ⑤ SHAP 4因子 樹狀圖（文字樹 + 交互對 bar）
+                        _nbProgressUpdate('⑤ SHAP 4因子...', 92);
+                        try {
+                            if (_shapInterText) {
+                                const _treeImg = makeTextCanvas(_shapInterText, { fontSize: 11, width: 660 });
+                                if (_treeImg?.dataUrl) images.push(_treeImg.dataUrl);
+                            }
+                        } catch(e) { console.warn('[note] SHAP tree canvas failed:', e); }
+                        try {
+                            const _pairs = (_shapBgData?.results?.[_shapTarget] || _shapResult.results?.[_shapTarget])
+                                ?.shap_interaction?.slice(0, 8) || [];
+                            if (_pairs.length) {
+                                const _pairBar = makeBarCanvas(`⚡ SHAP 交互對 Top${_pairs.length}`,
+                                    _pairs.map(p => ({ name: `${p.factor_a} × ${p.factor_b}`, coefficient: p.interaction })),
+                                    '#6366f1', 480, t => t.coefficient);
+                                if (_pairBar?.dataUrl) images.push(_pairBar.dataUrl);
+                            }
+                        } catch(e) { console.warn('[note] SHAP 4F bar failed:', e); }
+                    }
+
                     _nbProgressUpdate('完成', 100);
-                    await new Promise(r => setTimeout(r, 300));
+                    await new Promise(r => setTimeout(r, 200));
                     nbAddNote('多項式特徵', text, images);
                 } finally { _nbProgressHide(); }
                 return;
@@ -12198,8 +13513,31 @@
                     images.push(await combineBarGrid(bar, scatUrls, nCols));
                 }
 
+                _nbProgressUpdate('📊 自動抓取條件式分析...', 88);
+                if (typeof window._rsmFetchConditionalForNote === 'function') {
+                    try { await window._rsmFetchConditionalForNote(5); }
+                    catch(e) { console.warn('[note] auto conditional fetch failed:', e); }
+                }
+                _nbProgressUpdate('🔥 計算 SHAP 交互...', 95);
+                if (typeof window._rsmFetchShapForNote === 'function') {
+                    try {
+                        await window._rsmFetchShapForNote();
+                        const _shapInterTextM = typeof window._rsmGetShapInterNoteText === 'function'
+                            ? window._rsmGetShapInterNoteText(5) : null;
+                        if (_shapInterTextM) text += '\n\n【SHAP 交互分析（自動打包）】\n' + _shapInterTextM;
+                    } catch(e) { console.warn('[note] SHAP inter auto-fetch failed:', e); }
+                }
                 _nbProgressUpdate('完成', 100);
                 await new Promise(r => setTimeout(r, 300));
+                const _condHistoryMulti = window._rsmConditionalHistory || [];
+                if (_condHistoryMulti.length) {
+                    const COND_LIMIT = 10;
+                    const _condEntriesMulti = [..._condHistoryMulti]
+                        .sort((a, b) => a.fisherP - b.fisherP)
+                        .slice(0, COND_LIMIT);
+                    text += `\n\n【條件式分析（自動打包，依顯著性排序，前${_condEntriesMulti.length}筆）】`;
+                    _condEntriesMulti.forEach((e, i) => { text += `\n\n[${i+1}/${_condEntriesMulti.length}]\n` + e.text; });
+                }
                 nbAddNote('多項式特徵（多目標）', text, images);
             } finally { _nbProgressHide(); }
         }
@@ -12671,6 +14009,224 @@
             const img = raw ? await _nbResizeImage(raw) : null;
             nbAddNote('關聯分析', text, img ? [img] : null);
         }
+
+        // ─── RSM 存入筆記 router：依目前 tab 路由到對應函數 ───────────────────
+        function nbSaveRsmCurrentNote() {
+            const shapArea = document.getElementById('rsm-shap-area');
+            if (shapArea && shapArea.style.display !== 'none') {
+                nbSaveRsmShapNote();
+            } else {
+                nbSaveRsmNote();
+            }
+        }
+
+        // ─── RSM SHAP tab 存入筆記 ────────────────────────────────────────────
+        async function nbSaveRsmShapNote() {
+            const shapResult = window._rsmShapResult;
+            if (!shapResult?.targets?.length) { _nbShowToast('請先執行 SHAP 分析'); return; }
+            const fmt4 = v => v == null ? '—' : (Math.abs(v) < 0.001 ? v.toExponential(2) : v.toFixed(4));
+            const bgFactor = (typeof window._rsmGetShapBgFactor === 'function') ? window._rsmGetShapBgFactor() : '';
+            const targets = shapResult.targets;
+            const results = shapResult.results || {};
+            const lines = [`SHAP 重要性分析  目標: ${targets.join(' / ')}`];
+            if (bgFactor) lines.push(`  背景條件因子: ${bgFactor}`);
+            lines.push('');
+            targets.forEach(t => {
+                const res = results[t];
+                if (!res) return;
+                const r2 = res.r2 != null ? res.r2.toFixed(4) : 'N/A';
+                const r2Tag = res.r2 != null ? (res.r2 >= 0.8 ? '[優]' : res.r2 >= 0.5 ? '[中]' : '[低]') : '';
+                lines.push(`【${t}  R²=${r2} ${r2Tag}】`);
+                const mi = res.mi || [];
+                if (mi.length) {
+                    lines.push('  MI 排名（前5）:');
+                    mi.slice(0, 5).forEach((item, i) => lines.push(`    #${i+1} ${item.factor}  MI=${fmt4(item.mi)}`));
+                }
+                const shap = res.shap_importance || [];
+                if (shap.length) {
+                    lines.push('  SHAP 重要性（前5）:');
+                    shap.slice(0, 5).forEach((item, i) => {
+                        const dir = item.direction > 0.001 ? '▲ 正向' : item.direction < -0.001 ? '▼ 負向' : '─ 中性';
+                        lines.push(`    #${i+1} ${item.factor}  imp=${fmt4(item.importance)}  ${dir}(${fmt4(item.direction)})`);
+                    });
+                }
+                lines.push('');
+            });
+            const shapArea = document.getElementById('rsm-shap-area');
+            const raw = shapArea ? _nbCaptureChart(shapArea) : null;
+            const img = raw ? await _nbResizeImage(raw) : null;
+            nbAddNote('RSM SHAP 分析', lines.join('\n'), img ? [img] : null);
+        }
+
+        // ─── 多目標 Step 3 存入筆記 ───────────────────────────────────────────
+        async function nbSaveRsmAdvNote() {
+            let nd = (typeof window._meGetAdvNoteData === 'function') ? window._meGetAdvNoteData() : null;
+            if (!nd) { _nbShowToast('請先執行多目標分析'); return; }
+            if (nd.targets.length < 2) { _nbShowToast('需要至少兩個目標'); return; }
+
+            // 若 SHAP 尚未計算，自動觸發並等待完成
+            if (!nd.shapData && typeof window.meFetchShap === 'function') {
+                _nbShowToast('SHAP 計算中，請稍候...');
+                await window.meFetchShap();
+                nd = window._meGetAdvNoteData();   // re-read after shap populated
+            }
+
+            const { corrData, shapData, targets: yCols, filteredCols } = nd;
+            const fmt3 = v => v == null ? '—' : (v >= 0 ? '+' : '') + v.toFixed(3);
+            const hasShap = shapData && Object.keys(shapData).length > 0;
+            const titleSuffix = hasShap ? '相關係數 + SHAP' : '相關係數';
+
+            // Build scored list from a data source (sorted: filtered first, then by max |val|)
+            const buildScored = (data) => Object.keys(data).map(col => {
+                const vals = yCols.map(y => data[col][y] ?? 0);
+                const score = Math.max(...vals.map(Math.abs));
+                const signs = vals.map(v => v >= 0 ? 1 : -1);
+                return { col, score, pass: filteredCols.has(col), vals, allSame: signs.every(s => s === signs[0]) };
+            }).sort((a, b) => (b.pass - a.pass) || (b.score - a.score));
+
+            // Direction label for a scored item
+            const dirLabel = (item) => {
+                if (!item.allSame) {
+                    if (yCols.length === 2) {
+                        const d0 = item.vals[0] >= 0 ? '正' : '負', d1 = item.vals[1] >= 0 ? '正' : '負';
+                        return `方向相反（${yCols[0].slice(-6)}${d0}・${yCols[1].slice(-6)}${d1}）`;
+                    }
+                    return '各目標方向分歧';
+                }
+                return item.vals[0] < 0 ? (yCols.length === 2 ? '兩目標均負向' : '各目標均負向')
+                                        : (yCols.length === 2 ? '兩目標均正向' : '各目標均正向');
+            };
+
+            // Render one metric block (top 10, split same/diff direction)
+            const renderBlock = (label, data) => {
+                const top10 = buildScored(data).slice(0, 10);
+                const sameDir = top10.filter(it => it.allSame);
+                const diffDir = top10.filter(it => !it.allSame);
+                lines.push(`${'═'.repeat(4)} ${label} ${'═'.repeat(4)}`);
+                lines.push('');
+                const renderGroup = (title, items, offset) => {
+                    if (!items.length) return;
+                    lines.push(title);
+                    items.forEach((item, i) => {
+                        lines.push(`  #${offset + i + 1}  ${item.col}`);
+                        lines.push(`      ${yCols.map((y, yi) => `${y}: ${fmt3(item.vals[yi])}`).join('  ')}  → ${dirLabel(item)}`);
+                    });
+                    lines.push('');
+                };
+                renderGroup('【同向因子（各目標影響方向一致）】', sameDir, 0);
+                renderGroup('【異向因子（各目標影響方向相反）】', diffDir, sameDir.length);
+            };
+
+            const lines = [
+                `多目標相關性分析（${titleSuffix}）`,
+                `目標: ${yCols.join(' / ')}  篩選後因子: ${filteredCols.size} 個`,
+                '',
+            ];
+            renderBlock('相關係數', corrData);
+            if (hasShap) renderBlock('SHAP 重要性', shapData);
+
+            const advArea = document.getElementById('rsm-step2-adv');
+            const raw = advArea ? _nbCaptureChart(advArea) : null;
+            const img = raw ? await _nbResizeImage(raw) : null;
+            nbAddNote(`多目標相關性分析 (${titleSuffix})`, lines.join('\n'), img ? [img] : null);
+        }
+    </script>
+
+    <!-- 批次選取欄位 Modal -->
+    <div id="cl-batch-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:9999;align-items:center;justify-content:center;">
+        <div style="background:#fff;border-radius:14px;padding:24px;width:480px;max-width:95vw;box-shadow:0 20px 60px rgba(0,0,0,0.25);display:flex;flex-direction:column;gap:14px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;">
+                <div style="font-size:15px;font-weight:700;color:#1e293b;">📋 批次選取欄位</div>
+                <span onclick="clCloseBatchSelect()" style="cursor:pointer;color:#94a3b8;font-size:18px;line-height:1;" title="關閉">✕</span>
+            </div>
+            <div style="font-size:12px;color:#64748b;line-height:1.6;">
+                貼入欄位名稱清單（每行一個，或用逗號/Tab分隔）。<br>
+                可輸入部分名稱，系統會自動比對包含該字串的欄位。
+            </div>
+            <textarea id="cl-batch-input" placeholder="例如：&#10;TT-L878A&#10;TENSION&#10;SP_CLOSE&#10;PRODFLOW" style="width:100%;height:180px;padding:10px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:12px;font-family:monospace;resize:vertical;outline:none;color:#334155;box-sizing:border-box;" onfocus="this.style.borderColor='#6366f1'" onblur="this.style.borderColor='#e2e8f0'" oninput="clBatchPreview()"></textarea>
+            <div id="cl-batch-preview" style="font-size:11px;color:#64748b;min-height:18px;"></div>
+            <div style="display:flex;align-items:center;gap:8px;">
+                <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:#475569;cursor:pointer;">
+                    <input type="checkbox" id="cl-batch-exact" onchange="clBatchPreview()" style="cursor:pointer;">
+                    僅完全符合
+                </label>
+                <div style="flex:1;"></div>
+                <button onclick="clCloseBatchSelect()" style="padding:7px 16px;border:1px solid #e2e8f0;border-radius:8px;background:#f8fafc;font-size:13px;color:#475569;cursor:pointer;">取消</button>
+                <button onclick="clBatchApply('add')" style="padding:7px 16px;border:1px solid #6366f1;border-radius:8px;background:#eef2ff;font-size:13px;color:#4f46e5;font-weight:600;cursor:pointer;" onmouseenter="this.style.background='#e0e7ff'" onmouseleave="this.style.background='#eef2ff'">加入選取</button>
+                <button onclick="clBatchApply('only')" style="padding:7px 16px;border:none;border-radius:8px;background:#6366f1;font-size:13px;color:#fff;font-weight:600;cursor:pointer;" onmouseenter="this.style.background='#4f46e5'" onmouseleave="this.style.background='#6366f1'">只保留這些</button>
+            </div>
+        </div>
+    </div>
+    <script>
+    function clOpenBatchSelect() {
+        const modal = document.getElementById('cl-batch-modal');
+        modal.style.display = 'flex';
+        document.getElementById('cl-batch-input').value = '';
+        document.getElementById('cl-batch-preview').textContent = '';
+        setTimeout(() => document.getElementById('cl-batch-input').focus(), 50);
+    }
+    function clCloseBatchSelect() {
+        document.getElementById('cl-batch-modal').style.display = 'none';
+    }
+    document.getElementById('cl-batch-modal').addEventListener('click', e => {
+        if (e.target === document.getElementById('cl-batch-modal')) clCloseBatchSelect();
+    });
+
+    function _clBatchParseInput() {
+        const raw = document.getElementById('cl-batch-input').value;
+        const exact = document.getElementById('cl-batch-exact').checked;
+        const allCols = (_clColumnStats && _clColumnStats.columns) ? _clColumnStats.columns.map(c => c.col) : [];
+        // Split by newline, comma, tab
+        const keywords = raw.split(/[\n,\t]+/).map(s => s.trim()).filter(s => s.length > 0);
+        if (!keywords.length) return { matched: [], keywords };
+        const matched = allCols.filter(col => {
+            const colU = col.toUpperCase();
+            return keywords.some(kw => {
+                const kwU = kw.toUpperCase();
+                return exact ? colU === kwU : colU.includes(kwU);
+            });
+        });
+        return { matched, keywords };
+    }
+
+    function clBatchPreview() {
+        const { matched, keywords } = _clBatchParseInput();
+        const el = document.getElementById('cl-batch-preview');
+        if (!keywords.length) { el.textContent = ''; return; }
+        const total = (_clColumnStats && _clColumnStats.columns) ? _clColumnStats.columns.length : 0;
+        el.innerHTML = `<span style="color:#6366f1;font-weight:600;">符合 ${matched.length} 個欄位</span>（共 ${total} 個）`;
+    }
+
+    function clBatchApply(mode) {
+        const { matched } = _clBatchParseInput();
+        if (!matched.length) { alert('沒有符合的欄位，請確認名稱或取消「僅完全符合」'); return; }
+        const allCols = _clColumnStats.columns.map(c => c.col);
+
+        if (mode === 'only') {
+            // 只保留 matched，其餘全部排除
+            const matchedSet = new Set(matched);
+            allCols.forEach(col => {
+                if (matchedSet.has(col)) {
+                    // 確保此欄位被保留
+                    _clManualExcludedCols.delete(col);
+                    if (_clExcludedCols.has(col)) _clKeepCols.add(col);
+                } else {
+                    // 排除
+                    _clKeepCols.delete(col);
+                    if (!_clExcludedCols.has(col)) _clManualExcludedCols.add(col);
+                }
+            });
+        } else {
+            // 加入選取：只把 matched 欄位勾選（不動其他欄位）
+            matched.forEach(col => {
+                _clManualExcludedCols.delete(col);
+                if (_clExcludedCols.has(col)) _clKeepCols.add(col);
+            });
+        }
+        clSyncManualColRule();
+        renderCleaningColumns();
+        clCloseBatchSelect();
+    }
     </script>
 </body>
 

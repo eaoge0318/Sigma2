@@ -56,7 +56,7 @@ class PCATrendTool(AnalysisTool):
 
             filename = summary["filename"]
             csv_path = (
-                self.analysis_service.base_dir / session_id / "uploads" / filename
+                self.analysis_service.get_csv_path(session_id, filename)
             )
             df = pd.read_csv(csv_path, encoding="utf-8-sig")
             df.columns = [str(c).strip() for c in df.columns]

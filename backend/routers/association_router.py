@@ -15,6 +15,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
 from backend.services.analysis.analysis_service import AnalysisService
+from backend.services.file_service import resolve_uploads_path
 from backend.dependencies import get_intelligent_analysis_service
 from backend.services.association_service import (
     run_apriori,
@@ -33,16 +34,37 @@ logger = logging.getLogger(__name__)
 def _find_csv(uploads_dir: Path, file_id: str) -> Path:
     if not uploads_dir.exists():
         raise HTTPException(status_code=404, detail="uploads 目錄不存在")
-    # Search uploads/ and uploads/subsets/ (subsets are hidden from file management)
-    candidates = list(uploads_dir.glob("*.csv"))
-    subsets_dir = uploads_dir / "subsets"
-    if subsets_dir.exists():
-        candidates += list(subsets_dir.glob("*.csv"))
-    for f in candidates:
-        fid = hashlib.md5(f.name.encode()).hexdigest()[:12]
-        if fid == file_id or fid.startswith(file_id) or file_id.startswith(fid):
-            return f
-    raise HTTPException(status_code=404, detail=f"找不到檔案: {file_id}")
+
+    def _search_dir(d: Path):
+        candidates = list(d.glob("*.csv"))
+        subsets_dir = d / "subsets"
+        if subsets_dir.exists():
+            candidates += list(subsets_dir.glob("*.csv"))
+        for f in candidates:
+            fid = hashlib.md5(f.name.encode()).hexdigest()[:12]
+            if fid == file_id or fid.startswith(file_id) or file_id.startswith(fid):
+                return f
+        return None
+
+    result = _search_dir(uploads_dir)
+    # Fallback: if alias_cache/ didn't have the file, sync it from uploads/
+    if result is None and uploads_dir.name == "alias_cache":
+        real_uploads = uploads_dir.parent / "uploads"
+        if real_uploads.exists():
+            found_in_uploads = _search_dir(real_uploads)
+            if found_in_uploads:
+                try:
+                    from backend.services.file_service import FileService
+                    session_id = uploads_dir.parent.name
+                    FileService()._sync_shadow_for_file(session_id, found_in_uploads.name)
+                    synced = uploads_dir / found_in_uploads.name
+                    result = synced if synced.exists() else found_in_uploads
+                except Exception:
+                    result = found_in_uploads
+
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"找不到檔案: {file_id}")
+    return result
 
 
 def _load_df(
@@ -52,7 +74,7 @@ def _load_df(
     exclude_indices: List[int],
     exclude_cols: List[str],
 ) -> pd.DataFrame:
-    uploads_dir = analysis_service.base_dir / session_id / "uploads"
+    uploads_dir = resolve_uploads_path(analysis_service.base_dir, session_id)
     csv_path = _find_csv(uploads_dir, file_id)
     df = pd.read_csv(csv_path, encoding="utf-8-sig", low_memory=False)
 

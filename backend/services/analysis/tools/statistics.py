@@ -48,7 +48,7 @@ class AnalyzeDistributionTool(AnalysisTool):
         stats_data = self.analysis_service.load_statistics(session_id, file_id)
         summary = self.analysis_service.load_summary(session_id, file_id)
         filename = summary["filename"]
-        csv_path = self.analysis_service.base_dir / session_id / "uploads" / filename
+        csv_path = self.analysis_service.get_csv_path(session_id, filename)
 
         results_map = {}
         for col in columns:
@@ -219,12 +219,7 @@ class CompareSegmentsTool(AnalysisTool):
         baseline_input = params.get("baseline_segments") or params.get("baseline")
 
         summary = self.analysis_service.load_summary(session_id, file_id)
-        csv_path = (
-            self.analysis_service.base_dir
-            / session_id
-            / "uploads"
-            / summary["filename"]
-        )
+        csv_path = self.analysis_service.get_csv_path(session_id, summary["filename"])
         df = pd.read_csv(csv_path)
         numeric_cols = df.select_dtypes(include=[np.number]).columns
 
@@ -330,7 +325,7 @@ class DetectOutliersTool(AnalysisTool):
 
         summary = self.analysis_service.load_summary(session_id, file_id)
         filename = summary["filename"]
-        csv_path = self.analysis_service.base_dir / session_id / "uploads" / filename
+        csv_path = self.analysis_service.get_csv_path(session_id, filename)
 
         results_map = {}
         for col in columns:

@@ -165,7 +165,7 @@ class GetTimeSeriesDataTool(AnalysisTool):
             return {"error": "File not found"}
 
         filename = summary["filename"]
-        csv_path = self.analysis_service.base_dir / session_id / "uploads" / filename
+        csv_path = self.analysis_service.get_csv_path(session_id, filename)
 
         try:
             # 獲取 CSV 實際的所有欄位名

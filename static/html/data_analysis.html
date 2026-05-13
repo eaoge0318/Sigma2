@@ -123,14 +123,35 @@
                             <span>+</span> 篩選條件
                         </button>
                         <div id="filter-menu" class="filter-menu">
+                            <!-- 欄位選擇下拉 -->
                             <div>
                                 <label>選擇欄位</label>
-                                <select id="filter-column-select"></select>
+                                <div id="filter-col-display" onclick="window._toggleColDropdown(event)"
+                                    style="display:flex;align-items:center;justify-content:space-between;width:100%;padding:8px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;cursor:pointer;background:#fff;user-select:none;box-sizing:border-box;">
+                                    <span id="filter-col-display-text" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">選擇欄位...</span>
+                                    <span id="filter-col-arrow" style="color:#94a3b8;margin-left:6px;flex-shrink:0;transition:transform 0.15s;">▼</span>
+                                </div>
+                                <!-- 欄位清單 inline 展開 -->
+                                <div id="filter-col-panel" style="display:none;margin-top:4px;border:1px solid #e2e8f0;border-radius:6px;overflow:hidden;background:#fff;">
+                                    <div style="padding:6px 6px 4px;">
+                                        <input type="text" id="filter-col-search" placeholder="搜尋欄位名稱..." autocomplete="off"
+                                            oninput="window._filterColSearch(this.value)"
+                                            style="width:100%;padding:6px 8px;border:1px solid #e2e8f0;border-radius:4px;font-size:13px;box-sizing:border-box;">
+                                    </div>
+                                    <div id="filter-col-list" style="max-height:150px;overflow-y:auto;"></div>
+                                </div>
+                                <input type="hidden" id="filter-column-select" value="0">
                             </div>
+                            <!-- 值搜尋 -->
                             <div>
                                 <label>搜尋關鍵字</label>
                                 <input type="text" id="filter-value-input" placeholder="輸入文字..."
-                                    onkeyup="handleFilterKey(event)">
+                                    onkeyup="handleFilterKey(event); window._filterInputKey(event)"
+                                    oninput="window._filterInputKey(event)"
+                                    onfocus="window._filterInputKey(event)"
+                                    autocomplete="off">
+                                <div id="filter-autocomplete-list"
+                                    style="display:none;position:fixed;max-height:180px;overflow-y:auto;background:#fff;border:1px solid #e2e8f0;border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,0.1);z-index:99999;box-sizing:border-box;"></div>
                             </div>
                             <div style="margin-top: 10px; display: flex; align-items: center;">
                                 <input type="checkbox" id="filter-not-empty-check"
@@ -204,7 +225,7 @@
 
         <!-- CHART VIEW CONTAINER -->
         <div id="analysis-chart-view"
-            style="display: none; flex: 1; flex-direction: row; background: #fff; min-height: 0;">
+            style="display: none; flex: 1; flex-direction: row; background: #fff; min-height: 0; overflow: hidden;">
 
             <!-- LEFT SIDEBAR: Columns Source -->
             <div style="width: 260px; border-right: 1px solid #e2e8f0; display: flex; flex-direction: column; background: #f8fafc;">
@@ -227,49 +248,97 @@
                 <div id="chart-column-source"
                     style="flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 8px;">
                 </div>
-                <div style="padding: 10px; font-size: 12px; color: #64748b; text-align: center; border-top: 1px solid #e2e8f0; background: #f8fafc;">
-                    拖拽欄位至軸或分選區
+                <div style="padding: 8px 10px; border-top: 1px solid #e2e8f0; background: #f8fafc; position: relative;">
+                    <div style="font-size: 12px; color: #64748b; text-align: center; margin-bottom: 6px;">拖拽欄位至軸或分選區</div>
+                    <button onclick="document.getElementById('analysis-settings-panel').style.display = document.getElementById('analysis-settings-panel').style.display === 'none' ? 'block' : 'none'"
+                        style="width:100%; padding:6px; border:1px solid #cbd5e1; border-radius:6px; background:#f8fafc; color:#475569; font-size:12px; font-weight:600; cursor:pointer;">
+                        ⚙ 設定
+                    </button>
+                    <!-- Settings Popover -->
+                    <div id="analysis-settings-panel" style="display:none; position:absolute; bottom:100%; left:10px; right:10px; background:#fff; border:1px solid #e2e8f0; border-radius:12px; box-shadow:0 -6px 24px rgba(0,0,0,0.12); padding:0; margin-bottom:8px; z-index:50; overflow:hidden;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid #f1f5f9;">
+                            <div style="font-size:13px;font-weight:700;color:#1e293b;">⚙ 圖表設定</div>
+                            <span onclick="document.getElementById('analysis-settings-panel').style.display='none'" style="cursor:pointer;color:#94a3b8;font-size:16px;line-height:1;padding:2px 4px;">✕</span>
+                        </div>
+                        <div style="padding:14px 16px;">
+                            <div style="font-size:10px;font-weight:600;color:#94a3b8;letter-spacing:0.5px;text-transform:uppercase;margin-bottom:10px;">日期 X 軸模式</div>
+                            <div style="display:flex;flex-direction:column;gap:6px;">
+                                <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;">
+                                    <input type="radio" name="datetime-mode" value="timegap" checked
+                                        onchange="window.toggleDatetimeMode('timegap')"
+                                        style="margin-top:2px; accent-color:#7c3aed;">
+                                    <div>
+                                        <div style="font-size:12px;font-weight:600;color:#1e293b;">時間間距</div>
+                                        <div style="font-size:11px;color:#64748b;">保留時間空白，可看出資料斷點；不支援盒鬚圖</div>
+                                    </div>
+                                </label>
+                                <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;">
+                                    <input type="radio" name="datetime-mode" value="category"
+                                        onchange="window.toggleDatetimeMode('category')"
+                                        style="margin-top:2px; accent-color:#7c3aed;">
+                                    <div>
+                                        <div style="font-size:12px;font-weight:600;color:#1e293b;">支援盒鬚圖</div>
+                                        <div style="font-size:11px;color:#64748b;">散布、折線、盒鬚圖 X 軸對齊；無時間間距</div>
+                                    </div>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
             <!-- CENTER: Main Chart Layout -->
-            <div style="flex: 1; display: flex; flex-direction: column; min-width: 0;">
-                <!-- Chart Toolbar -->
-                <div style="display: flex; gap: 10px; padding: 10px 20px; border-bottom: 1px solid #f1f5f9; background: #fff; align-items: center;">
+            <div id="analysis-chart-view-col" style="flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0;">
+                <!-- Chart Toolbar Row 1: type + tools -->
+                <div style="display: flex; gap: 10px; padding: 8px 20px 4px; border-bottom: 1px solid #f1f5f9; background: #fff; align-items: center; flex-shrink:0;">
                     <span style="font-size: 13px; font-weight: 600; color: #64748b; margin-right: 5px;">圖表類型:</span>
                     <button class="chart-type-btn active" id="btn-chart-scatter" onclick="setChartType('scatter')">散布圖</button>
                     <button class="chart-type-btn" id="btn-chart-line" onclick="setChartType('line')">折線圖</button>
                     <button class="chart-type-btn" id="btn-chart-boxplot" onclick="setChartType('boxplot')">盒鬚圖</button>
                     <div style="flex: 1;"></div>
                     <button id="btn-selection-mode" class="add-filter-btn" onclick="toggleSelectionMode()"
-                        style="background: #fff; color: #475569; border: 1px solid #cbd5e1; font-size: 12px; padding: 6px 12px; margin-right: 10px;">
+                        style="background: #fff; color: #475569; border: 1px solid #cbd5e1; font-size: 12px; padding: 5px 10px;">
                         🖱️ 框選模式: 關閉
                     </button>
                     <button class="add-filter-btn" onclick="calculateCorrelation()"
-                        style="background: #fff; color: #475569; border: 1px solid #cbd5e1; font-size: 12px; padding: 6px 12px;">
+                        style="background: #fff; color: #475569; border: 1px solid #cbd5e1; font-size: 12px; padding: 5px 10px;">
                         📈 相關係數分析
                     </button>
                     <div id="correlation-result"
-                        style="font-size: 13px; color: #1e293b; margin-left: 15px; display: flex; flex-direction: column; align-items: flex-start; border-left: 2px solid #e2e8f0; padding-left: 15px;">
+                        style="font-size: 13px; color: #1e293b; margin-left: 10px; display: flex; flex-direction: column; align-items: flex-start; border-left: 2px solid #e2e8f0; padding-left: 10px;">
                     </div>
+                    <button id="btn-chart-fullscreen" onclick="window.toggleChartFullscreen()" title="全螢幕檢視"
+                        style="background:#f8fafc; color:#475569; border:1px solid #e2e8f0; border-radius:6px; padding:5px 10px; font-size:12px; font-weight:600; cursor:pointer; line-height:1;"
+                        onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='#f8fafc'">⛶ 全螢幕</button>
                 </div>
+                <!-- Chart Toolbar Row 2: X axis (always visible) -->
+                <!-- Chart area: no scroll, panels divide space equally -->
+                <div style="flex:1; display:flex; flex-direction:column; min-height:0; overflow:hidden;">
 
-                <div style="flex: 1; display: flex; align-items: stretch; padding: 20px 20px 0 20px;">
-                    <!-- Left Y-Axis Dropzone -->
-                    <div style="width: 50px; display: flex; flex-direction: column; align-items: center; justify-content: center; margin-right: 10px;">
-                        <div id="drop-y" class="axis-dropzone vertical" ondragover="allowDrop(event)"
-                            ondragleave="handleDragLeave(event)" ondrop="handleDrop(event, 'y')"
-                            style="width: 100%; height: 100%;">
-                            <span class="placeholder" style="transform: rotate(-90deg); white-space: nowrap; font-size: 11px; letter-spacing: 2px; display: inline-block;">拖曳至此</span>
-                        </div>
+                  <!-- All chart panels (no scroll) -->
+                  <div id="chart-scroll-area" style="flex:1; display:flex; flex-direction:column; min-height:0; overflow:hidden;">
+
+                  <!-- Main chart panel: Y1 + canvas + Y2 all inside the same row -->
+                  <div style="flex:1; min-height:0; display:flex; align-items:stretch; padding:8px 8px 0 8px;">
+
+                    <!-- Y1 inside row — same height as canvas automatically -->
+                    <div style="width:36px; flex-shrink:0; display:flex; flex-direction:column; margin-right:6px; overflow:hidden;">
+                      <div id="drop-y" class="axis-dropzone vertical" ondragover="allowDrop(event)"
+                          ondragleave="handleDragLeave(event)" ondrop="handleDrop(event, 'y')"
+                          style="flex:1; width:100%; overflow:hidden;">
+                        <span class="placeholder" style="transform:rotate(-90deg);white-space:nowrap;font-size:11px;letter-spacing:2px;display:inline-block;">拖曳至此</span>
+                      </div>
                     </div>
 
                     <!-- Chart Canvas Area -->
                     <div ondrop="handleMainChartDrop(event)" ondragover="allowDrop(event)"
-                        style="flex: 1; position: relative; border: 1px solid #f1f5f9; border-radius: 8px; padding: 10px; box-shadow: inset 0 0 10px #f8fafc; overflow: hidden;">
-                        <canvas id="analysis-chart-canvas"></canvas>
+                        style="flex: 1; border: 1px solid #f1f5f9; border-radius: 8px; box-shadow: inset 0 0 10px #f8fafc; overflow: hidden; position: relative; padding: 0;">
+                        <!-- canvas-relative wrapper (no padding so selection-box coords align exactly) -->
+                        <div id="canvas-wrapper" style="position:relative; width:100%; height:100%;">
+                        <canvas id="analysis-chart-canvas" style="display:block; width:100%; height:100%;"></canvas>
                         <div id="selection-box"
                             style="position: absolute; border: 2px solid #2563eb; background: rgba(37, 99, 235, 0.15); pointer-events: none; display: none; z-index: 100; box-shadow: 0 0 8px rgba(37, 99, 235, 0.3);">
+                        </div>
                         </div>
                         <div id="chart-info-overlay"
                             style="position: absolute; top: 10px; right: 10px; font-size: 12px; color: #64748b; background: rgba(255,255,255,0.8); padding: 5px 10px; border-radius: 4px;">
@@ -356,25 +425,47 @@
                         </div>
                     </div>
 
-                    <!-- Right Y-Axis Dropzone -->
-                    <div style="width: 50px; display: flex; flex-direction: column; align-items: center; justify-content: center; margin-left: 10px;">
-                        <div id="drop-y2" class="axis-dropzone vertical" ondragover="allowDrop(event)"
-                            ondragleave="handleDragLeave(event)" ondrop="handleDrop(event, 'y2')"
-                            style="width: 100%; height: 100%;">
-                            <span class="placeholder" style="transform: rotate(-90deg); white-space: nowrap; font-size: 11px; letter-spacing: 2px; display: inline-block;">(選填)</span>
-                        </div>
+                    <!-- Y2 inside row — same height as canvas automatically -->
+                    <div style="width:36px; flex-shrink:0; display:flex; flex-direction:column; margin-left:6px; overflow:hidden;">
+                      <div id="drop-y2" class="axis-dropzone vertical" ondragover="allowDrop(event)"
+                          ondragleave="handleDragLeave(event)" ondrop="handleDrop(event, 'y2')"
+                          style="flex:1; width:100%; overflow:hidden;">
+                        <span class="placeholder" style="transform:rotate(-90deg);white-space:nowrap;font-size:11px;letter-spacing:2px;display:inline-block;">(選填)</span>
+                      </div>
                     </div>
-                </div>
 
-                <!-- X-Axis Dropzone -->
-                <div style="height: 36px; display: flex; align-items: center; justify-content: center; padding: 5px 10px; flex-shrink: 0;">
-                    <div style="font-size: 12px; color: #94a3b8; font-weight: bold; margin-right: 10px;">X 軸:</div>
+                  </div><!-- end main chart panel row -->
+
+                  <!-- Dynamic extra chart panels -->
+                  <div id="extra-panels-container" style="display:contents;"></div>
+
+                  <!-- Add Panel button — always at the bottom of scroll area, aligned under Y1 -->
+                  <div style="display:flex; padding:4px 8px 4px 8px; flex-shrink:0;">
+                    <div style="width:36px; flex-shrink:0; margin-right:6px;">
+                      <div id="drop-add-panel" class="axis-dropzone vertical"
+                          ondragover="allowDrop(event)" ondragleave="handleDragLeave(event)"
+                          ondrop="handleAddPanelDrop(event)"
+                          style="width:100%; height:32px; border-style:dashed; border-color:#cbd5e1; background:#f8fafc; display:flex; align-items:center; justify-content:center; border-radius:6px;">
+                        <span style="font-size:13px; color:#94a3b8; pointer-events:none; font-weight:600;">＋</span>
+                      </div>
+                    </div>
+                    <div style="flex:1;"></div>
+                    <div style="width:40px; margin-left:6px;"></div>
+                  </div>
+
+                  </div><!-- end chart-scroll-area -->
+
+                  <!-- X-Axis: fixed at bottom, never scrolls -->
+                  <div style="display:flex; align-items:center; justify-content:center; padding:4px 8px 8px; flex-shrink:0; border-top:1px solid #f1f5f9; gap:8px;">
+                    <div style="font-size:12px; color:#94a3b8; font-weight:bold; white-space:nowrap;">X 軸:</div>
                     <div id="drop-x" class="axis-dropzone horizontal" ondragover="allowDrop(event)"
                         ondragleave="handleDragLeave(event)" ondrop="handleDrop(event, 'x')"
-                        style="width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;">
-                        <span class="placeholder">拖曳至此</span>
+                        style="width:60%; max-width:700px; height:28px; display:flex; align-items:center; justify-content:center;">
+                      <span class="placeholder">拖曳至此</span>
                     </div>
-                </div>
+                  </div>
+
+                </div><!-- end chart area -->
             </div>
         </div>
 
@@ -402,6 +493,17 @@
                 </div>
                 <div id="hm-col-list" style="flex: 1; overflow-y: auto; padding: 8px 12px; user-select: none;"></div>
                 <div style="padding: 10px 12px; border-top: 1px solid #e2e8f0; background: #fff; position: relative;">
+                    <!-- Chart mode toggle -->
+                    <div style="display:flex;background:#f1f5f9;border-radius:8px;padding:3px;gap:3px;margin-bottom:8px;">
+                        <button id="hm-chartmode-heatmap" onclick="window.setHmChartMode('heatmap')"
+                            style="flex:1;padding:6px 4px;border:none;border-radius:6px;cursor:pointer;font-size:11px;font-weight:600;background:#fff;color:#3b82f6;box-shadow:0 1px 3px rgba(0,0,0,0.1);transition:all 0.15s;">
+                            🔥 熱力圖
+                        </button>
+                        <button id="hm-chartmode-boxplot" onclick="window.setHmChartMode('boxplot')"
+                            style="flex:1;padding:6px 4px;border:none;border-radius:6px;cursor:pointer;font-size:11px;font-weight:600;background:#e2e8f0;color:#64748b;transition:all 0.15s;">
+                            📊 Box Plot
+                        </button>
+                    </div>
                     <div style="display: flex; gap: 8px;">
                         <button onclick="document.getElementById('hm-settings-panel').style.display = document.getElementById('hm-settings-panel').style.display === 'none' ? 'block' : 'none'"
                             style="flex: 1; padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px; background: #f8fafc; color: #475569; font-size: 12px; font-weight: 600; cursor: pointer;">
@@ -409,7 +511,7 @@
                         </button>
                         <button onclick="window.drawHeatmap()"
                             style="flex: 2; padding: 8px; background: linear-gradient(135deg, #3b82f6, #2563eb); color: #fff; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; box-shadow: 0 2px 6px rgba(37,99,235,0.3);">
-                            ▶ 繪製熱力圖
+                            ▶ 繪製
                         </button>
                     </div>
                     <!-- Settings Popover -->
@@ -433,6 +535,32 @@
                                     <option value="raw">原始值</option>
                                     <option value="zscore">Z-score</option>
                                 </select>
+                            </div>
+                            <div style="margin-bottom:10px;">
+                                <div style="font-size:11px;color:#64748b;margin-bottom:6px;">Y 軸排序（時間）</div>
+                                <div style="display:flex;background:#f1f5f9;border-radius:8px;padding:3px;gap:3px;">
+                                    <button id="hm-order-asc" onclick="window.setHmRowOrder('asc')"
+                                        style="flex:1;padding:5px 4px;border:none;border-radius:6px;cursor:pointer;font-size:11px;font-weight:600;background:#fff;color:#3b82f6;box-shadow:0 1px 3px rgba(0,0,0,0.1);transition:all 0.15s;">
+                                        ↓ 順排
+                                    </button>
+                                    <button id="hm-order-desc" onclick="window.setHmRowOrder('desc')"
+                                        style="flex:1;padding:5px 4px;border:none;border-radius:6px;cursor:pointer;font-size:11px;font-weight:600;background:#e2e8f0;color:#64748b;transition:all 0.15s;">
+                                        ↑ 逆排
+                                    </button>
+                                </div>
+                            </div>
+                            <div style="margin-bottom:10px;">
+                                <div style="font-size:11px;color:#64748b;margin-bottom:6px;">X 軸排序（欄位）</div>
+                                <div style="display:flex;background:#f1f5f9;border-radius:8px;padding:3px;gap:3px;">
+                                    <button id="hm-col-order-asc" onclick="window.setHmColOrder('asc')"
+                                        style="flex:1;padding:5px 4px;border:none;border-radius:6px;cursor:pointer;font-size:11px;font-weight:600;background:#fff;color:#3b82f6;box-shadow:0 1px 3px rgba(0,0,0,0.1);transition:all 0.15s;">
+                                        → 順排
+                                    </button>
+                                    <button id="hm-col-order-desc" onclick="window.setHmColOrder('desc')"
+                                        style="flex:1;padding:5px 4px;border:none;border-radius:6px;cursor:pointer;font-size:11px;font-weight:600;background:#e2e8f0;color:#64748b;transition:all 0.15s;">
+                                        ← 逆排
+                                    </button>
+                                </div>
                             </div>
                             <div style="margin-bottom:10px;">
                                 <div style="font-size:11px;color:#64748b;margin-bottom:4px;">色階</div>
@@ -529,12 +657,20 @@
             <!-- Right: Heatmap Canvas -->
             <div style="flex: 1; display: flex; flex-direction: column; min-width: 0; overflow: auto;">
                 <div id="hm-canvas-wrap" style="position: relative; flex: 1; padding: 10px;">
-                    <button onclick="window._hmUnpin()" title="清除所有標籤"
-                        style="position: absolute; top: 15px; right: 80px; z-index: 100; padding: 4px 10px; border: 1px solid rgba(203, 213, 225, 0.8); border-radius: 6px; background: rgba(248, 250, 252, 0.65); backdrop-filter: blur(2px); color: #475569; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,0.05);"
-                        onmouseover="this.style.background='rgba(255, 255, 255, 0.95)';this.style.color='#ef4444';this.style.borderColor='#fca5a5';"
-                        onmouseout="this.style.background='rgba(248, 250, 252, 0.65)';this.style.color='#475569';this.style.borderColor='rgba(203, 213, 225, 0.8)';">
-                        🗑 清除所有標籤
-                    </button>
+                    <div style="position: absolute; top: 15px; right: 15px; z-index: 100; display: flex; gap: 6px;">
+                        <button onclick="window._hmCopyToClipboard()" title="複製或下載圖表"
+                            style="padding: 4px 10px; border: 1px solid rgba(203, 213, 225, 0.8); border-radius: 6px; background: rgba(248, 250, 252, 0.65); backdrop-filter: blur(2px); color: #475569; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,0.05);"
+                            onmouseover="this.style.background='rgba(255, 255, 255, 0.95)';this.style.color='#3b82f6';this.style.borderColor='#93c5fd';"
+                            onmouseout="this.style.background='rgba(248, 250, 252, 0.65)';this.style.color='#475569';this.style.borderColor='rgba(203, 213, 225, 0.8)';">
+                            📋 複製圖表
+                        </button>
+                        <button onclick="window._hmUnpin()" title="清除所有標籤"
+                            style="padding: 4px 10px; border: 1px solid rgba(203, 213, 225, 0.8); border-radius: 6px; background: rgba(248, 250, 252, 0.65); backdrop-filter: blur(2px); color: #475569; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,0.05);"
+                            onmouseover="this.style.background='rgba(255, 255, 255, 0.95)';this.style.color='#ef4444';this.style.borderColor='#fca5a5';"
+                            onmouseout="this.style.background='rgba(248, 250, 252, 0.65)';this.style.color='#475569';this.style.borderColor='rgba(203, 213, 225, 0.8)';">
+                            🗑 清除所有標籤
+                        </button>
+                    </div>
                     <canvas id="hm-canvas"></canvas>
                 </div>
             </div>
@@ -609,12 +745,23 @@
     <!-- Load analysis_manager.js as module + chart AI helpers -->
     <script type="module">
         import { SESSION_ID } from '/static/js/dashboard_modules/session.js';
-        import * as Analysis from '/static/js/dashboard_modules/analysis_manager.js';
+        import * as Analysis from '/static/js/dashboard_modules/analysis_manager.js?v=6';
         import * as Heatmap from '/static/js/dashboard_modules/heatmap_manager.js';
-        import * as ComputedCol from '/static/js/dashboard_modules/computed_column_manager.js';
+        import * as ComputedCol from '/static/js/dashboard_modules/computed_column_manager.js?v=5';
 
         // Expose SESSION_ID globally for chart AI helpers
         window.SESSION_ID = SESSION_ID;
+
+        // Load column aliases and sync to localStorage for cross-iframe use
+        window._columnAliases = {};
+        window.colAlias = (name) => window._columnAliases[name] || name;
+        fetch(`/api/files/column-aliases?session_id=${SESSION_ID}`)
+            .then(r => r.ok ? r.json() : { aliases: {} })
+            .then(d => {
+                window._columnAliases = d.aliases || {};
+                try { localStorage.setItem('sigma2_aliases', JSON.stringify(window._columnAliases)); } catch(_) {}
+            })
+            .catch(() => {});
 
         // Expose computed column functions
         window.showAddColumnModal = ComputedCol.showAddColumnModal;
@@ -670,6 +817,13 @@
         window.tryUpdateChart = Analysis.tryUpdateChart;
         window.clearChartConfig = Analysis.clearChartConfig;
         window.resetAxis = Analysis.resetAxis;
+        // Extra panel (dynamic chart) functions
+        window.handleAddPanelDrop = Analysis.handleAddPanelDrop;
+        window.handleExtraPanelDrop = Analysis.handleExtraPanelDrop;
+        window.removeExtraPanel = Analysis.removeExtraPanel;
+        window.clearExtraPanelAxis = Analysis.clearExtraPanelAxis;
+        window.resetExtraPanelAxis = Analysis.resetExtraPanelAxis;
+        window.changePanelType = Analysis.changePanelType;
 
         // Heatmap functions
         window.setHeatmapXCol = Heatmap.setHeatmapXCol;
@@ -684,6 +838,18 @@
         window._hmUnpin = Heatmap.unpinHeatmapTooltip;
         window.toggleBrushMode  = Heatmap.toggleBrushMode;
         window.setHeatmapMode   = Heatmap.setHeatmapMode;
+        window.setHmChartMode   = Heatmap.setHmChartMode;
+        window.setHmRowOrder    = Heatmap.setHmRowOrder;
+        window.setHmColOrder    = Heatmap.setHmColOrder;
+        window._hmCopyToClipboard = Heatmap.copyCanvasToClipboard;
+
+        // Expose live Analysis state getters/mutators for cross-module-instance access
+        // (computed_column_manager.js imports analysis_manager.js without ?v=6, creating a separate
+        //  module instance with its own empty tableHeaders/originalTableData)
+        window.getAnalysisTableHeaders = () => Analysis.tableHeaders;
+        window.getAnalysisOriginalData = () => Analysis.originalTableData;
+        window.pushAnalysisHeader = (name) => Analysis.tableHeaders.push(name);
+        window.pushAnalysisRowValue = (rowIdx, val) => Analysis.originalTableData[rowIdx].push(val);
 
         // Handle filter key (Enter to add)
         window.handleFilterKey = function(event) {
@@ -751,6 +917,66 @@
         window.openFileSelector = openInternalFileSelector;
         window.closeFileSelector = closeInternalFileSelector;
     </script>
+
+    <!-- Y-Axis Config Popup -->
+    <div id="yaxis-config-popup" style="display:none; position:fixed; z-index:9999; background:#fff; border:1px solid #e2e8f0; border-radius:12px; box-shadow:0 8px 30px rgba(0,0,0,0.15); padding:20px; min-width:240px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+            <span id="yaxis-popup-title" style="font-size:14px; font-weight:700; color:#334155;">Y 軸設定</span>
+            <button onclick="window.closeYAxisPopup()" style="background:none; border:none; cursor:pointer; font-size:18px; color:#94a3b8; line-height:1; padding:0 2px;">&times;</button>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:12px;">
+            <!-- Color swatches -->
+            <input type="hidden" id="yaxis-popup-color" value="#7c3aed">
+            <div>
+                <div style="font-size:12px; color:#64748b; margin-bottom:6px;">顏色</div>
+                <div id="yaxis-popup-swatches" style="display:flex; gap:7px; flex-wrap:wrap;">
+                    <span class="yap-swatch" data-c="#7c3aed" style="width:22px;height:22px;border-radius:50%;background:#7c3aed;cursor:pointer;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.2);outline:2.5px solid #3b82f6;" onclick="window._yapPickColor(this)"></span>
+                    <span class="yap-swatch" data-c="#06b6d4" style="width:22px;height:22px;border-radius:50%;background:#06b6d4;cursor:pointer;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.2);" onclick="window._yapPickColor(this)"></span>
+                    <span class="yap-swatch" data-c="#ea580c" style="width:22px;height:22px;border-radius:50%;background:#ea580c;cursor:pointer;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.2);" onclick="window._yapPickColor(this)"></span>
+                    <span class="yap-swatch" data-c="#10b981" style="width:22px;height:22px;border-radius:50%;background:#10b981;cursor:pointer;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.2);" onclick="window._yapPickColor(this)"></span>
+                    <span class="yap-swatch" data-c="#ef4444" style="width:22px;height:22px;border-radius:50%;background:#ef4444;cursor:pointer;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.2);" onclick="window._yapPickColor(this)"></span>
+                    <span class="yap-swatch" data-c="#f59e0b" style="width:22px;height:22px;border-radius:50%;background:#f59e0b;cursor:pointer;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.2);" onclick="window._yapPickColor(this)"></span>
+                    <span class="yap-swatch" data-c="#ec4899" style="width:22px;height:22px;border-radius:50%;background:#ec4899;cursor:pointer;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.2);" onclick="window._yapPickColor(this)"></span>
+                    <span class="yap-swatch" data-c="#64748b" style="width:22px;height:22px;border-radius:50%;background:#64748b;cursor:pointer;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.2);" onclick="window._yapPickColor(this)"></span>
+                </div>
+            </div>
+            <!-- Min -->
+            <div style="display:flex; align-items:center; gap:10px;">
+                <label style="font-size:12px; color:#64748b; width:56px; flex-shrink:0;">最小值</label>
+                <input type="number" id="yaxis-popup-min" placeholder="自動"
+                    style="flex:1; padding:5px 8px; border:1px solid #e2e8f0; border-radius:6px; font-size:12px; outline:none; width:0;">
+            </div>
+            <!-- Max -->
+            <div style="display:flex; align-items:center; gap:10px;">
+                <label style="font-size:12px; color:#64748b; width:56px; flex-shrink:0;">最大值</label>
+                <input type="number" id="yaxis-popup-max" placeholder="自動"
+                    style="flex:1; padding:5px 8px; border:1px solid #e2e8f0; border-radius:6px; font-size:12px; outline:none; width:0;">
+            </div>
+            <!-- Feature stat line -->
+            <div style="display:flex; align-items:center; gap:10px;">
+                <label style="font-size:12px; color:#64748b; width:56px; flex-shrink:0;">特徵點</label>
+                <select id="yaxis-popup-feature"
+                    style="flex:1; padding:5px 8px; border:1px solid #e2e8f0; border-radius:6px; font-size:12px; outline:none; background:#fff; cursor:pointer; width:0;">
+                    <option value="">不顯示</option>
+                    <option value="mean">均值</option>
+                    <option value="std1">標準差 (±1σ)</option>
+                    <option value="max">最大值</option>
+                    <option value="min">最小值</option>
+                    <option value="range">最大 + 最小</option>
+                    <option value="count">Count（筆數）</option>
+                </select>
+            </div>
+        </div>
+        <div style="display:flex; gap:8px; margin-top:16px;">
+            <button onclick="window.closeYAxisPopup()"
+                style="flex:1; padding:7px; background:#f1f5f9; border:1px solid #e2e8f0; border-radius:8px; font-size:12px; color:#64748b; cursor:pointer;">取消</button>
+            <button onclick="window.applyYAxisConfig()"
+                style="flex:2; padding:7px; background:linear-gradient(135deg,#7c3aed,#9333ea); border:none; border-radius:8px; font-size:12px; color:#fff; font-weight:600; cursor:pointer;">套用</button>
+        </div>
+    </div>
+    <!-- Backdrop: invisible layer to detect outside click, must NOT block drag-drop events -->
+    <div id="yaxis-popup-backdrop"
+        style="display:none; position:fixed; inset:0; z-index:9998; pointer-events:none;"></div>
 </body>
 
 </html>

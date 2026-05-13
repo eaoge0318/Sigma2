@@ -10,6 +10,7 @@ import shutil
 
 # 使用新的 AnalysisService 與 Workflow
 from backend.services.analysis.analysis_service import AnalysisService
+from backend.services.file_service import resolve_uploads_path
 from backend.services.analysis.agent import SigmaAnalysisWorkflow
 from backend.services.analysis.analysis_types import (
     MonologueEvent,

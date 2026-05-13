@@ -805,21 +805,19 @@ button:hover {
 }
 
 .filter-menu {
-    position: absolute;
-    top: 100%;
-    left: 0;
-    z-index: 1000;
-    margin-top: 8px;
+    position: fixed;
+    z-index: 9990;
     background: white;
     border: 1px solid #e2e8f0;
     border-radius: 8px;
     box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
     padding: 15px;
-    width: 250px;
+    width: 300px;
     display: none;
     /* Hidden by default */
     flex-direction: column;
     gap: 12px;
+    box-sizing: border-box;
 }
 
 .filter-menu label {
@@ -836,6 +834,7 @@ button:hover {
     border: 1px solid #e2e8f0;
     border-radius: 6px;
     font-size: 13px;
+    box-sizing: border-box;
 }
 
 .analysis-table th:first-child,
@@ -1266,11 +1265,14 @@ button:hover {
 
 .axis-dropzone {
     transition: all 0.2s;
-    border: 2px dashed #cbd5e1;
+    border: none;
+    outline: 2px dashed #cbd5e1;
+    outline-offset: -1px;
     border-radius: 8px;
     display: flex;
     align-items: center;
     justify-content: center;
+    box-sizing: border-box;
 }
 
 .axis-dropzone.horizontal {
@@ -1280,20 +1282,21 @@ button:hover {
 }
 
 .axis-dropzone.vertical {
-    width: 40px;
+    width: 36px;
     height: 100%;
     margin-top: 0;
 }
 
 .axis-dropzone.drag-over {
-    border-color: #3b82f6;
+    outline-color: #3b82f6;
+    outline-style: solid;
     background: #eff6ff;
     transform: scale(1.02);
 }
 
 .axis-dropzone.filled {
-    border-style: solid;
-    border-color: #3b82f6;
+    outline-style: solid;
+    outline-color: #3b82f6;
     background: #fff;
 }
 

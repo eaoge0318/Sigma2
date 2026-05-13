@@ -7,7 +7,7 @@ import * as UI from './dashboard_modules/ui_core.js';
 import * as Session from './dashboard_modules/session.js';
 import * as Charts from './dashboard_modules/charts_manager.js';
 import * as FileMgr from './dashboard_modules/file_manager.js';
-import * as Analysis from './dashboard_modules/analysis_manager.js';
+import * as Analysis from './dashboard_modules/analysis_manager.js?v=2';
 import * as Training from './dashboard_modules/training_manager.js';
 import * as Models from './dashboard_modules/models_manager.js';
 import * as Dashboard from './dashboard_modules/dashboard_render.js';

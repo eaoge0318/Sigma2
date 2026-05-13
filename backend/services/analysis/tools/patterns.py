@@ -30,7 +30,7 @@ class FindTemporalPatternsTool(AnalysisTool):
             summary = self.analysis_service.load_summary(session_id, file_id)
             filename = summary["filename"]
             csv_path = (
-                self.analysis_service.base_dir / session_id / "uploads" / filename
+                self.analysis_service.get_csv_path(session_id, filename)
             )
 
             df = pd.read_csv(csv_path, usecols=[col])
@@ -241,12 +241,7 @@ class FindEventPatternsTool(AnalysisTool):
 
         try:
             summary = self.analysis_service.load_summary(session_id, file_id)
-            csv_path = (
-                self.analysis_service.base_dir
-                / session_id
-                / "uploads"
-                / summary["filename"]
-            )
+            csv_path = self.analysis_service.get_csv_path(session_id, summary["filename"])
 
             # 帶入 lambda 解析以防 usecols 崩潰
             df = pd.read_csv(csv_path, usecols=lambda x: x in cols)

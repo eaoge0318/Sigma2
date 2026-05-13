@@ -66,12 +66,7 @@ class CorrelationBreakdownTool(AnalysisTool):
         # --- 1. 讀取原始資料 ---
         try:
             summary = self.analysis_service.load_summary(session_id, file_id)
-            csv_path = (
-                self.analysis_service.base_dir
-                / session_id
-                / "uploads"
-                / summary["filename"]
-            )
+            csv_path = self.analysis_service.get_csv_path(session_id, summary["filename"])
             df = pd.read_csv(csv_path)
         except Exception as e:
             return {"error": f"資料讀取失敗: {e}"}

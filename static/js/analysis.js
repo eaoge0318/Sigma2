@@ -51,6 +51,15 @@ window._openLightbox = function (srcs, startIdx = 0) {
     document.body.appendChild(overlay);
 };
 
+// ── Column alias helper (reads cross-iframe localStorage) ──
+function _iaAlias(colName) {
+    try {
+        if (localStorage.getItem('sigma2_useAlias') !== '1') return colName;
+        const map = JSON.parse(localStorage.getItem('sigma2_aliases') || '{}');
+        return map[colName] || colName;
+    } catch(_) { return colName; }
+}
+
 class IntelligentAnalysis {
     constructor() {
         // 帳號 ID: 從父視窗繼承 (Dashboard 的 SESSION_ID)，用於隔離不同帳號
@@ -2771,14 +2780,14 @@ class IntelligentAnalysis {
         // Use categories if available for better grouping
         if (this.currentFileCategories && Object.keys(this.currentFileCategories).length > 0) {
             Object.entries(this.currentFileCategories).forEach(([catName, params]) => {
-                const filteredParams = params.filter(p => p.toLowerCase().includes(lowerFilter));
+                const filteredParams = params.filter(p => p.toLowerCase().includes(lowerFilter) || _iaAlias(p).toLowerCase().includes(lowerFilter));
                 if (filteredParams.length > 0) {
                     const group = document.createElement('optgroup');
                     group.label = catName;
                     filteredParams.forEach(param => {
                         const opt = document.createElement('option');
                         opt.value = param;
-                        opt.text = param;
+                        opt.text = _iaAlias(param);
                         group.appendChild(opt);
                     });
                     select.appendChild(group);
@@ -2787,10 +2796,10 @@ class IntelligentAnalysis {
         } else {
             // Fallback to flat list
             this.currentFileParams.forEach(param => {
-                if (param.toLowerCase().includes(lowerFilter)) {
+                if (param.toLowerCase().includes(lowerFilter) || _iaAlias(param).toLowerCase().includes(lowerFilter)) {
                     const opt = document.createElement('option');
                     opt.value = param;
-                    opt.text = param;
+                    opt.text = _iaAlias(param);
                     select.appendChild(opt);
                 }
             });

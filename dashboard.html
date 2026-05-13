@@ -1051,6 +1051,9 @@
                 <div class="nav-item" onclick="switchView('knowledge-docs')" id="nav-knowledge-docs">
                     <span>📚</span> <span class="nav-text">知識文件</span>
                 </div>
+                <div class="nav-item" onclick="switchView('material-analysis')" id="nav-material-analysis">
+                    <span>🧪</span> <span class="nav-text">原料分析</span>
+                </div>
 
                 <!-- Bottom bar: Settings + User -->
                 <!-- User Profile — 連點 3 下開啟系統管理員 -->
@@ -2201,6 +2204,13 @@
                     </iframe>
                 </div>
 
+                <!-- VIEW: Material Analysis (iframe) -->
+                <div id="view-material-analysis" style="display: none;">
+                    <iframe id="material-analysis-iframe" frameborder="0"
+                        style="width: 100%; height: calc(100vh - 60px); border: none; background: #f2f3f8;">
+                    </iframe>
+                </div>
+
             </div> <!-- End Main Content Area -->
         </div> <!-- End App Content -->
     </div> <!-- End Container -->
@@ -2485,6 +2495,15 @@
         // Run after page load
         document.addEventListener('DOMContentLoaded', () => {
             setTimeout(directLoadDashboardLists, 1500);
+
+            // 同步別名模式到後端（確保 shadow 檔案存在）
+            const _aliasOn = localStorage.getItem('sigma2_useAlias') === '1';
+            const _sid = localStorage.getItem('sigma2_session_id') || 'default';
+            fetch(`/api/files/alias-mode?session_id=${encodeURIComponent(_sid)}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ enabled: _aliasOn })
+            }).catch(() => {});
         });
 
         // Also bind to the click as backup

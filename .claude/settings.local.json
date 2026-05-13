@@ -23,7 +23,19 @@
       "Bash(curl -s \"http://localhost:8001/static/js/me_manager.js\")",
       "Bash(grep -v \"^.*//.*remove\")",
       "Bash(grep -n \"apriori\\\\|association\\\\|mlxtend\" /c/Users/foresight/Desktop/MantleTemp/pythaon/Sigma2/backend/routers/*.py)",
-      "Bash(\"C:\\\\Users\\\\foresight\\\\AppData\\\\Local\\\\Programs\\\\Python\\\\Python312\\\\python.exe\" -m pip install mlxtend --quiet)"
+      "Bash(\"C:\\\\Users\\\\foresight\\\\AppData\\\\Local\\\\Programs\\\\Python\\\\Python312\\\\python.exe\" -m pip install mlxtend --quiet)",
+      "Bash(grep -E \"\\\\.py$\")",
+      "Bash(ls \"C:\\\\Users\\\\foresight\\\\Desktop\\\\MantleTemp\\\\pythaon\\\\System_TEST\")",
+      "Read(//c/Users/foresight/Desktop/MantleTemp/pythaon/System_TEST/**)",
+      "PowerShell(Get-NetTCPConnection -LocalPort 8001 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { $p = Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue; [PSCustomObject]@{ PID = $_.OwningProcess; Name = $p.ProcessName; Path = $p.Path; StartTime = $p.StartTime } })",
+      "PowerShell(Get-Process -Id 39476 | Select-Object Id, ProcessName, Path, StartTime, @{N='CmdLine';E={\\(Get-CimInstance Win32_Process -Filter \"ProcessId=39476\"\\).CommandLine}})",
+      "Bash(cp \"C:\\\\Users\\\\foresight\\\\Desktop\\\\MantleTemp\\\\pythaon\\\\System_TEST\\\\material_analysis.html\" \"c:\\\\Users\\\\foresight\\\\Desktop\\\\MantleTemp\\\\pythaon\\\\Sigma2\\\\static\\\\html\\\\material_analysis.html\" && ls \"c:\\\\Users\\\\foresight\\\\Desktop\\\\MantleTemp\\\\pythaon\\\\Sigma2\\\\static\\\\html\\\\material_analysis.html\")",
+      "PowerShell(python -c \"import ast; ast.parse\\(open\\(r'c:\\\\Users\\\\foresight\\\\Desktop\\\\MantleTemp\\\\pythaon\\\\Sigma2\\\\backend\\\\routers\\\\material_router.py', encoding='utf-8'\\).read\\(\\)\\); print\\('OK: material_router.py syntax valid'\\)\")",
+      "PowerShell(python -c \"import ast; ast.parse\\(open\\(r'c:\\\\Users\\\\foresight\\\\Desktop\\\\MantleTemp\\\\pythaon\\\\Sigma2\\\\api_entry.py', encoding='utf-8'\\).read\\(\\)\\); print\\('OK: api_entry.py syntax valid'\\)\")",
+      "PowerShell(python -c \"import botorch, gpytorch; print\\('botorch', botorch.__version__\\); print\\('gpytorch', gpytorch.__version__\\)\" 2>&1)"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\foresight\\Desktop\\MantleTemp\\pythaon\\System_TEST"
     ]
   }
 }

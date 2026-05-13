@@ -15,6 +15,31 @@ from fastapi import UploadFile, HTTPException
 import config as app_config
 
 
+def _safe_sid(session_id: str) -> str:
+    """跟 FileService.get_user_path 一致的 session_id 安全過濾"""
+    s = "".join(c for c in session_id if c.isalnum() or c in ("-", "_")).strip()
+    return s if s else "default"
+
+
+def resolve_uploads_path(base_dir, session_id: str):
+    """Standalone helper: returns alias_cache/ if alias mode ON, else uploads/.
+    Works with both str and Path base_dir. Returns a Path object."""
+    import json
+    sid = _safe_sid(session_id)
+    base = Path(base_dir)
+    mode_path = base / sid / "configs" / "alias_mode.json"
+    try:
+        if mode_path.exists():
+            with open(mode_path, "r", encoding="utf-8") as f:
+                if json.load(f).get("enabled"):
+                    cache_dir = base / sid / "alias_cache"
+                    if cache_dir.is_dir():
+                        return cache_dir
+    except Exception:
+        pass
+    return base / sid / "uploads"
+
+
 class FileService:
     """檔案管理服務，實作多租戶隔離"""
 
@@ -41,6 +66,56 @@ class FileService:
     def get_user_upload_dir(self, session_id: str) -> str:
         """相容性方法：取得上傳目錄"""
         return self.get_user_path(session_id, "uploads")
+
+    def _sync_shadow_for_file(self, session_id: str, filename: str):
+        """若別名模式 ON，為單一檔案產生 shadow 副本到 alias_cache/"""
+        import json as _json
+        configs_dir = self.get_user_path(session_id, "configs")
+        mode_path = os.path.join(configs_dir, "alias_mode.json")
+        alias_path = os.path.join(configs_dir, "column_aliases.json")
+        try:
+            if not os.path.exists(mode_path):
+                return
+            with open(mode_path, "r", encoding="utf-8") as f:
+                if not _json.load(f).get("enabled"):
+                    return
+            if not os.path.exists(alias_path):
+                return
+            with open(alias_path, "r", encoding="utf-8") as f:
+                aliases = _json.load(f)
+            if not aliases:
+                return
+            uploads_dir = self.get_user_upload_dir(session_id)
+            src = os.path.join(uploads_dir, filename)
+            cache_dir = self.get_user_path(session_id, "alias_cache")
+            dst = os.path.join(cache_dir, filename)
+            with open(src, "r", encoding="utf-8-sig") as f_in:
+                header_line = f_in.readline()
+                rest = f_in.read()
+            cols = header_line.rstrip("\r\n").split(",")
+            new_cols = [aliases.get(c.strip(), c.strip()) for c in cols]
+            new_header = ",".join(new_cols) + "\n"
+            with open(dst, "w", encoding="utf-8-sig", newline="") as f_out:
+                f_out.write(new_header)
+                f_out.write(rest)
+        except Exception:
+            pass
+
+    def resolve_uploads_dir(self, session_id: str) -> str:
+        """取得實際讀取目錄：別名模式 ON → alias_cache/，OFF → uploads/"""
+        import json
+        configs_dir = self.get_user_path(session_id, "configs")
+        mode_path = os.path.join(configs_dir, "alias_mode.json")
+        try:
+            if os.path.exists(mode_path):
+                with open(mode_path, "r", encoding="utf-8") as f:
+                    if json.load(f).get("enabled"):
+                        cache_dir = self.get_user_path(session_id, "alias_cache")
+                        if os.path.isdir(cache_dir):
+                            return cache_dir
+        except Exception:
+            pass
+        return self.get_user_upload_dir(session_id)
 
     async def upload_file(
         self,
@@ -217,6 +292,10 @@ class FileService:
 
             logger.info(f"[Upload] Processing finished: {file_path}")
 
+            # 若別名模式 ON，為新上傳的 CSV 產生 shadow 副本
+            if filename.lower().endswith(".csv"):
+                self._sync_shadow_for_file(session_id, filename)
+
             return {
                 "filename": filename,
                 "path": file_path,
@@ -304,10 +383,21 @@ class FileService:
         if not filename or ".." in filename:
             raise HTTPException(400, detail="Invalid filename")
 
-        upload_dir = self.get_user_upload_dir(session_id)
+        upload_dir = self.resolve_uploads_dir(session_id)
         file_path = os.path.join(upload_dir, os.path.basename(filename))
         if not os.path.exists(file_path):
-            raise HTTPException(404, detail="File not found")
+            # Fallback: alias_cache 裡沒有，嘗試從真實 uploads/ 找
+            real_dir = self.get_user_upload_dir(session_id)
+            fallback = os.path.join(real_dir, os.path.basename(filename))
+            if os.path.exists(fallback):
+                # 順便補做 shadow sync
+                try:
+                    self._sync_shadow_for_file(session_id, os.path.basename(filename))
+                except Exception:
+                    pass
+                file_path = fallback
+            else:
+                raise HTTPException(404, detail="File not found")
 
         total_lines = 0
         with open(file_path, "r", encoding="utf-8", errors="replace") as f:
@@ -381,9 +471,19 @@ class FileService:
             raise HTTPException(500, detail=f"View failed: {str(e)}")
 
     def get_file_path(self, filename: str, session_id: str = "default") -> str:
-        """取得檔案的完整路徑"""
-        upload_dir = self.get_user_upload_dir(session_id)
-        return os.path.join(upload_dir, os.path.basename(filename))
+        """取得檔案的完整路徑（別名模式 ON 時指向 alias_cache，找不到則 fallback 到 uploads）"""
+        upload_dir = self.resolve_uploads_dir(session_id)
+        path = os.path.join(upload_dir, os.path.basename(filename))
+        if not os.path.exists(path):
+            real_dir = self.get_user_upload_dir(session_id)
+            fallback = os.path.join(real_dir, os.path.basename(filename))
+            if os.path.exists(fallback):
+                try:
+                    self._sync_shadow_for_file(session_id, os.path.basename(filename))
+                except Exception:
+                    pass
+                return fallback
+        return path
 
     async def clear_user_workspace(self, session_id: str) -> Dict[str, str]:
         """清理使用者的工作空間 (刪除所有資料夾)"""

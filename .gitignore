@@ -28,3 +28,7 @@ archives/
 **/uploads/*.xlsx
 
 workspace/
+Sigma2_Deploy*/
+Sigma2_Deploy*.7z
+err.txt
+endpoints.txt

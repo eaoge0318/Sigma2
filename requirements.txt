@@ -37,6 +37,10 @@ threadpoolctl==3.6.0
 patsy==1.0.2
 slicer==0.0.8
 
+# --- Bayesian Optimization (BoTorch for material analysis) ---
+botorch>=0.11.0
+gpytorch>=1.11
+
 # --- Deep RL (d3rlpy + deps) ---
 d3rlpy==2.8.1
 torch==2.9.1

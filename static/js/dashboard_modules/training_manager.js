@@ -7,6 +7,15 @@ import { DOM, API } from './utils.js';
 // switchTrainingMainTab removed from import as it is now defined locally
 import { drawGoalChart, updateGoalChartLines, resizeAllCharts } from './charts_manager.js';
 
+// ── Column alias helper (reads cross-iframe localStorage) ──
+function _trainAlias(colName) {
+    try {
+        if (localStorage.getItem('sigma2_useAlias') !== '1') return colName;
+        const map = JSON.parse(localStorage.getItem('sigma2_aliases') || '{}');
+        return map[colName] || colName;
+    } catch(_) { return colName; }
+}
+
 const ALGO_CONFIG_MANIFEST = {
     "IQL": {
         "batch_size": { label: "批量大小 (Batch)", val: 1024, type: "number", hint: "推薦 1024" },
@@ -197,7 +206,7 @@ export async function loadTrainingMetadata(filename) {
             if (!h) return;
             // Goal Option
             const opt = document.createElement('option');
-            opt.value = h; opt.innerText = h;
+            opt.value = h; opt.innerText = _trainAlias(h);
             goalSelect.appendChild(opt);
 
             // ML Features
@@ -206,7 +215,7 @@ export async function loadTrainingMetadata(filename) {
                 const lbl = document.createElement('label');
                 lbl.className = 'feature-item-label';
                 lbl.style.cssText = 'display:block; padding:8px 10px; font-size:13px; cursor:pointer; border-radius:6px; transition:all 0.2s;';
-                lbl.innerHTML = `<input type="checkbox" name="model-feature" value="${h}" checked style="margin-right:12px; transform:scale(1.1);"> ${h}`;
+                lbl.innerHTML = `<input type="checkbox" name="model-feature" value="${h}" checked style="margin-right:12px; transform:scale(1.1);"> ${_trainAlias(h)}`;
                 featuresList.appendChild(lbl);
             }
 
@@ -215,7 +224,7 @@ export async function loadTrainingMetadata(filename) {
             if (rlActionsList) {
                 const lbl = document.createElement('label');
                 lbl.style.cssText = 'display:block; padding:6px; font-size:12px; cursor:pointer;';
-                lbl.innerHTML = `<input type="checkbox" name="rl-action" value="${h}" style="margin-right:8px;"> ${h}`;
+                lbl.innerHTML = `<input type="checkbox" name="rl-action" value="${h}" style="margin-right:8px;"> ${_trainAlias(h)}`;
                 rlActionsList.appendChild(lbl);
             }
 
@@ -224,7 +233,7 @@ export async function loadTrainingMetadata(filename) {
             if (rlStatesList) {
                 const lbl = document.createElement('label');
                 lbl.style.cssText = 'display:block; padding:6px; font-size:12px; cursor:pointer;';
-                lbl.innerHTML = `<input type="checkbox" name="rl-state" value="${h}" checked style="margin-right:8px;"> ${h}`;
+                lbl.innerHTML = `<input type="checkbox" name="rl-state" value="${h}" checked style="margin-right:8px;"> ${_trainAlias(h)}`;
                 rlStatesList.appendChild(lbl);
             }
         });
@@ -248,8 +257,8 @@ export async function loadTrainingMetadata(filename) {
 }
 
 export function syncGoalToAll(val) {
-    DOM.setText('display-ml-target', val || '(未設定)');
-    DOM.setText('display-rl-reward', val || '(未設定)');
+    DOM.setText('display-ml-target', val ? _trainAlias(val) : '(未設定)');
+    DOM.setText('display-rl-reward', val ? _trainAlias(val) : '(未設定)');
 
     if (!val) {
         drawGoalChart(null);
@@ -323,7 +332,7 @@ export function initStep2Lists() {
             container.innerHTML = '<div style="padding: 20px; text-align: center; color: #94a3b8; font-size: 11px;">無可用參數</div>';
         } else {
             container.innerHTML = availableCols.map(col => `
-                <div class="list-item" draggable="true" ondragstart="handleTrainingDragStart(event)" onclick="toggleListItem(this)" ondblclick="moveSingleItem(this)" data-value="${col}">${col}</div>
+                <div class="list-item" draggable="true" ondragstart="handleTrainingDragStart(event)" onclick="toggleListItem(this)" ondblclick="moveSingleItem(this)" data-value="${col}" title="${col}">${_trainAlias(col)}</div>
             `).join('');
         }
     });
@@ -353,7 +362,7 @@ export function initStep3Lists() {
         container.innerHTML = '<div style="padding: 20px; text-align: center; color: #94a3b8; font-size: 11px;">無可用參數</div>';
     } else {
         container.innerHTML = availableCols.map(col => `
-            <div class="list-item" draggable="true" ondragstart="handleTrainingDragStart(event)" onclick="toggleListItem(this)" ondblclick="moveSingleItem(this)" data-value="${col}">${col}</div>
+            <div class="list-item" draggable="true" ondragstart="handleTrainingDragStart(event)" onclick="toggleListItem(this)" ondblclick="moveSingleItem(this)" data-value="${col}" title="${col}">${_trainAlias(col)}</div>
         `).join('');
     }
 
@@ -690,7 +699,10 @@ export function handleTrainingDrop(ev, targetType, direction) {
 export function filterFeatureList(query) {
     const lowerQuery = query.toLowerCase();
     document.querySelectorAll('.feature-item-label').forEach(label => {
-        label.style.display = label.innerText.toLowerCase().includes(lowerQuery) ? 'block' : 'none';
+        const cb = label.querySelector('input');
+        const origName = cb ? cb.value.toLowerCase() : '';
+        const match = label.innerText.toLowerCase().includes(lowerQuery) || origName.includes(lowerQuery);
+        label.style.display = match ? 'block' : 'none';
     });
 }
 
@@ -1781,10 +1793,10 @@ export async function loadModelRegistry() {
             let infoText = `模型名稱：${displayName}\\n`;
             infoText += `Job ID：${m.job_id}\\n`;
             infoText += `任務類型：${mType === 'rl' ? '最佳策略 (RL)' : '數據預測 (ML)'}\\n`;
-            infoText += `目標標的：${displayTarget}\\n`;
-            if (m.actions && m.actions.length > 0) infoText += `控制參數 (Actions)：${m.actions.join(', ')}\\n`;
-            if (m.states && m.states.length > 0) infoText += `環境狀態 (States)：${m.states.join(', ')}\\n`;
-            if (m.features && m.features.length > 0) infoText += `預測特徵 (Features)：${m.features.join(', ')}\\n`;
+            infoText += `目標標的：${_trainAlias(displayTarget)}\\n`;
+            if (m.actions && m.actions.length > 0) infoText += `控制參數 (Actions)：${m.actions.map(a => _trainAlias(a)).join(', ')}\\n`;
+            if (m.states && m.states.length > 0) infoText += `環境狀態 (States)：${m.states.map(s => _trainAlias(s)).join(', ')}\\n`;
+            if (m.features && m.features.length > 0) infoText += `預測特徵 (Features)：${m.features.map(f => _trainAlias(f)).join(', ')}\\n`;
 
             const isTraining = m.status === 'training';
 
@@ -1798,7 +1810,7 @@ export async function loadModelRegistry() {
                     </span>
                 </td>
                 <td style="padding: 12px 15px;">
-                    <span style="${tagStyle}">${displayTarget}</span>
+                    <span style="${tagStyle}" title="${displayTarget}">${_trainAlias(displayTarget)}</span>
                 </td>
                 <td style="padding: 12px 15px;">
                     <span style="${tagStyle}">${displayStrategy}</span>

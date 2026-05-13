@@ -32,12 +32,7 @@ class DistributionShiftTool(AnalysisTool):
         parameters = params.get("parameters")
 
         summary = self.analysis_service.load_summary(session_id, file_id)
-        csv_path = (
-            self.analysis_service.base_dir
-            / session_id
-            / "uploads"
-            / summary["filename"]
-        )
+        csv_path = self.analysis_service.get_csv_path(session_id, summary["filename"])
         df = pd.read_csv(csv_path)
 
         t_idx = self.parse_indices(target_input, max_len=len(df))
@@ -126,12 +121,7 @@ class LocalOutlierFactorTool(AnalysisTool):
             param_list = [p.strip() for p in param_list.split(",")]
 
         summary = self.analysis_service.load_summary(session_id, file_id)
-        csv_path = (
-            self.analysis_service.base_dir
-            / session_id
-            / "uploads"
-            / summary["filename"]
-        )
+        csv_path = self.analysis_service.get_csv_path(session_id, summary["filename"])
         df = pd.read_csv(csv_path, usecols=param_list).dropna()
 
         if len(df) < 50:
@@ -176,12 +166,7 @@ class CausalRelationshipTool(AnalysisTool):
         refs = params.get("reference_parameters")
 
         summary = self.analysis_service.load_summary(session_id, file_id)
-        csv_path = (
-            self.analysis_service.base_dir
-            / session_id
-            / "uploads"
-            / summary["filename"]
-        )
+        csv_path = self.analysis_service.get_csv_path(session_id, summary["filename"])
 
         # --- Auto-detect references if not provided ---
         if not refs:
@@ -274,12 +259,7 @@ class AnalyzeResidualsTool(AnalysisTool):
             features = [f.strip() for f in features.split(",") if f.strip()]
 
         summary = self.analysis_service.load_summary(session_id, file_id)
-        csv_path = (
-            self.analysis_service.base_dir
-            / session_id
-            / "uploads"
-            / summary["filename"]
-        )
+        csv_path = self.analysis_service.get_csv_path(session_id, summary["filename"])
 
         # Load correlations to auto-select features if missing
         if not features:

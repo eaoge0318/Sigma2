@@ -164,6 +164,13 @@ class AnalysisService:
             df = pd.DataFrame(req.rows, columns=req.headers)
             df.to_csv(file_path, index=False, encoding="utf-8-sig")
 
+            # 同步 shadow file（alias mode 時 view_file 才找得到）
+            try:
+                from backend.services.file_service import FileService
+                FileService()._sync_shadow_for_file(session_id, safe_filename)
+            except Exception:
+                pass  # shadow sync 失敗不影響主流程
+
             return {
                 "status": "success",
                 "filename": safe_filename,

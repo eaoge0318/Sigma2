@@ -14,6 +14,9 @@ let _hmTipEl = null;
 let _hmColorScheme = 'bluered';
 let _lastDrawnColsKey = '';  // track column selection for pin clearing
 let _hmLastFilename = '';    // track last loaded filename to reset state
+let _hmChartMode = 'heatmap'; // 'heatmap' | 'boxplot'
+let _hmRowOrder = 'asc';      // 'asc' (原始) | 'desc' (逆排)
+let _hmColOrder = 'asc';      // 'asc' (原始) | 'desc' (逆排)
 
 // Brush selection mode state
 let _brushMode = false;
@@ -194,8 +197,70 @@ export function setHeatmapColorScheme(scheme) {
 }
 
 export function drawHeatmap() {
-    console.log('[Heatmap] draw:', _hmRows.length, 'rows,', _hmSelectedCols.length, 'selected cols');
-    renderHeatmap();
+    console.log('[Heatmap] draw:', _hmRows.length, 'rows,', _hmSelectedCols.length, 'selected cols, mode:', _hmChartMode);
+    if (_hmChartMode === 'boxplot') {
+        renderBoxPlot();
+    } else {
+        renderHeatmap();
+    }
+}
+
+export function setHmChartMode(mode) {
+    _hmChartMode = mode;
+    // Toggle button styles
+    const btnHm = document.getElementById('hm-chartmode-heatmap');
+    const btnBp = document.getElementById('hm-chartmode-boxplot');
+    if (btnHm) {
+        btnHm.style.background = mode === 'heatmap' ? '#fff' : '#e2e8f0';
+        btnHm.style.color = mode === 'heatmap' ? '#3b82f6' : '#64748b';
+        btnHm.style.boxShadow = mode === 'heatmap' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none';
+    }
+    if (btnBp) {
+        btnBp.style.background = mode === 'boxplot' ? '#fff' : '#e2e8f0';
+        btnBp.style.color = mode === 'boxplot' ? '#3b82f6' : '#64748b';
+        btnBp.style.boxShadow = mode === 'boxplot' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none';
+    }
+    drawHeatmap();
+}
+
+export function setHmRowOrder(order) {
+    _hmRowOrder = order;  // 'asc' | 'desc'
+    // Update toggle button styles
+    const btnAsc = document.getElementById('hm-order-asc');
+    const btnDesc = document.getElementById('hm-order-desc');
+    if (btnAsc) {
+        btnAsc.style.background = order === 'asc' ? '#fff' : '#e2e8f0';
+        btnAsc.style.color = order === 'asc' ? '#3b82f6' : '#64748b';
+        btnAsc.style.boxShadow = order === 'asc' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none';
+    }
+    if (btnDesc) {
+        btnDesc.style.background = order === 'desc' ? '#fff' : '#e2e8f0';
+        btnDesc.style.color = order === 'desc' ? '#3b82f6' : '#64748b';
+        btnDesc.style.boxShadow = order === 'desc' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none';
+    }
+    drawHeatmap();
+}
+
+// Map display row index to data row index (handles row order reversal)
+function _rowIdx(displayRow, nRows) {
+    return _hmRowOrder === 'desc' ? (nRows - 1 - displayRow) : displayRow;
+}
+
+export function setHmColOrder(order) {
+    _hmColOrder = order;
+    const btnAsc = document.getElementById('hm-col-order-asc');
+    const btnDesc = document.getElementById('hm-col-order-desc');
+    if (btnAsc) {
+        btnAsc.style.background = order === 'asc' ? '#fff' : '#e2e8f0';
+        btnAsc.style.color = order === 'asc' ? '#3b82f6' : '#64748b';
+        btnAsc.style.boxShadow = order === 'asc' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none';
+    }
+    if (btnDesc) {
+        btnDesc.style.background = order === 'desc' ? '#fff' : '#e2e8f0';
+        btnDesc.style.color = order === 'desc' ? '#3b82f6' : '#64748b';
+        btnDesc.style.boxShadow = order === 'desc' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none';
+    }
+    drawHeatmap();
 }
 
 export function filterHeatmapCols(keyword) {
@@ -319,12 +384,245 @@ function renderColumnSelector() {
 
 // ─── Canvas Rendering ───
 
+// ─── Box Plot Renderer ───
+function renderBoxPlot() {
+    if (!_hmCanvas || !_hmCtx) return;
+    const wrap = document.getElementById('hm-canvas-wrap');
+    if (!wrap) return;
+
+    const cols = _hmSelectedCols.slice().sort((a, b) => {
+        const d = _hmAllCols.indexOf(a) - _hmAllCols.indexOf(b);
+        return _hmColOrder === 'desc' ? -d : d;
+    });
+    const nCols = cols.length;
+    const nRows = _hmRows.length;
+
+    const dpr = window.devicePixelRatio || 1;
+    const W = wrap.clientWidth || 800;
+    const H = Math.max(400, window.innerHeight - 200);
+    _hmCanvas.width = W * dpr;
+    _hmCanvas.height = H * dpr;
+    _hmCanvas.style.width = W + 'px';
+    _hmCanvas.style.height = H + 'px';
+
+    const ctx = _hmCtx;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, W, H);
+
+    if (nCols === 0 || nRows === 0) {
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '14px Inter, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(nCols === 0 ? '請勾選要顯示的欄位' : '無資料', W / 2, H / 2);
+        return;
+    }
+
+    const pad = { top: 46, bottom: 80, left: 60, right: 20 };
+    const plotW = W - pad.left - pad.right;
+    const plotH = H - pad.top - pad.bottom;
+    const colW = plotW / nCols;
+    const boxW = Math.min(colW * 0.5, 40);
+
+    // Compute stats per column (respecting normalize mode)
+    const normalizeMode = document.getElementById('hm-normalize')?.value || 'raw';
+    const colIndices = cols.map(c => _hmHeaders.indexOf(c));
+    const stats = [];
+
+    for (let c = 0; c < nCols; c++) {
+        const raw = [];
+        for (let r = 0; r < nRows; r++) {
+            const v = Number(_hmRows[r][colIndices[c]]);
+            if (!isNaN(v) && isFinite(v)) raw.push(v);
+        }
+        if (raw.length === 0) { stats.push(null); continue; }
+
+        // Apply normalization
+        let vals;
+        if (normalizeMode === 'zscore') {
+            const mean = raw.reduce((a, b) => a + b, 0) / raw.length;
+            const std = Math.sqrt(raw.reduce((a, b) => a + (b - mean) ** 2, 0) / raw.length) || 1;
+            vals = raw.map(v => (v - mean) / std);
+        } else {
+            vals = raw.slice();
+        }
+
+        vals.sort((a, b) => a - b);
+        const n = vals.length;
+        const q1 = vals[Math.floor(n * 0.25)];
+        const median = vals[Math.floor(n * 0.5)];
+        const q3 = vals[Math.floor(n * 0.75)];
+        const iqr = q3 - q1;
+        const wLo = Math.max(vals[0], q1 - 1.5 * iqr);
+        const wHi = Math.min(vals[n - 1], q3 + 1.5 * iqr);
+        const outliers = vals.filter(v => v < wLo || v > wHi);
+        stats.push({ q1, median, q3, iqr, wLo, wHi, min: vals[0], max: vals[n - 1], n, outliers, mean: vals.reduce((a, b) => a + b, 0) / n });
+    }
+
+    // Global Y range across all columns
+    let gMin = Infinity, gMax = -Infinity;
+    for (const s of stats) {
+        if (!s) continue;
+        const lo = s.outliers.length > 0 ? Math.min(s.min, ...s.outliers) : s.min;
+        const hi = s.outliers.length > 0 ? Math.max(s.max, ...s.outliers) : s.max;
+        if (lo < gMin) gMin = lo;
+        if (hi > gMax) gMax = hi;
+    }
+    const gMargin = (gMax - gMin) * 0.05 || 1;
+    gMin -= gMargin;
+    gMax += gMargin;
+
+    function yMap(val) {
+        const t = (val - gMin) / (gMax - gMin);
+        return pad.top + plotH * (1 - t);
+    }
+
+    // Y-axis grid lines and labels
+    ctx.strokeStyle = '#f1f5f9';
+    ctx.lineWidth = 1;
+    const nTicks = 8;
+    ctx.font = '12px Inter, sans-serif';
+    ctx.fillStyle = '#94a3b8';
+    ctx.textAlign = 'right';
+    for (let i = 0; i <= nTicks; i++) {
+        const val = gMin + (gMax - gMin) * (i / nTicks);
+        const y = Math.round(pad.top + plotH * (1 - i / nTicks)) + 0.5;
+        ctx.beginPath();
+        ctx.moveTo(pad.left, y);
+        ctx.lineTo(W - pad.right, y);
+        ctx.stroke();
+        const label = Math.abs(val) >= 1000 ? val.toFixed(0) : Math.abs(val) >= 1 ? val.toFixed(2) : val.toPrecision(3);
+        ctx.fillText(label, pad.left - 6, Math.round(y + 4));
+    }
+
+    // Draw each box
+    for (let c = 0; c < nCols; c++) {
+        const s = stats[c];
+        const cx = Math.round(pad.left + colW * c + colW / 2) + 0.5;
+
+        // X-axis label
+        ctx.save();
+        ctx.font = '11px Inter, sans-serif';
+        ctx.fillStyle = '#475569';
+        ctx.textAlign = 'right';
+        ctx.translate(Math.round(cx), Math.round(H - pad.bottom + 10));
+        ctx.rotate(-Math.PI / 4);
+        ctx.fillText(cols[c], 0, 0);
+        ctx.restore();
+
+        if (!s) continue;
+
+        const yFn = v => yMap(v);
+        const x1 = cx - boxW / 2;
+        const x2 = cx + boxW / 2;
+
+        // Whisker line (vertical)
+        ctx.strokeStyle = '#64748b';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(cx, yFn(s.wLo));
+        ctx.lineTo(cx, yFn(s.wHi));
+        ctx.stroke();
+
+        // Whisker caps
+        const capW = boxW * 0.4;
+        ctx.beginPath();
+        ctx.moveTo(cx - capW, yFn(s.wLo));
+        ctx.lineTo(cx + capW, yFn(s.wLo));
+        ctx.moveTo(cx - capW, yFn(s.wHi));
+        ctx.lineTo(cx + capW, yFn(s.wHi));
+        ctx.stroke();
+
+        // Box (Q1 to Q3)
+        const yQ1 = yFn(s.q1);
+        const yQ3 = yFn(s.q3);
+        const boxTop = Math.min(yQ1, yQ3);
+        const boxH = Math.abs(yQ1 - yQ3) || 1;
+        ctx.fillStyle = 'rgba(59, 130, 246, 0.15)';
+        ctx.fillRect(x1, boxTop, boxW, boxH);
+        ctx.strokeStyle = '#3b82f6';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(x1, boxTop, boxW, boxH);
+
+        // Median line
+        ctx.strokeStyle = '#ef4444';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(x1, yFn(s.median));
+        ctx.lineTo(x2, yFn(s.median));
+        ctx.stroke();
+
+        // Mean dot
+        ctx.fillStyle = '#22c55e';
+        ctx.beginPath();
+        ctx.arc(cx, yFn(s.mean), 3, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Outliers
+        ctx.fillStyle = 'rgba(239, 68, 68, 0.5)';
+        for (const o of s.outliers) {
+            ctx.beginPath();
+            ctx.arc(cx, yFn(o), 2, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+    }
+
+    // Legend (above plot area)
+    ctx.font = '12px Inter, sans-serif';
+    ctx.textAlign = 'left';
+    const lgX = pad.left;
+    const lgY = 14;
+    ctx.fillStyle = '#ef4444'; ctx.fillRect(lgX, lgY, 12, 2); ctx.fillStyle = '#475569'; ctx.fillText('中位數', lgX + 16, lgY + 4);
+    ctx.fillStyle = '#22c55e'; ctx.beginPath(); ctx.arc(lgX + 80, lgY + 1, 3, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#475569'; ctx.fillText('平均', lgX + 86, lgY + 4);
+    ctx.fillStyle = 'rgba(239, 68, 68, 0.5)'; ctx.beginPath(); ctx.arc(lgX + 130, lgY + 1, 2, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#475569'; ctx.fillText('離群值', lgX + 136, lgY + 4);
+
+    // Store layout for tooltip
+    _hmCanvas._bpLayout = { cols, stats, colW, padLeft: pad.left };
+}
+
+// ─── Copy / Download Chart ───
+export async function copyCanvasToClipboard() {
+    if (!_hmCanvas) return;
+    const _toast = (msg) => {
+        const t = document.createElement('div');
+        t.style.cssText = 'position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#1e293b;color:#fff;padding:10px 22px;border-radius:8px;font-size:13px;font-weight:600;z-index:99999;box-shadow:0 4px 16px rgba(0,0,0,0.2);pointer-events:none;white-space:nowrap;';
+        t.textContent = msg;
+        document.body.appendChild(t);
+        setTimeout(() => { t.style.transition = 'opacity 0.5s'; t.style.opacity = '0'; setTimeout(() => t.remove(), 500); }, 1800);
+    };
+
+    // Try Clipboard API (requires HTTPS or localhost)
+    if (navigator.clipboard && typeof ClipboardItem !== 'undefined') {
+        try {
+            const blob = await new Promise(resolve => _hmCanvas.toBlob(resolve, 'image/png'));
+            await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+            _toast('✓ 圖表已複製到剪貼簿');
+            return;
+        } catch (_) { /* fall through to download */ }
+    }
+
+    // Fallback: download PNG
+    const link = document.createElement('a');
+    link.download = `chart_${new Date().toISOString().slice(0,19).replace(/[T:]/g,'-')}.png`;
+    link.href = _hmCanvas.toDataURL('image/png');
+    link.click();
+    _toast('📥 已下載圖表 PNG');
+}
+
+// ─── Box Plot Tooltip ───
+// (tooltip reuses heatmap tooltip infrastructure, box plot hover handled via mousemove)
+
 function renderHeatmap() {
     if (!_hmCanvas || !_hmCtx) return;
     const wrap = document.getElementById('hm-canvas-wrap');
     if (!wrap) return;
 
-    const cols = _hmSelectedCols;
+    // Sort selected columns to match sidebar (top→bottom = _hmAllCols order)
+    const cols = _hmSelectedCols.slice().sort((a, b) => {
+        const d = _hmAllCols.indexOf(a) - _hmAllCols.indexOf(b);
+        return _hmColOrder === 'desc' ? -d : d;
+    });
     const nCols = cols.length;
     const nRows = _hmRows.length;
 
@@ -356,14 +654,16 @@ function renderHeatmap() {
             rowHInput.value = cellH.toFixed(2);
         }
     }
+    const dpr = window.devicePixelRatio || 1;
     const plotH = Math.round(nRows * cellH);
     const H = HM_PAD.top + plotH + HM_PAD.bottom;
-    _hmCanvas.width = W;
-    _hmCanvas.height = H;
+    _hmCanvas.width = W * dpr;
+    _hmCanvas.height = H * dpr;
     _hmCanvas.style.width = W + 'px';
     _hmCanvas.style.height = H + 'px';
 
     const ctx = _hmCtx;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.fillStyle = '#fff';
     ctx.fillRect(0, 0, W, H);
 
@@ -442,16 +742,17 @@ function renderHeatmap() {
     if (isFinite(userMin)) mins.fill(userMin);
     if (isFinite(userMax)) maxs.fill(userMax);
 
-    // Fast rendering via ImageData
-    const imgH = Math.ceil(plotH);
-    const imgData = ctx.createImageData(Math.ceil(plotW), imgH);
+    // Fast rendering via ImageData (scaled for HiDPI)
+    const imgW = Math.ceil(plotW * dpr);
+    const imgH = Math.ceil(plotH * dpr);
+    const imgData = ctx.createImageData(imgW, imgH);
     const pixels = imgData.data;
-    const imgW = imgData.width;
 
     for (let r = 0; r < nRows; r++) {
-        const row = _hmRows[r];
-        const pyStart = Math.floor(r * cellH);
-        const pyEnd = Math.min(Math.ceil((r + 1) * cellH), imgH);
+        const dataR = _rowIdx(r, nRows);
+        const row = _hmRows[dataR];
+        const pyStart = Math.floor(r * cellH * dpr);
+        const pyEnd = Math.min(Math.ceil((r + 1) * cellH * dpr), imgH);
         for (let c = 0; c < nCols; c++) {
             const rawV = Number(row[colIndices[c]]);
             let red, green, blue;
@@ -480,8 +781,8 @@ function renderHeatmap() {
                     }
                 }
             }
-            const pxStart = Math.floor(c * cellW);
-            const pxEnd = Math.min(Math.ceil((c + 1) * cellW), imgW);
+            const pxStart = Math.floor(c * cellW * dpr);
+            const pxEnd = Math.min(Math.ceil((c + 1) * cellW * dpr), imgW);
             for (let dy = pyStart; dy < pyEnd; dy++) {
                 const rowOff = dy * imgW;
                 for (let px = pxStart; px < pxEnd; px++) {
@@ -494,7 +795,7 @@ function renderHeatmap() {
             }
         }
     }
-    ctx.putImageData(imgData, HM_PAD.left, HM_PAD.top);
+    ctx.putImageData(imgData, HM_PAD.left * dpr, HM_PAD.top * dpr);
 
     // Grid lines between columns
     ctx.strokeStyle = 'rgba(255,255,255,0.3)';
@@ -509,7 +810,7 @@ function renderHeatmap() {
 
     // X axis labels (column names, rotated, show every Nth)
     ctx.fillStyle = '#334155';
-    ctx.font = '9px Inter, sans-serif';
+    ctx.font = '11px Inter, sans-serif';
     ctx.textAlign = 'left';
     const maxXLabels = Math.max(1, Math.floor(plotW / 80));
     const xStep = Math.max(1, Math.ceil(nCols / maxXLabels));
@@ -518,7 +819,7 @@ function renderHeatmap() {
         const x = HM_PAD.left + (c + 0.5) * cellW;
         const y = HM_PAD.top + plotH + 6;
         ctx.save();
-        ctx.translate(x, y);
+        ctx.translate(Math.round(x), Math.round(y));
         ctx.rotate(Math.PI / 4);
         const label = cols[c].length > 8 ? cols[c].slice(0, 7) + '…' : cols[c];
         ctx.fillText(label, 0, 0);
@@ -529,16 +830,17 @@ function renderHeatmap() {
     // Y axis labels (time ticks)
     const xColIdx = _hmHeaders.indexOf(_hmXCol);
     ctx.fillStyle = '#64748b';
-    ctx.font = '9px Inter, sans-serif';
+    ctx.font = '11px Inter, sans-serif';
     ctx.textAlign = 'right';
     const yTickCount = Math.min(nRows, 20);
     for (let i = 0; i < yTickCount; i++) {
         const rowIdx = Math.round(i * (nRows - 1) / Math.max(yTickCount - 1, 1));
         if (rowIdx >= nRows) continue;
-        const label = String(_hmRows[rowIdx][xColIdx] || rowIdx);
+        const dataR = _rowIdx(rowIdx, nRows);
+        const label = String(_hmRows[dataR][xColIdx] || rowIdx);
         const short = label.length > 20 ? label.slice(0, 18) + '…' : label;
-        const y = HM_PAD.top + rowIdx * cellH + cellH / 2 + 3;
-        ctx.fillText(short, HM_PAD.left - 6, y);
+        const y = Math.round(HM_PAD.top + rowIdx * cellH + cellH / 2) + 0.5;
+        ctx.fillText(short, HM_PAD.left - 6, y + 3);
     }
 
     // Color legend
@@ -572,7 +874,7 @@ function renderHeatmap() {
     }
 
     ctx.fillStyle = '#64748b';
-    ctx.font = '9px Inter, sans-serif';
+    ctx.font = '11px Inter, sans-serif';
     ctx.textAlign = 'left';
     ctx.fillText(isFinite(globalMax) ? globalMax.toFixed(2) : '—', legX + HM_LEGEND_W + 4, legY + 8);
     const globalMid = (globalMin + globalMax) / 2;
@@ -592,9 +894,10 @@ function renderHeatmap() {
 let _hmPinned = false; // is tooltip pinned?
 
 function _buildTooltipContent(L, col, row) {
+    const dataR = _rowIdx(row, L.nRows);
     const colName = L.cols[col];
-    const timeVal = _hmRows[row] ? String(_hmRows[row][L.xColIdx] || '') : '';
-    const rawV = Number(_hmRows[row][L.colIndices[col]]);
+    const timeVal = _hmRows[dataR] ? String(_hmRows[dataR][L.xColIdx] || '') : '';
+    const rawV = Number(_hmRows[dataR][L.colIndices[col]]);
     const valStr = isNaN(rawV) ? 'NaN' : rawV.toFixed(4);
 
     let lines = [];
@@ -612,10 +915,9 @@ function _getHeatmapCell(e) {
     if (!_hmCanvas?._hmLayout) return null;
     const L = _hmCanvas._hmLayout;
     const rect = _hmCanvas.getBoundingClientRect();
-    const scaleX = _hmCanvas.width / rect.width;
-    const scaleY = _hmCanvas.height / rect.height;
-    const mx = (e.clientX - rect.left) * scaleX;
-    const my = (e.clientY - rect.top) * scaleY;
+    // Use logical (CSS) coordinates — layout values are in CSS space
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
     const col = Math.floor((mx - HM_PAD.left) / L.cellW);
     const row = Math.floor((my - HM_PAD.top) / L.cellH);
     if (col < 0 || col >= L.nCols || row < 0 || row >= L.nRows) return null;
@@ -650,6 +952,37 @@ function setupHeatmapTooltip() {
         crossV.style.left = mx + 'px';
 
         if (!_hmTipEl) return;
+
+        // Box plot mode tooltip
+        if (_hmChartMode === 'boxplot' && _hmCanvas._bpLayout) {
+            const bpL = _hmCanvas._bpLayout;
+            const rect = _hmCanvas.getBoundingClientRect();
+            const canvasX = e.clientX - rect.left;
+            const col = Math.floor((canvasX - bpL.padLeft) / bpL.colW);
+            if (col >= 0 && col < bpL.stats.length && bpL.stats[col]) {
+                const s = bpL.stats[col];
+                const lines = [
+                    `<b style="color:#93c5fd;">${bpL.cols[col]}</b>  (n=${s.n})`,
+                    `Max: ${s.max.toFixed(4)}`,
+                    `Q3: ${s.q3.toFixed(4)}`,
+                    `<span style="color:#ef4444;">中位數: ${s.median.toFixed(4)}</span>`,
+                    `Q1: ${s.q1.toFixed(4)}`,
+                    `Min: ${s.min.toFixed(4)}`,
+                    `<span style="color:#86efac;">平均: ${s.mean.toFixed(4)}</span>`,
+                    `IQR: ${s.iqr.toFixed(4)}`,
+                    `離群值: ${s.outliers.length} 個`,
+                ];
+                _hmTipEl.innerHTML = lines.join('<br>');
+                _hmTipEl.style.display = 'block';
+                _hmTipEl.style.left = (e.clientX - rect.left + 14) + 'px';
+                _hmTipEl.style.top = (e.clientY - rect.top - 10) + 'px';
+            } else {
+                _hmTipEl.style.display = 'none';
+            }
+            return;
+        }
+
+        // Heatmap mode tooltip
         const hit = _getHeatmapCell(e);
         if (!hit) { _hmTipEl.style.display = 'none'; return; }
 
@@ -875,15 +1208,14 @@ function setupBrushMode() {
         if (!L) { _clearBrushOverlay(); return; }
 
         const rect   = _hmCanvas.getBoundingClientRect();
-        const scaleX = _hmCanvas.width / rect.width;
 
         const px1 = Math.min(_brushStartClient.x, e.clientX);
         const px2 = Math.max(_brushStartClient.x, e.clientX);
 
         if (px2 - px1 < 5) { _clearBrushOverlay(); return; }
 
-        const canvasX1 = (px1 - rect.left) * scaleX;
-        const canvasX2 = (px2 - rect.left) * scaleX;
+        const canvasX1 = px1 - rect.left;
+        const canvasX2 = px2 - rect.left;
         const colStart = Math.max(0,           Math.floor((canvasX1 - HM_PAD.left) / L.cellW));
         const colEnd   = Math.min(L.nCols - 1, Math.floor((canvasX2 - HM_PAD.left) / L.cellW));
 

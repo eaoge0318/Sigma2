@@ -1,0 +1,906 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>合併 CSV 檔案</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            font-family: 'Inter', 'Noto Sans TC', sans-serif;
+            background: #f1f5f9;
+            color: #1e293b;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* ── Titlebar ── */
+        .titlebar {
+            background: #fff;
+            border-bottom: 1px solid #e2e8f0;
+            padding: 0 24px;
+            height: 56px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-shrink: 0;
+        }
+        .titlebar-icon {
+            width: 36px; height: 36px;
+            background: linear-gradient(135deg, #6366f1, #818cf8);
+            border-radius: 10px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 18px; flex-shrink: 0;
+        }
+        .titlebar-title { font-size: 15px; font-weight: 700; color: #1e293b; }
+        .titlebar-sub   { font-size: 11px; color: #94a3b8; margin-top: 1px; }
+
+        /* ── Main layout ── */
+        .main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            padding: 20px 24px;
+            max-width: 960px;
+            width: 100%;
+            margin: 0 auto;
+        }
+
+        /* ── File cards row ── */
+        .file-row {
+            display: flex;
+            align-items: flex-start;
+            gap: 0;
+        }
+
+        .file-card {
+            flex: 1;
+            border-radius: 12px;
+            padding: 16px 18px;
+        }
+        .file-card.left  { background: #eff6ff; border: 1.5px solid #bfdbfe; }
+        .file-card.right { background: #f0fdf4; border: 1.5px solid #bbf7d0; }
+
+        .file-card-badge {
+            width: 22px; height: 22px;
+            border-radius: 50%;
+            display: inline-flex; align-items: center; justify-content: center;
+            font-size: 11px; font-weight: 700; color: #fff;
+        }
+        .file-card.left  .file-card-badge { background: #2563eb; }
+        .file-card.right .file-card-badge { background: #16a34a; }
+
+        .file-card-title {
+            font-size: 13px; font-weight: 700;
+            display: flex; align-items: center; gap: 7px;
+            margin-bottom: 14px;
+        }
+        .file-card.left  .file-card-title { color: #1d4ed8; }
+        .file-card.right .file-card-title { color: #15803d; }
+
+        .btn-peek {
+            margin-left: auto;
+            padding: 3px 9px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+            border: 1px solid;
+            background: transparent;
+            font-family: inherit;
+            opacity: 0.7;
+            transition: opacity 0.1s;
+        }
+        .btn-peek:hover { opacity: 1; }
+        .file-card.left  .btn-peek { color: #2563eb; border-color: #bfdbfe; }
+        .file-card.right .btn-peek { color: #16a34a; border-color: #bbf7d0; }
+        .btn-peek.active { opacity: 1; font-weight: 700; }
+
+        .field-label {
+            font-size: 11px; font-weight: 600; margin-bottom: 5px;
+        }
+        .file-card.left  .field-label { color: #3b82f6; }
+        .file-card.right .field-label { color: #16a34a; }
+
+        .field-wrap { margin-bottom: 10px; }
+        .field-wrap:last-child { margin-bottom: 0; }
+
+        select, input[type="text"], input[type="number"] {
+            width: 100%;
+            padding: 8px 10px;
+            border-radius: 8px;
+            font-size: 13px;
+            color: #1e293b;
+            outline: none;
+            font-family: inherit;
+            transition: border-color 0.15s;
+        }
+        select:focus, input:focus { border-color: #818cf8 !important; }
+
+        .file-card.left  select { border: 1px solid #bfdbfe; background: #fff; }
+        .file-card.right select { border: 1px solid #bbf7d0; background: #fff; }
+
+        /* ── Join connector ── */
+        .join-connector {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 0 14px;
+            padding-top: 16px;
+            gap: 4px;
+            flex-shrink: 0;
+        }
+        .join-line { width: 1px; height: 20px; background: #e2e8f0; }
+        .join-box {
+            background: #fff;
+            border: 1.5px solid #e2e8f0;
+            border-radius: 10px;
+            padding: 10px 12px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 5px;
+            min-width: 130px;
+        }
+        .btn-swap {
+            background: #f1f5f9; border: 1.5px solid #e2e8f0; border-radius: 50%;
+            width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
+            cursor: pointer; font-size: 16px; color: #64748b; transition: all .15s;
+        }
+        .btn-swap:hover { background: #e0e7ff; border-color: #818cf8; color: #6366f1; }
+        .join-box-label { font-size: 10px; color: #94a3b8; font-weight: 600; letter-spacing: 0.05em; }
+        .join-box select {
+            border: 1px solid #e2e8f0;
+            background: #f8fafc;
+            color: #334155;
+            font-size: 12px;
+            text-align: center;
+            padding: 5px 8px;
+            border-radius: 6px;
+        }
+
+        /* ── Tolerance row ── */
+        .tol-row {
+            display: none;
+            background: #fffbeb;
+            border: 1px solid #fde68a;
+            border-radius: 10px;
+            padding: 10px 16px;
+            align-items: center;
+            gap: 10px;
+        }
+        .tol-row.show { display: flex; }
+        .tol-row label { font-size: 12px; color: #92400e; font-weight: 600; white-space: nowrap; }
+        .tol-row input { flex: 1; border: 1px solid #fde68a; background: #fff; }
+        .tol-row span  { font-size: 12px; color: #92400e; }
+
+        /* ── Window aggregation config ── */
+        .window-config {
+            display: none;
+            background: #faf5ff;
+            border: 1px solid #e9d5ff;
+            border-radius: 10px;
+            padding: 14px 16px;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .window-config.show { display: flex; }
+        .window-config .wc-title {
+            font-size: 12px; font-weight: 700; color: #7c3aed;
+            display: flex; align-items: center; gap: 6px;
+        }
+        .wc-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+        .wc-row label { font-size: 12px; color: #6b21a8; font-weight: 600; white-space: nowrap; }
+        .wc-row input { width: 80px; border: 1px solid #e9d5ff; background: #fff; text-align: center; }
+        .wc-row span  { font-size: 12px; color: #6b21a8; }
+        .wc-agg-list {
+            display: flex; flex-direction: column; gap: 6px;
+            max-height: 200px; overflow-y: auto;
+        }
+        .wc-agg-item {
+            display: flex; align-items: center; gap: 8px;
+            background: #fff;
+            border: 1px solid #f3e8ff;
+            border-radius: 8px;
+            padding: 6px 10px;
+            font-size: 12px;
+        }
+        .wc-agg-item select { font-size: 11px; border: 1px solid #e9d5ff; border-radius: 5px; padding: 3px 6px; background: #faf5ff; }
+        .wc-agg-item .wc-col-name { font-weight: 600; color: #6b21a8; min-width: 100px; }
+        .wc-agg-item .wc-remove { cursor: pointer; color: #a78bfa; font-size: 14px; margin-left: auto; }
+        .wc-agg-item .wc-remove:hover { color: #ef4444; }
+        .wc-agg-item .wc-pivot-toggle {
+            font-size: 10px; color: #a78bfa; cursor: pointer; border: 1px dashed #d8b4fe;
+            border-radius: 4px; padding: 1px 6px; white-space: nowrap;
+        }
+        .wc-agg-item .wc-pivot-toggle:hover { background: #f3e8ff; color: #7c3aed; }
+        .wc-agg-item .wc-pivot-active {
+            font-size: 10px; color: #7c3aed; background: #f3e8ff;
+            border: 1px solid #d8b4fe; border-radius: 4px; padding: 1px 6px; white-space: nowrap;
+        }
+        .wc-agg-item .wc-pivot-sel {
+            font-size: 11px; border: 1px solid #e9d5ff; border-radius: 5px;
+            padding: 2px 6px; background: #faf5ff;
+        }
+        .wc-add-row { display: flex; gap: 8px; align-items: center; }
+        .wc-add-row select { font-size: 12px; border: 1px solid #e9d5ff; border-radius: 6px; padding: 4px 8px; background: #fff; flex: 1; }
+        .wc-add-btn {
+            font-size: 11px; font-weight: 600; color: #fff;
+            background: #8b5cf6; border: none; border-radius: 6px;
+            padding: 5px 12px; cursor: pointer; white-space: nowrap;
+        }
+        .wc-add-btn:hover { background: #7c3aed; }
+
+        /* ── Preview area ── */
+        .preview-card {
+            background: #fff;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            overflow: hidden;
+            flex: 1;
+        }
+        .preview-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 16px;
+            background: #f8fafc;
+            border-bottom: 1px solid #f1f5f9;
+        }
+        .preview-header-title { font-size: 12px; font-weight: 700; color: #475569; }
+        .preview-header-info  { font-size: 11px; color: #94a3b8; }
+        #mg-preview-area {
+            overflow: auto;
+            max-height: 380px;
+            min-height: 110px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .preview-empty {
+            text-align: center;
+            padding: 32px;
+        }
+        .preview-empty .icon { font-size: 32px; margin-bottom: 8px; }
+        .preview-empty .hint { font-size: 12px; color: #cbd5e1; }
+
+        /* Preview table */
+        .preview-table {
+            border-collapse: collapse;
+            width: 100%;
+            font-size: 12px;
+            white-space: nowrap;
+        }
+        .preview-table th {
+            padding: 7px 12px;
+            border-bottom: 2px solid #e2e8f0;
+            background: #f8fafc;
+            color: #475569;
+            font-weight: 600;
+            text-align: left;
+            position: sticky;
+            top: 0;
+            z-index: 1;
+        }
+        .preview-table td {
+            padding: 5px 12px;
+            border-bottom: 1px solid #f1f5f9;
+            color: #334155;
+        }
+        .preview-table tr:last-child td { border-bottom: none; }
+        .preview-table tr:nth-child(even) td { background: #f8fafc; }
+
+        /* ── Action bar ── */
+        .action-bar {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: #fff;
+            border-top: 1px solid #e2e8f0;
+            padding: 14px 24px;
+            flex-shrink: 0;
+        }
+        .action-bar .name-wrap {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .action-bar .name-wrap label { font-size: 12px; color: #64748b; white-space: nowrap; }
+        .action-bar .name-wrap input {
+            flex: 1;
+            border: 1px solid #e2e8f0;
+            background: #f8fafc;
+            padding: 8px 12px;
+        }
+        .action-bar .name-wrap input:focus { background: #fff; }
+
+        .btn-preview {
+            padding: 8px 18px;
+            background: #f8fafc;
+            border: 1.5px solid #e2e8f0;
+            border-radius: 9px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            color: #475569;
+            white-space: nowrap;
+            flex-shrink: 0;
+            font-family: inherit;
+            transition: background 0.1s, border-color 0.1s;
+        }
+        .btn-preview:hover { background: #f1f5f9; border-color: #cbd5e1; }
+
+        .btn-merge {
+            padding: 8px 22px;
+            background: linear-gradient(135deg, #2563eb, #4f46e5);
+            color: #fff;
+            border: none;
+            border-radius: 9px;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+            white-space: nowrap;
+            flex-shrink: 0;
+            font-family: inherit;
+            box-shadow: 0 2px 8px rgba(37, 99, 235, 0.3);
+            transition: opacity 0.1s;
+        }
+        .btn-merge:hover { opacity: 0.9; }
+
+        #mg-result {
+            font-size: 12px;
+            text-align: center;
+            padding: 0 24px 4px;
+            min-height: 18px;
+        }
+
+        ::-webkit-scrollbar { width: 7px; height: 7px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+</head>
+<body>
+
+    <!-- Titlebar -->
+    <div class="titlebar">
+        <div class="titlebar-icon">🔗</div>
+        <div>
+            <div class="titlebar-title">合併兩個 CSV 檔案</div>
+            <div class="titlebar-sub">依時間軸或文字欄位對齊，合成一份完整資料</div>
+        </div>
+    </div>
+
+    <!-- Main -->
+    <div class="main">
+
+        <!-- File cards + join connector -->
+        <div class="file-row">
+
+            <!-- 左檔 -->
+            <div class="file-card left">
+                <div class="file-card-title">
+                    <span class="file-card-badge">主</span>
+                    左檔（主檔）
+                    <button class="btn-peek" id="peek-left" onclick="mgPreviewFile('left')">👁 預覽此檔</button>
+                </div>
+                <div class="field-wrap">
+                    <div class="field-label">檔案</div>
+                    <select id="mg-left-file" onchange="mgLoadCols('left')">
+                        <option value="">— 選擇左檔 —</option>
+                    </select>
+                </div>
+                <div class="field-wrap">
+                    <div class="field-label" id="mg-left-col-label">時間欄位</div>
+                    <select id="mg-left-col" style="border:1px solid #bfdbfe;background:#fff;">
+                        <option value="">— 先選擇檔案 —</option>
+                    </select>
+                </div>
+                <div id="mg-left-stats" style="display:none;margin-top:10px;padding:8px 10px;background:#dbeafe;border-radius:8px;display:none;gap:12px;font-size:11px;color:#1d4ed8;">
+                    <span>📋 <strong id="mg-left-cols">—</strong> 欄</span>
+                    <span>·</span>
+                    <span>📄 <strong id="mg-left-rows">—</strong> 筆</span>
+                </div>
+            </div>
+
+            <!-- Join connector -->
+            <div class="join-connector">
+                <div class="join-line"></div>
+                <div class="join-box">
+                    <div class="join-box-label">對齊模式</div>
+                    <select id="mg-key-mode" onchange="mgToggleKeyMode()" style="margin-bottom:4px;">
+                        <option value="time">🕐 時間對齊</option>
+                        <option value="text">🔤 文字比對</option>
+                        <option value="window">⏱ 時間窗口聚合</option>
+                    </select>
+                    <div class="join-box-label" id="mg-how-label">合併方式</div>
+                    <select id="mg-how" onchange="mgToggleTol()">
+                        <option value="inner">完全符合 Inner</option>
+                        <option value="left">保留左檔 Left</option>
+                        <option value="right">保留右檔 Right</option>
+                        <option value="outer">保留全部 Outer</option>
+                        <option value="nearest">最近時間 Nearest</option>
+                    </select>
+                </div>
+                <button class="btn-swap" onclick="mgSwapFiles()" title="左右互換">⇄</button>
+                <div class="join-line"></div>
+            </div>
+
+            <!-- 右檔 -->
+            <div class="file-card right">
+                <div class="file-card-title">
+                    <span class="file-card-badge">附</span>
+                    右檔（附加欄位）
+                    <button class="btn-peek" id="peek-right" onclick="mgPreviewFile('right')">👁 預覽此檔</button>
+                </div>
+                <div class="field-wrap">
+                    <div class="field-label">檔案</div>
+                    <select id="mg-right-file" onchange="mgLoadCols('right')" style="border:1px solid #bbf7d0;background:#fff;">
+                        <option value="">— 選擇右檔 —</option>
+                    </select>
+                </div>
+                <div class="field-wrap">
+                    <div class="field-label" id="mg-right-col-label">時間欄位</div>
+                    <select id="mg-right-col" style="border:1px solid #bbf7d0;background:#fff;">
+                        <option value="">— 先選擇檔案 —</option>
+                    </select>
+                </div>
+                <div id="mg-right-stats" style="display:none;margin-top:10px;padding:8px 10px;background:#dcfce7;border-radius:8px;display:none;gap:12px;font-size:11px;color:#15803d;">
+                    <span>📋 <strong id="mg-right-cols">—</strong> 欄</span>
+                    <span>·</span>
+                    <span>📄 <strong id="mg-right-rows">—</strong> 筆</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tolerance (nearest only) -->
+        <div class="tol-row" id="mg-tol-row">
+            <label>⏱ 容許時間誤差</label>
+            <input type="number" id="mg-tol" placeholder="留空 = 不限制" min="0">
+            <span>秒</span>
+        </div>
+
+        <!-- Window aggregation config -->
+        <div class="window-config" id="mg-window-config">
+            <div class="wc-title">⏱ 時間窗口聚合設定</div>
+            <div class="wc-row">
+                <label>往前</label>
+                <input type="number" id="mg-win-before" value="25" min="0">
+                <span>秒</span>
+                <span style="margin:0 4px;color:#d8b4fe;">|</span>
+                <label>往後</label>
+                <input type="number" id="mg-win-after" value="0" min="0">
+                <span>秒</span>
+            </div>
+            <div style="font-size:11px;color:#7c3aed;font-weight:600;margin-top:2px;">聚合欄位（右檔）</div>
+            <div class="wc-add-row">
+                <select id="mg-wc-col-pick"><option value="">— 選擇欄位 —</option></select>
+                <select id="mg-wc-agg-pick">
+                    <option value="sum">合計 sum</option>
+                    <option value="mean">平均 mean</option>
+                    <option value="count">個數 count</option>
+                    <option value="min">最小 min</option>
+                    <option value="max">最大 max</option>
+                </select>
+                <button class="wc-add-btn" onclick="wcAddAgg()">＋ 新增</button>
+            </div>
+            <div class="wc-agg-list" id="mg-wc-agg-list"></div>
+        </div>
+
+        <!-- Preview -->
+        <div class="preview-card">
+            <div class="preview-header">
+                <span class="preview-header-title">資料預覽</span>
+                <span class="preview-header-info" id="mg-preview-info"></span>
+            </div>
+            <div id="mg-preview-area">
+                <div class="preview-empty">
+                    <div class="icon">📊</div>
+                    <div class="hint">選擇檔案後自動預覽，或點「預覽合併」查看合併結果</div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Action bar (fixed at bottom) -->
+    <div class="action-bar">
+        <div class="name-wrap">
+            <label>輸出名稱</label>
+            <input type="text" id="mg-name" placeholder="留空自動命名">
+        </div>
+        <button class="btn-preview" onclick="doMergePreview()">🔍 預覽合併</button>
+        <button class="btn-merge"   onclick="doMerge()">✅ 確認合併</button>
+    </div>
+    <div id="mg-result"></div>
+
+    <script>
+        // ── Column alias helper (reads cross-iframe localStorage) ──
+        function _mgAlias(colName) {
+            try {
+                if (localStorage.getItem('sigma2_useAlias') !== '1') return colName;
+                const map = JSON.parse(localStorage.getItem('sigma2_aliases') || '{}');
+                return map[colName] || colName;
+            } catch(_) { return colName; }
+        }
+
+        // ── Session ID from URL ──
+        const params = new URLSearchParams(location.search);
+        const SESSION_ID = params.get('session_id') || 'default';
+
+        // ── Init: load file list ──
+        async function init() {
+            try {
+                const res  = await fetch(`/api/list_files?session_id=${SESSION_ID}`);
+                const data = await res.json();
+                const files = (data.files || []).filter(f => f.filename.endsWith('.csv'));
+                const opts  = files.map(f => `<option value="${f.filename}">${f.filename}</option>`).join('');
+                document.getElementById('mg-left-file').innerHTML  = '<option value="">— 選擇左檔 —</option>' + opts;
+                document.getElementById('mg-right-file').innerHTML = '<option value="">— 選擇右檔 —</option>' + opts;
+            } catch(e) { console.error(e); }
+        }
+
+        // ── Toggle key mode (time vs text vs window) ──
+        function mgToggleKeyMode() {
+            const mode = document.getElementById('mg-key-mode').value;
+            const isTime = mode === 'time';
+            const isWindow = mode === 'window';
+            const label = (isTime || isWindow) ? '時間欄位' : '對齊欄位';
+            document.getElementById('mg-left-col-label').textContent = isWindow ? '基準時間欄位' : label;
+            document.getElementById('mg-right-col-label').textContent = isWindow ? '資料時間欄位' : label;
+            // Show/hide "nearest" option (only for time mode)
+            const howSel = document.getElementById('mg-how');
+            const nearestOpt = howSel.querySelector('option[value="nearest"]');
+            if (nearestOpt) nearestOpt.style.display = isTime ? '' : 'none';
+            if (!isTime && howSel.value === 'nearest') howSel.value = 'inner';
+            // Window mode hides join-how and tolerance, shows window config
+            document.getElementById('mg-how-label').style.display = isWindow ? 'none' : '';
+            howSel.style.display = isWindow ? 'none' : '';
+            document.getElementById('mg-window-config').classList.toggle('show', isWindow);
+            mgToggleTol();
+        }
+
+        // ── Toggle tolerance row ──
+        function mgToggleTol() {
+            const row = document.getElementById('mg-tol-row');
+            const mode = document.getElementById('mg-key-mode').value;
+            row.classList.toggle('show', mode === 'time' && document.getElementById('mg-how').value === 'nearest');
+        }
+
+        // ── Swap left ↔ right ──
+        function mgSwapFiles() {
+            const lFile = document.getElementById('mg-left-file');
+            const rFile = document.getElementById('mg-right-file');
+            const lCol  = document.getElementById('mg-left-col');
+            const rCol  = document.getElementById('mg-right-col');
+
+            // Swap file selection
+            const tmpFile = lFile.value;
+            lFile.value = rFile.value;
+            rFile.value = tmpFile;
+
+            // Swap column selection (save current values, reload both sides)
+            const tmpCol = lCol.value;
+            const tmpCol2 = rCol.value;
+
+            // Reload columns for both sides, then restore swapped selections
+            Promise.all([
+                mgLoadCols('left'),
+                mgLoadCols('right'),
+            ]).then(() => {
+                // After columns reload, set the swapped values
+                setTimeout(() => {
+                    lCol.value = tmpCol2;
+                    rCol.value = tmpCol;
+                }, 100);
+            });
+        }
+
+        // ── Window aggregation state ──
+        let _wcAggs = [];  // [{col, agg, pivot_col}]
+        let _wcRightCols = [];      // all columns from right file
+        let _wcRightNumCols = [];   // numeric columns from right file
+
+        function wcAddAgg() {
+            const col = document.getElementById('mg-wc-col-pick').value;
+            const agg = document.getElementById('mg-wc-agg-pick').value;
+            if (!col) { alert('請選擇欄位'); return; }
+            const isCat = !_wcRightNumCols.includes(col);
+            _wcAggs.push({ col, agg, pivot_col: null, _isCat: isCat });
+            wcRenderList();
+        }
+
+        function wcRemoveAgg(i) {
+            _wcAggs.splice(i, 1);
+            wcRenderList();
+        }
+
+        // Self-pivot: use the column itself as the pivot (for categorical columns)
+        function wcSelfPivot(i) {
+            _wcAggs[i].pivot_col = _wcAggs[i].col;
+            _wcAggs[i]._showPivotPicker = false;
+            wcRenderList();
+        }
+
+        function wcTogglePivot(i) {
+            const a = _wcAggs[i];
+            if (a.pivot_col) {
+                a.pivot_col = null;
+            } else {
+                a._showPivotPicker = true;
+            }
+            wcRenderList();
+        }
+
+        function wcSetPivot(i, val) {
+            _wcAggs[i].pivot_col = val || null;
+            _wcAggs[i]._showPivotPicker = false;
+            wcRenderList();
+        }
+
+        function wcRenderList() {
+            const el = document.getElementById('mg-wc-agg-list');
+            if (_wcAggs.length === 0) { el.innerHTML = '<div style="font-size:11px;color:#a78bfa;padding:4px;">尚未新增聚合欄位</div>'; return; }
+            const catCols = _wcRightCols.filter(c => !_wcRightNumCols.includes(c));
+            el.innerHTML = _wcAggs.map((a, i) => {
+                let pivotHtml = '';
+                if (a.pivot_col) {
+                    const label = a.pivot_col === a.col ? '依子類別展開' : `依「${a.pivot_col}」分類`;
+                    pivotHtml = `<span class="wc-pivot-active">${label} <span style="cursor:pointer;margin-left:2px;" onclick="wcTogglePivot(${i})">✕</span></span>`;
+                } else if (a._showPivotPicker) {
+                    const opts = catCols.map(c => `<option value="${c}">${_mgAlias(c)}</option>`).join('');
+                    pivotHtml = `<select class="wc-pivot-sel" onchange="wcSetPivot(${i}, this.value)">
+                        <option value="">— 選擇分類欄位 —</option>${opts}</select>
+                        <span style="font-size:10px;color:#a78bfa;cursor:pointer;" onclick="wcSetPivot(${i},'')">取消</span>`;
+                } else if (a._isCat) {
+                    // Categorical column: offer self-pivot shortcut + other column pivot
+                    pivotHtml = `<span class="wc-pivot-toggle" onclick="wcSelfPivot(${i})">＋ 依子類別展開</span>
+                        <span class="wc-pivot-toggle" onclick="wcTogglePivot(${i})">＋ 依其他欄位</span>`;
+                } else {
+                    // Numeric column: offer pivot by another column
+                    pivotHtml = `<span class="wc-pivot-toggle" onclick="wcTogglePivot(${i})">＋ 依類別展開</span>`;
+                }
+                return `<div class="wc-agg-item">
+                    <span class="wc-col-name" title="${a.col}">${_mgAlias(a.col)}</span>
+                    <span style="color:#8b5cf6;">${a.agg}</span>
+                    ${pivotHtml}
+                    <span class="wc-remove" onclick="wcRemoveAgg(${i})">✕</span>
+                </div>`;
+            }).join('');
+        }
+
+        function wcPopulateColPickers(cols, numCols) {
+            _wcRightCols = cols;
+            _wcRightNumCols = numCols;
+            const colPick = document.getElementById('mg-wc-col-pick');
+            colPick.innerHTML = '<option value="">— 選擇欄位 —</option>' +
+                cols.map(c => `<option value="${c}">${_mgAlias(c)}${numCols.includes(c) ? '' : ' (類別)'}</option>`).join('');
+            _wcAggs = [];
+            wcRenderList();
+        }
+
+        // ── Load columns + auto-preview file ──
+        async function mgLoadCols(side) {
+            const fileId = side === 'left' ? 'mg-left-file' : 'mg-right-file';
+            const colId  = side === 'left' ? 'mg-left-col'  : 'mg-right-col';
+            const filename = document.getElementById(fileId).value;
+            const colSel   = document.getElementById(colId);
+
+            if (!filename) { colSel.innerHTML = '<option value="">— 先選擇檔案 —</option>'; return; }
+            const mode = document.getElementById('mg-key-mode').value;
+            const isTime = mode === 'time' || mode === 'window';
+            colSel.innerHTML = '<option>載入中...</option>';
+
+            const [colRes, prevRes] = await Promise.all([
+                fetch(`/api/data-prep/columns/${encodeURIComponent(filename)}?session_id=${SESSION_ID}`),
+                fetch(`/api/data-prep/file-preview/${encodeURIComponent(filename)}?session_id=${SESSION_ID}&n_rows=10`),
+            ]);
+
+            // Columns
+            try {
+                const colData = await colRes.json();
+                const cols    = colData.columns || [];
+                const numCols = colData.numeric_columns || [];
+                const placeholder = isTime ? '— 選時間欄 —' : '— 選對齊欄 —';
+                colSel.innerHTML = `<option value="">${placeholder}</option>` +
+                    cols.map(c => `<option value="${c}" title="${c}">${_mgAlias(c)}</option>`).join('');
+                // Populate window agg pickers when right file changes
+                if (side === 'right') wcPopulateColPickers(cols, numCols);
+            } catch(e) {
+                colSel.innerHTML = '<option value="">載入失敗</option>';
+            }
+
+            // File preview + stats
+            try {
+                const pData = await prevRes.json();
+                // Update stats badge on the card
+                const statsEl = document.getElementById(`mg-${side}-stats`);
+                document.getElementById(`mg-${side}-cols`).textContent = pData.total_cols;
+                document.getElementById(`mg-${side}-rows`).textContent = pData.total_rows.toLocaleString();
+                statsEl.style.display = 'flex';
+                setActivePeek(side);
+                renderPreview(
+                    pData.columns,
+                    pData.rows,
+                    `📄 ${filename}（共 ${pData.total_rows} 筆，${pData.total_cols} 欄，預覽前 ${pData.rows.length} 筆）`
+                );
+            } catch(e) {}
+        }
+
+        // ── Peek a specific side's file ──
+        async function mgPreviewFile(side) {
+            const fileId   = side === 'left' ? 'mg-left-file' : 'mg-right-file';
+            const filename = document.getElementById(fileId).value;
+            if (!filename) { alert('請先選擇' + (side === 'left' ? '左' : '右') + '檔'); return; }
+
+            const area = document.getElementById('mg-preview-area');
+            area.style.alignItems = 'center';
+            area.style.justifyContent = 'center';
+            area.innerHTML = '<div style="font-size:13px;color:#94a3b8;">載入中...</div>';
+            document.getElementById('mg-preview-info').textContent = '';
+
+            try {
+                const res  = await fetch(`/api/data-prep/file-preview/${encodeURIComponent(filename)}?session_id=${SESSION_ID}&n_rows=10`);
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || '載入失敗');
+                const statsEl = document.getElementById(`mg-${side}-stats`);
+                document.getElementById(`mg-${side}-cols`).textContent = data.total_cols;
+                document.getElementById(`mg-${side}-rows`).textContent = data.total_rows.toLocaleString();
+                statsEl.style.display = 'flex';
+                setActivePeek(side);
+                renderPreview(
+                    data.columns,
+                    data.rows,
+                    `📄 ${filename}（共 ${data.total_rows} 筆，${data.total_cols} 欄，預覽前 ${data.rows.length} 筆）`
+                );
+            } catch(e) {
+                area.innerHTML = `<div style="font-size:13px;color:#ef4444;padding:20px;">❌ ${e.message}</div>`;
+            }
+        }
+
+        // ── Highlight which peek button is active ──
+        function setActivePeek(side) {
+            document.getElementById('peek-left').classList.toggle('active', side === 'left');
+            document.getElementById('peek-right').classList.toggle('active', side === 'right');
+        }
+
+        // ── Render preview table ──
+        function renderPreview(cols, rows, info) {
+            const area = document.getElementById('mg-preview-area');
+            const infoEl = document.getElementById('mg-preview-info');
+            infoEl.textContent = info || '';
+
+            // rows can be array-of-records OR array-of-arrays
+            const isRecord = rows.length > 0 && !Array.isArray(rows[0]);
+
+            let html = '<table class="preview-table"><thead><tr>';
+            cols.forEach(c => { html += `<th title="${c}">${_mgAlias(c)}</th>`; });
+            html += '</tr></thead><tbody>';
+            rows.forEach(row => {
+                html += '<tr>';
+                cols.forEach((c, i) => {
+                    const val = isRecord ? (row[c] ?? '') : (row[i] ?? '');
+                    html += `<td>${val}</td>`;
+                });
+                html += '</tr>';
+            });
+            html += '</tbody></table>';
+
+            area.style.alignItems    = 'flex-start';
+            area.style.justifyContent = 'flex-start';
+            area.innerHTML = html;
+        }
+
+        // ── Build request body (shared by preview & merge) ──
+        function _buildMergeBody(extra) {
+            const keyMode = document.getElementById('mg-key-mode').value;
+            const body = {
+                file_id_left: document.getElementById('mg-left-file').value,
+                file_id_right: document.getElementById('mg-right-file').value,
+                time_col_left: document.getElementById('mg-left-col').value,
+                time_col_right: document.getElementById('mg-right-col').value,
+                how: document.getElementById('mg-how').value,
+                tolerance_seconds: document.getElementById('mg-tol').value ? parseFloat(document.getElementById('mg-tol').value) : null,
+                key_mode: keyMode,
+                ...extra,
+            };
+            if (keyMode === 'window') {
+                body.window_before = parseFloat(document.getElementById('mg-win-before').value) || 25;
+                body.window_after = parseFloat(document.getElementById('mg-win-after').value) || 0;
+                body.aggregations = _wcAggs;
+            }
+            return body;
+        }
+
+        // ── Preview merged result ──
+        async function doMergePreview() {
+            const leftFile  = document.getElementById('mg-left-file').value;
+            const rightFile = document.getElementById('mg-right-file').value;
+            const leftCol   = document.getElementById('mg-left-col').value;
+            const rightCol  = document.getElementById('mg-right-col').value;
+
+            const keyMode = document.getElementById('mg-key-mode').value;
+            const colLabel = (keyMode === 'time' || keyMode === 'window') ? '時間欄位' : '對齊欄位';
+            if (!leftFile || !rightFile) { alert('請選擇兩個檔案'); return; }
+            if (!leftCol  || !rightCol)  { alert('請選擇' + colLabel); return; }
+            if (keyMode === 'window' && _wcAggs.length === 0) { alert('請至少新增一個聚合欄位'); return; }
+
+            const area = document.getElementById('mg-preview-area');
+            area.style.alignItems = 'center';
+            area.style.justifyContent = 'center';
+            area.innerHTML = '<div style="font-size:13px;color:#94a3b8;">聚合計算中，請稍候...</div>';
+            document.getElementById('mg-preview-info').textContent = '';
+
+            try {
+                const res  = await fetch(`/api/data-prep/merge-preview?session_id=${SESSION_ID}&n_rows=10`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(_buildMergeBody({})),
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || '預覽失敗');
+
+                let info = `🔗 合併預覽：共 ${data.total_rows} 筆，${data.total_cols} 欄，顯示前 ${data.rows.length} 筆`;
+                if (data.keys_matched !== undefined) {
+                    info += `　｜　🔑 左鍵 ${data.keys_left} 種，右鍵 ${data.keys_right} 種，匹配 ${data.keys_matched} 種`;
+                }
+                if (data.window_matches !== undefined) {
+                    info += `　｜　⏱ 右檔有效時間 ${data.right_valid}/${data.right_orig} 筆，窗口命中 ${data.window_matches}/${data.total_rows} 列`;
+                }
+                renderPreview(data.columns, data.rows, info);
+            } catch(e) {
+                area.innerHTML = `<div style="font-size:13px;color:#ef4444;padding:20px;">❌ ${e.message}</div>`;
+            }
+        }
+
+        // ── Execute merge ──
+        async function doMerge() {
+            const leftFile  = document.getElementById('mg-left-file').value;
+            const rightFile = document.getElementById('mg-right-file').value;
+            const leftCol   = document.getElementById('mg-left-col').value;
+            const rightCol  = document.getElementById('mg-right-col').value;
+            const name      = document.getElementById('mg-name').value.trim();
+            const resultEl  = document.getElementById('mg-result');
+
+            const keyMode2 = document.getElementById('mg-key-mode').value;
+            const colLabel2 = (keyMode2 === 'time' || keyMode2 === 'window') ? '時間欄位' : '對齊欄位';
+            if (!leftFile || !rightFile) { alert('請選擇兩個檔案'); return; }
+            if (!leftCol  || !rightCol)  { alert('請選擇' + colLabel2); return; }
+            if (keyMode2 === 'window' && _wcAggs.length === 0) { alert('請至少新增一個聚合欄位'); return; }
+
+            resultEl.style.color = '#64748b';
+            resultEl.textContent = '合併中，請稍候...';
+
+            try {
+                const res  = await fetch(`/api/data-prep/merge-files?session_id=${SESSION_ID}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(_buildMergeBody({ custom_name: name || null })),
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || '合併失敗');
+
+                resultEl.style.color = '#22c55e';
+                resultEl.textContent = `✅ ${data.filename}（${data.rows_merged} 筆，${data.columns.length} 欄）`;
+
+                // 通知父視窗刷新檔案列表
+                if (window.opener && !window.opener.closed) {
+                    try { window.opener.loadFileList(); } catch(e) {}
+                }
+            } catch(e) {
+                resultEl.style.color = '#ef4444';
+                resultEl.textContent = `❌ ${e.message}`;
+            }
+        }
+
+        init();
+    </script>
+</body>
+</html>

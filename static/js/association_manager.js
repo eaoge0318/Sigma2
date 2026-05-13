@@ -209,8 +209,9 @@
         const area = document.getElementById('assoc-col-area');
         if (!area) return;
         const q = _assocSearchTerm;
-        const numFields = _getNumericFields().filter(f => !q || f.name.toLowerCase().includes(q));
-        const catFields = _getCategoryFields().filter(f => !q || f.name.toLowerCase().includes(q));
+        const _alias = (typeof _dpAlias === 'function') ? _dpAlias : (n => n);
+        const numFields = _getNumericFields().filter(f => !q || f.name.toLowerCase().includes(q) || _alias(f.name).toLowerCase().includes(q));
+        const catFields = _getCategoryFields().filter(f => !q || f.name.toLowerCase().includes(q) || _alias(f.name).toLowerCase().includes(q));
 
         let html = ``;
 
@@ -221,7 +222,7 @@
                 const focused = _assocFocusedCol === f.name;
                 html += `<div style="display:flex;align-items:center;gap:6px;padding:5px 6px;border-radius:6px;font-size:12px;color:#334155;${focused ? 'background:#e0f2fe;outline:1.5px solid #0891b2;' : checked ? 'background:#f0fdf4;' : ''}">
                     <input type="checkbox" ${checked ? 'checked' : ''} onchange="assocToggleCol('${_escStr(f.name)}','cat')" style="accent-color:#0891b2;flex-shrink:0;">
-                    <span onclick="assocFocusCol('${_escStr(f.name)}')" style="cursor:pointer;flex:1;">${f.name}</span>
+                    <span onclick="assocFocusCol('${_escStr(f.name)}')" style="cursor:pointer;flex:1;" title="${f.name}">${(typeof _dpAlias === 'function') ? _dpAlias(f.name) : f.name}</span>
                 </div>`;
             });
         }
@@ -235,7 +236,7 @@
                 html += `<div style="margin-bottom:2px;">
                     <div style="display:flex;align-items:center;gap:6px;padding:5px 6px;border-radius:6px;font-size:12px;color:#334155;${focused ? 'background:#ede9fe;outline:1.5px solid #7c3aed;' : checked ? 'background:#faf5ff;' : ''}">
                         <input type="checkbox" ${checked ? 'checked' : ''} onchange="assocToggleCol('${_escStr(f.name)}','num')" style="accent-color:#7c3aed;flex-shrink:0;">
-                        <span onclick="assocFocusCol('${_escStr(f.name)}')" style="cursor:pointer;flex:1;">${f.name}</span>
+                        <span onclick="assocFocusCol('${_escStr(f.name)}')" style="cursor:pointer;flex:1;" title="${f.name}">${(typeof _dpAlias === 'function') ? _dpAlias(f.name) : f.name}</span>
                         ${ruleCount ? `<span style="font-size:10px;background:#7c3aed;color:#fff;border-radius:8px;padding:1px 5px;">${ruleCount}</span>` : ''}
                     </div>
                 </div>`;

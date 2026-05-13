@@ -715,11 +715,8 @@ class SigmaAnalysisWorkflow(Workflow):
             if summary:
                 # 檢查 CSV 檔案是否實際存在 (防止 stale summary)
                 _csv_filename = summary.get("filename", "")
-                _csv_path = (
-                    self.tool_executor.analysis_service.base_dir
-                    / ev.session_id
-                    / "uploads"
-                    / _csv_filename
+                _csv_path = self.tool_executor.analysis_service.get_csv_path(
+                    ev.session_id, _csv_filename
                 )
                 if not _csv_path.exists():
                     logger.warning(f"[快車道] CSV 不存在: {_csv_path}, 跳過快車道")

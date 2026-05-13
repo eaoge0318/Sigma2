@@ -59,7 +59,7 @@ export function initAutoSidebar() {
 }
 
 export function switchView(viewName) {
-    const navItems = ['dashboard', 'files', 'analysis', 'data-preparation', 'training', 'intelligent-analysis', 'knowledge-docs'];
+    const navItems = ['dashboard', 'files', 'analysis', 'data-preparation', 'training', 'intelligent-analysis', 'knowledge-docs', 'material-analysis'];
     const views = {
         'dashboard': 'view-dashboard',
         'files': 'view-files',
@@ -67,7 +67,8 @@ export function switchView(viewName) {
         'data-preparation': 'view-data-preparation',
         'training': 'view-training',
         'intelligent-analysis': 'view-intelligent-analysis',
-        'knowledge-docs': 'view-knowledge-docs'
+        'knowledge-docs': 'view-knowledge-docs',
+        'material-analysis': 'view-material-analysis'
     };
 
     // Update Nav State
@@ -91,6 +92,15 @@ export function switchView(viewName) {
         if (iframe && !iframe.dataset.loaded) {
             const uid = localStorage.getItem('sigma2_session_id') || 'default';
             iframe.src = `/static/html/knowledge_docs.html?user_id=${encodeURIComponent(uid)}`;
+            iframe.dataset.loaded = '1';
+        }
+    }
+
+    // Lazy-load material-analysis iframe on first show
+    if (viewName === 'material-analysis') {
+        const iframe = document.getElementById('material-analysis-iframe');
+        if (iframe && !iframe.dataset.loaded) {
+            iframe.src = `/static/html/material_analysis.html`;
             iframe.dataset.loaded = '1';
         }
     }

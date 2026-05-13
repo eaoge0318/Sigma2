@@ -138,6 +138,21 @@
                 <button onclick="loadFileList()" title="刷新檔案列表"
                     style="padding:7px 12px; background:#f1f5f9; border:1px solid #e2e8f0; border-radius:8px; cursor:pointer; font-size:16px; color:#64748b; line-height:1;"
                     onmouseenter="this.style.background='#e2e8f0'" onmouseleave="this.style.background='#f1f5f9'">🔄</button>
+                <button onclick="openMergeModal()"
+                    style="padding:10px 20px; background:#f8fafc; border:1px solid #cbd5e1; border-radius:8px; cursor:pointer; font-size:14px; font-weight:600; color:#475569; display:flex; align-items:center; gap:6px;"
+                    onmouseenter="this.style.background='#e2e8f0';this.style.borderColor='#94a3b8'" onmouseleave="this.style.background='#f8fafc';this.style.borderColor='#cbd5e1'">
+                    <span>🔗</span> 檔案合併
+                </button>
+                <button onclick="openDbQuery()"
+                    style="padding:10px 20px; background:#f8fafc; border:1px solid #cbd5e1; border-radius:8px; cursor:pointer; font-size:14px; font-weight:600; color:#475569; display:flex; align-items:center; gap:6px;"
+                    onmouseenter="this.style.background='#e2e8f0';this.style.borderColor='#94a3b8'" onmouseleave="this.style.background='#f8fafc';this.style.borderColor='#cbd5e1'">
+                    <span>🗄️</span> 資料庫匯入
+                </button>
+                <button id="alias-header-btn" onclick="openAliasModal()"
+                    style="padding:10px 20px; background:#f8fafc; border:1px solid #cbd5e1; border-radius:8px; cursor:pointer; font-size:14px; font-weight:600; color:#475569; display:flex; align-items:center; gap:6px;"
+                    onmouseenter="this.style.background='#e2e8f0';this.style.borderColor='#94a3b8'" onmouseleave="this.style.background=localStorage.getItem('sigma2_useAlias')==='1'?'#eef2ff':'#f8fafc';this.style.borderColor=localStorage.getItem('sigma2_useAlias')==='1'?'#a5b4fc':'#cbd5e1'">
+                    <span>📋</span> 參數別名
+                </button>
                 <button class="btn-primary" onclick="openUploadModal()">
                     <span>📤</span> 上傳新檔案
                 </button>
@@ -178,15 +193,15 @@
         <table class="file-table">
             <thead>
                 <tr>
-                    <th>名稱</th>
-                    <th>大小</th>
-                    <th>上傳時間</th>
+                    <th onclick="sortFileList('filename')" style="cursor:pointer;user-select:none;" id="th-filename">名稱 <span id="sort-icon-filename" style="font-size:11px;color:#94a3b8;"></span></th>
+                    <th onclick="sortFileList('size')" style="cursor:pointer;user-select:none;" id="th-size">大小 <span id="sort-icon-size" style="font-size:11px;color:#94a3b8;"></span></th>
+                    <th onclick="sortFileList('uploaded_at')" style="cursor:pointer;user-select:none;" id="th-uploaded_at">上傳時間 <span id="sort-icon-uploaded_at" style="font-size:11px;color:#94a3b8;">▼</span></th>
                     <th>操作</th>
                 </tr>
             </thead>
             <tbody id="file-list-body">
                 <tr>
-                    <td colspan="4" style="text-align: center; padding: 30px;">載入中...</td>
+                    <td colspan="5" style="text-align: center; padding: 30px;">載入中...</td>
                 </tr>
             </tbody>
         </table>
@@ -233,6 +248,34 @@
         // ============================================
         let fileListCurrentPage = 1;
         const FILE_LIST_PAGE_SIZE = 10;
+        let _sortKey = 'uploaded_at';
+        let _sortAsc = false;
+
+        function sortFileList(key) {
+            if (_sortKey === key) {
+                _sortAsc = !_sortAsc;
+            } else {
+                _sortKey = key;
+                _sortAsc = key === 'filename';
+            }
+            fileListCurrentPage = 1;
+            _updateSortIcons();
+            loadFileList();
+        }
+
+        function _updateSortIcons() {
+            ['filename', 'size', 'uploaded_at'].forEach(k => {
+                const el = document.getElementById('sort-icon-' + k);
+                if (!el) return;
+                if (k === _sortKey) {
+                    el.textContent = _sortAsc ? '▲' : '▼';
+                    el.style.color = '#6366f1';
+                } else {
+                    el.textContent = '';
+                    el.style.color = '#94a3b8';
+                }
+            });
+        }
 
         async function handleMainFileUpload(input) {
             const files = Array.from(input.files);
@@ -523,6 +566,21 @@
             $('viewDataModal').classList.remove('show');
         }
 
+        function openDbQuery() {
+            const sid = getSessionId ? getSessionId() : (localStorage.getItem('sigma_session_id') || 'default');
+            const url = `/static/html/db_query.html?session_id=${encodeURIComponent(sid)}`;
+            const popup = window.open(url, 'db_query_popup',
+                'width=1280,height=820,resizable=yes,scrollbars=yes,status=no,toolbar=no,menubar=no');
+            if (!popup) { alert('請允許彈出視窗'); return; }
+            // 監聽匯出完成事件，自動重新整理檔案列表
+            window.addEventListener('message', function _onMsg(e) {
+                if (e.data && e.data.type === 'DB_EXPORT_DONE') {
+                    window.removeEventListener('message', _onMsg);
+                    loadFileList();
+                }
+            });
+        }
+
         async function loadFileList() {
             const tbody = $('file-list-body');
             if (!tbody) return;
@@ -545,7 +603,12 @@
 
                 const startIdx = (fileListCurrentPage - 1) * FILE_LIST_PAGE_SIZE;
                 const endIdx = startIdx + FILE_LIST_PAGE_SIZE;
-                const sortedFiles = data.files.sort((a, b) => b.uploaded_at.localeCompare(a.uploaded_at));
+                const sortedFiles = data.files.slice().sort((a, b) => {
+                    let va = a[_sortKey], vb = b[_sortKey];
+                    if (_sortKey === 'size') { va = Number(va); vb = Number(vb); }
+                    let cmp = (typeof va === 'number') ? (va - vb) : String(va).localeCompare(String(vb));
+                    return _sortAsc ? cmp : -cmp;
+                });
                 const displayedFiles = sortedFiles.slice(startIdx, endIdx);
 
                 displayedFiles.forEach(f => {
@@ -639,6 +702,7 @@
         // Init
         // ============================================
         document.addEventListener('DOMContentLoaded', () => {
+            _updateSortIcons();
             loadFileList();
         });
 
@@ -659,6 +723,311 @@
                 loadFileList();
             }
         });
+
+        // ========== 合併功能 ==========
+        function openMergeModal() {
+            const url = `/static/html/file_merge.html?session_id=${encodeURIComponent(SESSION_ID)}`;
+            const popup = window.open(url, 'file_merge_popup',
+                'width=960,height=720,resizable=yes,scrollbars=yes,status=no,toolbar=no,menubar=no');
+            if (!popup) alert('請允許彈出視窗');
+        }
+
+    </script>
+
+    <!-- Alias Modal -->
+    <div id="aliasModal" class="modal" style="z-index:2000;">
+        <div class="modal-content" style="max-width:700px;max-height:85vh;display:flex;flex-direction:column;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+                <h3 style="margin:0;color:#1e293b;font-size:16px;">📋 參數別名管理</h3>
+                <label id="alias-toggle-label" style="display:flex; align-items:center; gap:6px; cursor:pointer; padding:5px 10px; border:1px solid #e2e8f0; border-radius:8px; font-size:12px; font-weight:600; color:#94a3b8; user-select:none; transition:all 0.2s;"
+                    title="啟用後，所有分析頁面的欄位名稱將顯示為中文別名">
+                    <div id="alias-toggle-track" style="width:34px; height:18px; border-radius:9px; background:#cbd5e1; position:relative; transition:background 0.2s; flex-shrink:0;">
+                        <div id="alias-toggle-knob" style="width:14px; height:14px; border-radius:50%; background:#fff; position:absolute; top:2px; left:2px; transition:left 0.2s; box-shadow:0 1px 3px rgba(0,0,0,0.2);"></div>
+                    </div>
+                    <span id="alias-toggle-text">別名 OFF</span>
+                    <input type="checkbox" id="alias-toggle-cb" style="display:none;" onchange="toggleAliasMode(this.checked)">
+                </label>
+            </div>
+            <p style="margin:0 0 12px;font-size:12px;color:#64748b;">上傳對照表（CSV/Excel），指定「欄位名」和「別名」欄位，系統自動匹配。</p>
+
+            <!-- Step 1: Upload -->
+            <div id="alias-step-upload" style="border:2px dashed #cbd5e1;border-radius:10px;padding:20px;text-align:center;margin-bottom:12px;cursor:pointer;background:#f8fafc;"
+                 ondragover="event.preventDefault();this.style.borderColor='#3b82f6';this.style.background='#eff6ff';"
+                 ondragleave="this.style.borderColor='#cbd5e1';this.style.background='#f8fafc';"
+                 ondrop="event.preventDefault();this.style.borderColor='#cbd5e1';this.style.background='#f8fafc';aliasHandleDrop(event);"
+                 onclick="document.getElementById('alias-file-input').click();">
+                <div style="font-size:28px;margin-bottom:6px;">📄</div>
+                <div style="font-size:13px;color:#475569;font-weight:600;">拖曳或點擊上傳對照表</div>
+                <div style="font-size:11px;color:#94a3b8;margin-top:4px;">支援 CSV、Excel (.xlsx)</div>
+                <input type="file" id="alias-file-input" accept=".csv,.xlsx,.xls" style="display:none" onchange="aliasFileSelected(this)">
+            </div>
+
+            <!-- Step 2: Column mapping (hidden until file uploaded) -->
+            <div id="alias-step-map" style="display:none;margin-bottom:12px;">
+                <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px;">
+                    <div style="flex:1;">
+                        <div style="font-size:11px;color:#64748b;margin-bottom:4px;">欄位名稱 (Key)</div>
+                        <select id="alias-key-col" style="width:100%;padding:6px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;"></select>
+                    </div>
+                    <div style="font-size:18px;color:#94a3b8;padding-top:16px;">→</div>
+                    <div style="flex:1;">
+                        <div style="font-size:11px;color:#64748b;margin-bottom:4px;">別名 (Display Name)</div>
+                        <select id="alias-alias-col" style="width:100%;padding:6px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;"></select>
+                    </div>
+                </div>
+                <div id="alias-preview-table" style="max-height:120px;overflow:auto;border:1px solid #e2e8f0;border-radius:6px;font-size:11px;margin-bottom:10px;"></div>
+                <div style="display:flex;gap:8px;justify-content:flex-end;">
+                    <button onclick="aliasReset()" style="padding:6px 16px;border:1px solid #e2e8f0;border-radius:6px;background:#f8fafc;font-size:12px;color:#475569;cursor:pointer;">重選檔案</button>
+                    <button onclick="aliasDoImport()" style="padding:6px 20px;border:none;border-radius:6px;background:#3b82f6;font-size:12px;color:#fff;font-weight:600;cursor:pointer;">匯入</button>
+                </div>
+            </div>
+
+            <!-- Current aliases -->
+            <div style="font-size:12px;font-weight:600;color:#1e293b;margin-bottom:6px;">
+                目前別名 <span id="alias-count" style="color:#64748b;font-weight:400;"></span>
+            </div>
+            <div style="flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column;">
+                <input type="text" id="alias-search" placeholder="搜尋..."
+                    oninput="aliasRenderList()"
+                    style="width:100%;padding:6px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;margin-bottom:6px;box-sizing:border-box;">
+                <div id="alias-list" style="flex:1;overflow-y:auto;border:1px solid #e2e8f0;border-radius:6px;min-height:100px;max-height:250px;"></div>
+            </div>
+            <div style="display:flex;gap:8px;justify-content:space-between;margin-top:8px;">
+                <button onclick="aliasClearAll()" style="padding:6px 16px;border:1px solid #fca5a5;border-radius:6px;background:#fff;font-size:12px;color:#ef4444;cursor:pointer;">清除全部</button>
+                <button onclick="closeAliasModal()" style="padding:6px 20px;border:1px solid #e2e8f0;border-radius:6px;background:#f8fafc;font-size:12px;color:#475569;cursor:pointer;">關閉</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    // ── Alias Management ──
+    let _aliasMap = {};
+    let _aliasUploadFile = null;
+    let _aliasFileColumns = [];
+
+    async function loadAliases() {
+        try {
+            const resp = await fetch(`/api/files/column-aliases?session_id=${SESSION_ID}`);
+            if (resp.ok) {
+                const data = await resp.json();
+                _aliasMap = data.aliases || {};
+                // Sync to localStorage for cross-iframe access
+                try { localStorage.setItem('sigma2_aliases', JSON.stringify(_aliasMap)); } catch(_) {}
+            }
+        } catch(e) { console.error('loadAliases', e); }
+    }
+
+    // ── Alias toggle ──
+    function toggleAliasMode(on) {
+        localStorage.setItem('sigma2_useAlias', on ? '1' : '0');
+        _updateAliasToggleUI(on);
+        if (on) {
+            try { localStorage.setItem('sigma2_aliases', JSON.stringify(_aliasMap)); } catch(_) {}
+        }
+        // 通知後端切換別名模式，ON 時自動產生 shadow 檔案
+        const sid = SESSION_ID;
+        fetch(`/api/files/alias-mode?session_id=${encodeURIComponent(sid)}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled: on })
+        }).catch(e => console.warn('alias-mode sync failed', e));
+    }
+
+    function _updateAliasToggleUI(on) {
+        const track = document.getElementById('alias-toggle-track');
+        const knob = document.getElementById('alias-toggle-knob');
+        const text = document.getElementById('alias-toggle-text');
+        const label = document.getElementById('alias-toggle-label');
+        const cb = document.getElementById('alias-toggle-cb');
+        const headerBtn = document.getElementById('alias-header-btn');
+        if (!track) return;
+        if (on) {
+            track.style.background = '#6366f1';
+            knob.style.left = '18px';
+            text.textContent = '別名 ON';
+            label.style.color = '#6366f1';
+            label.style.borderColor = '#a5b4fc';
+        } else {
+            track.style.background = '#cbd5e1';
+            knob.style.left = '2px';
+            text.textContent = '別名 OFF';
+            label.style.color = '#94a3b8';
+            label.style.borderColor = '#e2e8f0';
+        }
+        cb.checked = on;
+        // Also style the header button to indicate alias state
+        if (headerBtn) {
+            if (on) {
+                headerBtn.style.background = '#eef2ff';
+                headerBtn.style.borderColor = '#a5b4fc';
+                headerBtn.style.color = '#6366f1';
+            } else {
+                headerBtn.style.background = '#f8fafc';
+                headerBtn.style.borderColor = '#cbd5e1';
+                headerBtn.style.color = '#475569';
+            }
+        }
+    }
+
+    // Init toggle from localStorage — 同步狀態到後端
+    (function initAliasToggle() {
+        const on = localStorage.getItem('sigma2_useAlias') === '1';
+        _updateAliasToggleUI(on);
+        // 頁面載入時同步到後端，確保 alias_mode.json 和 shadow 檔案存在
+        const sid = SESSION_ID;
+        fetch(`/api/files/alias-mode?session_id=${encodeURIComponent(sid)}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled: on })
+        }).catch(() => {});
+    })();
+
+    function openAliasModal() {
+        document.getElementById('aliasModal').classList.add('show');
+        aliasReset();
+        loadAliases().then(() => aliasRenderList());
+    }
+    function closeAliasModal() {
+        document.getElementById('aliasModal').classList.remove('show');
+    }
+
+    function aliasReset() {
+        _aliasUploadFile = null;
+        _aliasFileColumns = [];
+        document.getElementById('alias-step-upload').style.display = '';
+        document.getElementById('alias-step-map').style.display = 'none';
+        document.getElementById('alias-file-input').value = '';
+    }
+
+    function aliasHandleDrop(e) {
+        const f = e.dataTransfer.files[0];
+        if (f) aliasPreviewFile(f);
+    }
+    function aliasFileSelected(input) {
+        if (input.files[0]) aliasPreviewFile(input.files[0]);
+    }
+
+    async function aliasPreviewFile(file) {
+        _aliasUploadFile = file;
+        const fd = new FormData();
+        fd.append('file', file);
+        fd.append('session_id', SESSION_ID);
+        try {
+            const resp = await fetch('/api/files/column-aliases/preview-file', { method: 'POST', body: fd });
+            if (!resp.ok) { alert('無法解析檔案'); return; }
+            const data = await resp.json();
+            _aliasFileColumns = data.columns;
+
+            // Populate selects
+            const keyEl = document.getElementById('alias-key-col');
+            const aliasEl = document.getElementById('alias-alias-col');
+            const opts = data.columns.map(c => `<option value="${c}">${c}</option>`).join('');
+            keyEl.innerHTML = opts;
+            aliasEl.innerHTML = opts;
+            // Auto-guess: first col = key, second col = alias
+            if (data.columns.length >= 2) aliasEl.selectedIndex = 1;
+
+            // Preview table
+            let html = '<table style="width:100%;border-collapse:collapse;">';
+            html += '<tr>' + data.columns.map(c => `<th style="padding:3px 6px;background:#f1f5f9;border-bottom:1px solid #e2e8f0;text-align:left;font-size:10px;color:#64748b;">${c}</th>`).join('') + '</tr>';
+            data.preview.forEach(row => {
+                html += '<tr>' + row.map(v => `<td style="padding:2px 6px;border-bottom:1px solid #f1f5f9;font-size:11px;">${v}</td>`).join('') + '</tr>';
+            });
+            html += '</table>';
+            document.getElementById('alias-preview-table').innerHTML = html;
+
+            document.getElementById('alias-step-upload').style.display = 'none';
+            document.getElementById('alias-step-map').style.display = '';
+        } catch(e) { alert('上傳失敗: ' + e.message); }
+    }
+
+    async function aliasDoImport() {
+        if (!_aliasUploadFile) return;
+        const keyCol = document.getElementById('alias-key-col').value;
+        const aliasCol = document.getElementById('alias-alias-col').value;
+        if (keyCol === aliasCol) { alert('欄位名稱和別名不可選相同欄位'); return; }
+
+        const fd = new FormData();
+        fd.append('file', _aliasUploadFile);
+        fd.append('key_col', keyCol);
+        fd.append('alias_col', aliasCol);
+        fd.append('session_id', SESSION_ID);
+        try {
+            const resp = await fetch('/api/files/column-aliases/upload', { method: 'POST', body: fd });
+            if (!resp.ok) { alert('匯入失敗'); return; }
+            const data = await resp.json();
+            aliasReset();
+            await loadAliases();
+            aliasRenderList();
+            alert(`✓ 匯入 ${data.imported} 筆別名（總計 ${data.total} 筆）`);
+            _refreshShadowIfOn();
+        } catch(e) { alert('匯入失敗: ' + e.message); }
+    }
+
+    function aliasRenderList() {
+        const list = document.getElementById('alias-list');
+        const kw = (document.getElementById('alias-search')?.value || '').toLowerCase();
+        const entries = Object.entries(_aliasMap).filter(([k, v]) =>
+            !kw || k.toLowerCase().includes(kw) || v.toLowerCase().includes(kw)
+        );
+        document.getElementById('alias-count').textContent = `(${Object.keys(_aliasMap).length} 筆)`;
+        if (entries.length === 0) {
+            list.innerHTML = '<div style="padding:16px;text-align:center;color:#94a3b8;font-size:12px;">尚無別名</div>';
+            return;
+        }
+        let html = '<table style="width:100%;border-collapse:collapse;">';
+        entries.forEach(([k, v]) => {
+            html += `<tr>
+                <td style="padding:4px 8px;border-bottom:1px solid #f1f5f9;font-size:12px;font-weight:600;color:#334155;width:35%;">${k}</td>
+                <td style="padding:4px 4px;color:#94a3b8;font-size:10px;">→</td>
+                <td style="padding:4px 8px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#475569;">${v}</td>
+                <td style="padding:4px 4px;border-bottom:1px solid #f1f5f9;width:24px;">
+                    <span onclick="aliasDelete('${k.replace(/'/g,"\\'")}')" style="cursor:pointer;color:#cbd5e1;font-size:12px;" onmouseenter="this.style.color='#ef4444'" onmouseleave="this.style.color='#cbd5e1'">✕</span>
+                </td>
+            </tr>`;
+        });
+        html += '</table>';
+        list.innerHTML = html;
+    }
+
+    // 若別名模式 ON，重新產生 shadow 檔案
+    function _refreshShadowIfOn() {
+        if (localStorage.getItem('sigma2_useAlias') !== '1') return;
+        const sid = SESSION_ID;
+        fetch(`/api/files/alias-mode?session_id=${encodeURIComponent(sid)}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled: true })
+        }).catch(e => console.warn('shadow refresh failed', e));
+    }
+
+    async function aliasDelete(key) {
+        delete _aliasMap[key];
+        await fetch(`/api/files/column-aliases?session_id=${SESSION_ID}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ aliases: _aliasMap, replace: true })
+        });
+        try { localStorage.setItem('sigma2_aliases', JSON.stringify(_aliasMap)); } catch(_) {}
+        aliasRenderList();
+        _refreshShadowIfOn();
+    }
+
+    async function aliasClearAll() {
+        if (!confirm('確定清除所有別名？')) return;
+        _aliasMap = {};
+        await fetch(`/api/files/column-aliases?session_id=${SESSION_ID}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ aliases: {}, replace: true })
+        });
+        try { localStorage.setItem('sigma2_aliases', JSON.stringify(_aliasMap)); } catch(_) {}
+        aliasRenderList();
+        _refreshShadowIfOn();
+    }
+
+    // Load aliases on page init
+    loadAliases();
     </script>
 
     <div id="dl-mode-badge">⬇ 下載模式</div>

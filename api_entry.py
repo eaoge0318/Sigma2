@@ -64,8 +64,10 @@ from backend.routers import (
 )
 from backend.routers import association_router
 from backend.routers import notebook_router
+from backend.routers import db_query_router
 from backend.routers import dataset_router
 from backend.routers import rag_router
+from backend.routers import material_router
 
 
 from contextlib import asynccontextmanager
@@ -105,12 +107,44 @@ async def lifespan(app: FastAPI):
     print("Sigma2 API Server 已關閉。")
 
 
+# --- NaN-safe JSON response (replaces nan/inf with null globally) ---
+import math, json
+from fastapi.responses import JSONResponse as _BaseJSONResponse
+
+class _NanSafeEncoder(json.JSONEncoder):
+    def iterencode(self, o, _one_shot=False):
+        # Replace nan/inf before encoding
+        return super().iterencode(self._sanitize(o), _one_shot)
+
+    def _sanitize(self, obj):
+        if isinstance(obj, float):
+            if math.isnan(obj) or math.isinf(obj):
+                return None
+            return obj
+        if isinstance(obj, dict):
+            return {k: self._sanitize(v) for k, v in obj.items()}
+        if isinstance(obj, (list, tuple)):
+            return [self._sanitize(v) for v in obj]
+        return obj
+
+class SafeJSONResponse(_BaseJSONResponse):
+    def render(self, content) -> bytes:
+        return json.dumps(
+            content,
+            cls=_NanSafeEncoder,
+            allow_nan=False,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ).encode("utf-8")
+
+
 # --- 初始化 FastAPI App ---
 app = FastAPI(
     title="Sigma2 Agentic Reasoning API",
     description="模組化架構的 AI 輔助系統",
     version="2.0.0",
     lifespan=lifespan,
+    default_response_class=SafeJSONResponse,
 )
 
 
@@ -215,6 +249,18 @@ app.include_router(
     rag_router.router,
     prefix="/api/rag",
     tags=["RAG - 歷史知識庫"],
+)
+
+app.include_router(
+    db_query_router.router,
+    prefix="/api/db",
+    tags=["DB Query - 資料庫查詢"],
+)
+
+app.include_router(
+    material_router.router,
+    prefix="/api/material",
+    tags=["Material - 原料分析"],
 )
 
 
